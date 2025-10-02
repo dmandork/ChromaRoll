@@ -174,3 +174,64 @@ CHARMS_POOL = [
     {'name': 'Interest Booster Charm', 'rarity': 'Common', 'cost': 3, 'desc': 
      'Increases max coins for interest calculation by 20.', 'type': 'interest_max_bonus', 'value': 20},
 ]
+
+# Add to data.py (e.g., at the end or near CHARMS_POOL)
+
+RUNE_PACKS = [
+    {'name': 'Basic Rune Pack', 'cost': 4, 'choices': 3, 'select': 1, 'rarity': 'Common'},
+    {'name': 'Mega Rune Pack', 'cost': 7, 'choices': 5, 'select': 1, 'rarity': 'Uncommon'},
+    {'name': 'Super Rune Pack', 'cost': 9, 'choices': 5, 'select': 2, 'rarity': 'Rare'}
+]
+
+# In data.py, update MYSTIC_RUNES to add 'max_dice' key (0 for no die, 1 default, 2/3 for multi)
+MYSTIC_RUNES = [
+    {'name': 'Mystic Fool Rune', 'desc': 'Creates a copy of the last Mystic or Upgrade Rune used this run (must have room in consumable inventory).', 'max_dice': 0},
+    {'name': 'Mystic Luck Rune', 'desc': 'Enhances 1 selected die in bag to "Lucky" (25% chance for +1 coin or x1.5 mult when scored, stacking with color effects).', 'max_dice': 1},
+    {'name': 'Mystic Oracle Rune', 'desc': 'Creates up to 2 random Upgrade Runes for hand type boosts.', 'max_dice': 0},
+    {'name': 'Mystic Mult Rune', 'desc': 'Enhances 2 selected dice in bag to add +0.5x mult when scored (stacks with Glass, etc.).', 'max_dice': 2},
+    {'name': 'Mystic Emperor Rune', 'desc': 'Creates up to 2 random Mystic Runes (must have room).', 'max_dice': 0},
+    {'name': 'Mystic Bonus Rune', 'desc': 'Enhances 2 selected dice in bag to add +10 score when scored.', 'max_dice': 2},
+    {'name': 'Mystic Wild Rune', 'desc': 'Converts 1 selected die in bag to Rainbow color (acts as any color for mono/rainbow bonuses).', 'max_dice': 1},
+    {'name': 'Mystic Steel Rune', 'desc': 'Enhances 1 selected die in bag to "Steel" (x1.5 mult, can\'t break like Glass).', 'max_dice': 1},
+    {'name': 'Mystic Fragile Rune', 'desc': 'Enhances 1 selected die in bag to "Fragile" (x2 mult, 25% break chance—stacks/modifies Glass).', 'max_dice': 1},
+    {'name': 'Mystic Wealth Rune', 'desc': 'Doubles current coins (max +20).', 'max_dice': 0},
+    {'name': 'Mystic Fate Rune', 'desc': '1 in 4 chance to add a random Edition (Foil, Holo, or Poly) to a random die in bag.', 'max_dice': 0},  # Random, no select
+    {'name': 'Mystic Strength Rune', 'desc': 'Enhances up to 2 selected dice to "harmonize" faces toward mid-high values (e.g., [1,2,3,4,5,6] becomes [3,4,4,5,5,6]—duplicates mids/highs, removes lows for better kinds/straights).', 'max_dice': 2},
+    {'name': 'Mystic Sacrifice Rune', 'desc': 'Destroys up to 2 selected dice in bag (gain coins equal to their "value" based on color/rarity).', 'max_dice': 2},
+    {'name': 'Mystic Transmute Rune', 'desc': 'Convert 1 selected die to the color and faces of another selected die (clone for duplicates).', 'max_dice': 2},  # Target + source
+    {'name': 'Mystic Balance Rune', 'desc': 'Gives coins equal to total cost/sell value of equipped charms (max 50).', 'max_dice': 0},
+    {'name': 'Mystic Gold Rune', 'desc': 'Converts 1 selected die in bag to Gold color (+coins when held, as per your system).', 'max_dice': 1},
+    {'name': 'Mystic Stone Rune', 'desc': 'Enhances 1 selected die in bag to "Stone" (+50 score, but fixed value/no roll variance).', 'max_dice': 1},
+    {'name': 'Mystic Red Rune', 'desc': 'Converts up to 3 selected dice in bag to Red color.', 'max_dice': 3},
+    {'name': 'Mystic Blue Rune', 'desc': 'Converts up to 3 selected dice in bag to Blue color.', 'max_dice': 3},
+    {'name': 'Mystic Green Rune', 'desc': 'Converts up to 3 selected dice in bag to Green color.', 'max_dice': 3},
+    {'name': 'Mystic Judgement Rune', 'desc': 'Creates a random Common Charm (must have charm slot room).', 'max_dice': 0},
+    {'name': 'Mystic Purple Rune', 'desc': 'Converts up to 3 selected dice in bag to Purple color.', 'max_dice': 3},
+    {'name': 'Mystic Yellow Rune', 'desc': 'Converts up to 3 selected dice in bag to Yellow color.', 'max_dice': 3},
+    {'name': 'Mystic Silver Rune', 'desc': 'Converts 1 selected die in bag to Silver color (+coins when not held in score, as per your system).', 'max_dice': 1}
+]
+
+# In data.py, after MYSTIC_RUNES
+
+ENH_DESC = {
+    'Lucky': 'Lucky: 25% chance for +1 coin or x1.5 mult when scored (stacks with color effects).',
+    'Mult': 'Mult: Adds +0.5x mult when scored (stacks with Glass, etc.).',
+    'Bonus': 'Bonus: Adds +10 score when scored.',
+    'Wild': 'Rainbow: Acts as any color for mono/rainbow bonuses.',
+    'Steel': 'Steel: x1.5 mult, can\'t break like Glass.',
+    'Fragile': 'Fragile: x2 mult, 25% break chance (stacks/modifies Glass).',
+    'Fate': 'Edition: Random Edition applied (Foil, Holo, or Poly).',  # If editions added later
+    'Strength': 'Harmonized: Faces shifted to mid-high duplicates for better kinds/straights.',
+    'Sacrifice': 'Destroyed: This die was sacrificed (no longer in bag).',  # If tracking history
+    'Transmute': 'Transmuted: Cloned color and faces from another die.',
+    'Gold': 'Gold: +coins when held in score.',
+    'Stone': 'Stone: +50 score, but fixed value/no roll variance.',
+    'Red': 'Red: Converted to Red color.',
+    'Blue': 'Blue: Converted to Blue color.',
+    'Green': 'Green: Converted to Green color.',
+    'Judgement': 'Judgement: Created a random Common Charm.',
+    'Purple': 'Purple: Converted to Purple color.',
+    'Yellow': 'Yellow: Converted to Yellow color.',
+    'Silver': 'Silver: +coins when not held in score.',
+    # Add more if new enhancements (e.g., from Oracle/Wealth if they add die effects)
+}

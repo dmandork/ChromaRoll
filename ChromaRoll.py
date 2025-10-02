@@ -95,8 +95,11 @@ class ChromaRollGame:
         self.available_packs = random.sample([0, 1, 2, 3, 4], 2)  # Random 2 from 5 packs
         self.multipliers_hover = False  # For showing multipliers panel
         self.current_pouch = None
+        self.active_tags = []
+        self.rune_tray = [None, None]  # Two rune slots
         # Dedup CHARMS_POOL by name (safeguard against old dups)
         seen_names = set()
+        self.is_resuming = False  # Flag
 
         # In __init__, add the icon paths and cache
         self.charm_icon_paths = {
@@ -1348,9 +1351,10 @@ class ChromaRollGame:
 
     def generate_shop(self):
         self.shop_reroll_cost = 5
-        all_packs = [0, 1, 2, 3, 4, 5]
-        weights = [1, 1, 1, 1, 1, 0.5]  # Lower for special (rarer)
-        self.available_packs = random.choices(all_packs, weights=weights, k=2)
+        all_packs = [0,1,2,3,4,5] + [6,7,8]  # Assume 0-5 existing, 6-8 for rune packs
+        weights = [1]*6 + [1, 0.8, 0.3]  # Lower for Super
+        self.available_packs = random.choices(all_packs, weights=weights, k=2 + any(tag['name'] == 'Voucher Tag' for tag in self.active_tags))  # Extra if Voucher Tag
+        # Map indices to packs, e.g., if pack_id in [6,7,8]: self.pack_choices = random.sample(data.MYSTIC_RUNES, pack['choices'])
         
         # Filter pool to exclude owned (as before)
         available_pool = [c for c in data.CHARMS_POOL if c['name'] not in [e['name'] for e in self.equipped_charms]]
@@ -1392,6 +1396,151 @@ class ChromaRollGame:
             self.coins -= self.shop_reroll_cost
             self.shop_reroll_cost += 3
             self.generate_shop()
+
+    def apply_rune_effect(self, rune, die_list=None):
+        name = rune['name']
+        if die_list is None:
+            die_list = []
+
+        print(f"Applying {name} to {len(die_list)} dice")  # Debug: Confirm call
+
+        if name == 'Mystic Fool Rune':
+            # Create copy of last rune (track self.last_rune in game; assume set on apply)
+            if hasattr(self, 'last_rune') and self.last_rune:
+                self.rune_tray.append(copy.deepcopy(self.last_rune)) if len(self.rune_tray) < 2 else print("Tray full")  # Or add to inventory
+
+        elif name == 'Mystic Luck Rune':
+            if len(die_list) > 0:
+                die_list[0]['enhancements'].append('Lucky')
+
+        elif name == 'Mystic Oracle Rune':
+            # Create 2 random Upgrade Runes (placeholder; add UPGRADE_RUNES list in data.py if implementing hand upgrades)
+            for _ in range(2):
+                upgrade = random.choice(data.UPGRADE_RUNES) if hasattr(data, 'UPGRADE_RUNES') else {}  # Stub
+                self.rune_tray.append(upgrade) if len(self.rune_tray) < 2 else print("Tray full")
+
+        elif name == 'Mystic Mult Rune':
+            for die in die_list[:2]:
+                die['enhancements'].append('Mult')
+
+        elif name == 'Mystic Emperor Rune':
+            for _ in range(2):
+                new_rune = random.choice(data.MYSTIC_RUNES)
+                self.rune_tray.append(copy.deepcopy(new_rune)) if len(self.rune_tray) < 2 else print("Tray full")
+
+        elif name == 'Mystic Bonus Rune':
+            for die in die_list[:2]:
+                die['enhancements'].append('Bonus')
+
+        elif name == 'Mystic Wild Rune':
+            if len(die_list) > 0:
+                die_list[0]['color'] = 'Rainbow'
+                die_list[0]['enhancements'].append('Wild')
+
+        elif name == 'Mystic Steel Rune':
+            if len(die_list) > 0:
+                die_list[0]['enhancements'].append('Steel')
+
+        elif name == 'Mystic Fragile Rune':
+            if len(die_list) > 0:
+                die_list[0]['enhancements'].append('Fragile')
+
+        elif name == 'Mystic Wealth Rune':
+            self.coins = min(self.coins * 2, self.coins + 20)  # Double max +20
+
+        elif name == 'Mystic Fate Rune':
+            # Random edition (placeholder; add EDITIONS if implementing)
+            if self.bag:
+                die = random.choice(self.bag)
+                edition = random.choice(['Foil', 'Holo', 'Poly'])
+                die['enhancements'].append(edition)
+                die['enhancements'].append('Fate')  # Track
+
+        elif name == 'Mystic Strength Rune':
+            for die in die_list[:2]:
+                # Harmonize faces: Duplicate mid-high
+                faces = sorted(die['faces'])  # Assume [1,2,3,4,5,6]
+                die['faces'] = faces[2:] + faces[3:5] + [faces[-1]]  # e.g., [3,4,5,6,4,5,6] but trim to 6
+                die['faces'] = die['faces'][:6]  # Ensure 6
+                die['enhancements'].append('Strength')
+
+        elif name == 'Mystic Sacrifice Rune':
+            for die in die_list[:2]:
+                value = 5 if die['color'] in BASE_COLORS else 10  # Example coins
+                self.coins += value
+                self.bag.remove(die)  # Destroy
+                if die in self.full_bag:
+                    self.full_bag.remove(die)  # Update full_bag
+
+        elif name == 'Mystic Transmute Rune':
+            if len(die_list) == 2:
+                target, source = die_list[0], die_list[1]
+                target['color'] = source['color']
+                target['faces'] = copy.deepcopy(source['faces'])
+                target['enhancements'].append('Transmute')
+
+        elif name == 'Mystic Balance Rune':
+            total = sum(c['cost'] for c in self.equipped_charms)  # Example sell value = cost
+            self.coins += min(total, 50)
+
+        elif name == 'Mystic Gold Rune':
+            if len(die_list) > 0:
+                die_list[0]['color'] = 'Gold'
+
+        elif name == 'Mystic Stone Rune':
+            if len(die_list) > 0:
+                die_list[0]['enhancements'].append('Stone')
+                die_list[0]['faces'] = [4] * 6  # Fixed mid value; adjust
+
+        elif name == 'Mystic Red Rune':
+            for die in die_list[:3]:
+                print(f"Changing die {die['id']} to Red")  # Debug
+                die['color'] = 'Red'
+                die['enhancements'].append('Red')
+
+        elif name == 'Mystic Blue Rune':
+            for die in die_list[:3]:
+                print(f"Changing die {die['id']} to Blue")  # Debug
+                die['color'] = 'Blue'
+                die['enhancements'].append('Blue')
+
+        elif name == 'Mystic Green Rune':
+            for die in die_list[:3]:
+                die['color'] = 'Green'
+                die['enhancements'].append('Green')
+
+        elif name == 'Mystic Judgement Rune':
+            charm = random.choice([c for c in data.CHARMS_POOL if c['rarity'] == 'Common'])
+            if len(self.equipped_charms) < 5:  # Hardcoded max from your code
+                self.equipped_charms.append(charm)
+
+        elif name == 'Mystic Purple Rune':
+            for die in die_list[:3]:
+                die['color'] = 'Purple'
+                die['enhancements'].append('Purple')
+
+        elif name == 'Mystic Yellow Rune':
+            for die in die_list[:3]:
+                die['color'] = 'Yellow'
+                die['enhancements'].append('Yellow')
+
+        elif name == 'Mystic Silver Rune':
+            if len(die_list) > 0:
+                die_list[0]['color'] = 'Silver'
+                die_list[0]['enhancements'].append('Silver')
+            else:
+                print("No die selected for Silver Rune")  # Debug; optional error message in game
+
+        self.last_rune = rune  # Track for Fool
+        self.refresh_bag()
+        self.temp_message = f"Applied {name}!"
+
+    def refresh_bag(self):
+        """Force update bag visuals after rune apply."""
+        # Update full_bag to match bag (if needed for persistence)
+        self.full_bag = [d for d in self.full_bag if d in self.bag] + [d for d in self.bag if d not in self.full_bag]  # Sync
+        # If in shop/game, force redraw (state will handle in next draw call)
+        print("Bag refreshed")  # Debug; remove later
 
     def run(self):
         """Main game loop."""

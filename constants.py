@@ -2,7 +2,7 @@ import pygame  # Required for key constants like K_SPACE
 import data
 
 # Debug flag: Set to True to force specific colors for testing (overrides random draw) and enable unlimited rerolls
-DEBUG = True
+DEBUG = False
 DEBUG_COLORS = ['Red', 'Blue', 'Green', 'Purple', 'Yellow']  # Example: All different colors for rainbow testing
 # DEBUG_COLORS = ['Glass', 'Glass', 'Glass', 'Glass', 'Glass']  # Example: All Glass colors for break testing
 # DEBUG_COLORS = ['Gold', 'Gold', 'Gold', 'Silver', 'Silver']  # Example: All Gold and Silver colors for extra coin testing
@@ -85,6 +85,8 @@ DOT_RADIUS = 10  # Size of dots on dice
 BUTTON_WIDTH, BUTTON_HEIGHT = 150, 50  # Button size
 SMALL_DIE_SIZE = 20  # Size for bag visual squares
 SMALL_DIE_SPACING = 5  # Spacing for bag visual
+TRAY_SLOT_SIZE = 50  # Small size, smaller than DIE_SIZE (100) or SMALL_DIE_SIZE (15 if too tiny; adjust)
+TRAY_SLOT_SPACING = 5  # Small spacing between slots
 ANIMATION_FRAMES = 20  # Number of frames for roll animation
 ANIMATION_DELAY = 0.025  # Delay between animation frames
 DIE_BORDER_RADIUS = 20  # Radius for rounded corners on dice
@@ -115,6 +117,7 @@ TOOLTIP_MAX_WIDTH = 300  # Max width for tooltip before wrapping
 PACK_BOOST = 0.5  # Multiplier boost per pack use
 # Add this constant near the top, after other constants like HAND_TYPES
 
+MAX_EQUIPPED = 5  # Max charms equipped at once
 BAG_COLOR = (139, 69, 19)  # Brown for bag
 BAG_BORDER_RADIUS = 15  # Rounded corners for bag
 BAG_PADDING = 10  # Padding around dice grid in bag

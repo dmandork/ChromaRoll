@@ -8,10 +8,11 @@ import random
 import savegame
 from screens import draw_splash_screen, draw_init_screen, draw_tutorial_screen, draw_blinds_screen, draw_game_screen, draw_popup, draw_buttons, draw_shop_screen, draw_game_over_screen, draw_pause_menu, draw_custom_button, draw_tooltip  # Import at top of file
 from constants import *  # For SPLASH_* constants
-from utils import get_easing, draw_rounded_element, wrap_text  # Import get_easing to fix "not defined" errors
+from utils import get_easing, draw_rounded_element, wrap_text, resource_path  # Import get_easing to fix "not defined" errors
 from data import BOSS_EFFECTS, HAND_TYPES, CHARMS_POOL
 from constants import BASE_COLORS, DICE_FACES, NUM_DICE_IN_HAND, DIE_SIZE, HELD_DIE_SCALE, THEME, DEBUG, CHARM_SIZE, CHARM_BOX_WIDTH, CHARM_SPACING, CHARM_BOX_HEIGHT, SPECIAL_COLORS, PACK_BOOST
 import constants  # This imports the module, so you can use constants.THEME
+import data
 
 
 class State:
@@ -350,8 +351,14 @@ class GameState(State):
         self.score_rect = None
         self.end_turn_rect = None
         self.continue_rect = None  # For popup if shown
+        self.hand_die_rects = []  # For 5 in-play dice
+        self.bag_die_rects = []   # For bag visuals (upper right)
 
     def enter(self):
+        if self.game.is_resuming:
+            print("Resuming GameState - Skipping init pull")  # Debug
+            self.game.is_resuming = False
+            return  # Skip dice pull
         # Init or reset game vars (call new_turn only if no loaded hand/rolls)
         if not self.game.hand or not self.game.rolls or not self.game.has_rolled:
             self.game.new_turn()
@@ -371,6 +378,7 @@ class GameState(State):
 
     def draw(self):
         self.game.screen.fill(constants.THEME['background'])  # Clear relics and prevent stacking
+        from screens import draw_game_screen
         draw_game_screen(self.game)  # Main game elements
 
         if self.game.show_popup:
@@ -381,8 +389,11 @@ class GameState(State):
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                self.game.previous_state = self.game.state_machine.current_state  # Save for pause
-                self.game.state_machine.change_state(PauseMenuState(self.game))  # To pause (add placeholder if needed)
+                
+                print("Escape pressed in GameState - Pausing")  # Debug
+                savegame.save_game(self.game)  # Save
+                self.game.previous_state = self  # Instance
+                self.game.state_machine.change_state(PauseMenuState(self.game))
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
@@ -435,6 +446,30 @@ class GameState(State):
         if event.type == pygame.MOUSEMOTION:
             if self.game.dragging_charm_index != -1:
                 pass  # Handled in draw
+
+            # New: Hover tooltips for dice
+            mouse_pos = event.pos
+            # Hover on 5 in-play dice (hand)
+            for i, die_rect in enumerate(self.hand_die_rects):
+                if die_rect.collidepoint(mouse_pos):
+                    die = self.game.hand[i]  # Assuming self.game.hand is list of dice
+                    if 'enhancements' in die and die['enhancements']:
+                        desc = ''
+                        for enh in die['enhancements']:
+                            desc += f"{enh}: {data.ENH_DESC.get(enh, 'Unknown effect')}\n"
+                        draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20, desc.strip())
+                    return  # Show one at a time; optional—remove if you want multiple
+
+            # Hover on bag dice (upper right)
+            for j, bag_rect in enumerate(self.bag_die_rects):
+                if bag_rect.collidepoint(mouse_pos):
+                    die = self.game.bag[j]  # Or your bag list/index
+                    if 'enhancements' in die and die['enhancements']:
+                        desc = ''
+                        for enh in die['enhancements']:
+                            desc += f"{enh}: {data.ENH_DESC.get(enh, 'Unknown effect')}\n"
+                        draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20, desc.strip())
+                    return
 
         if event.type == pygame.MOUSEBUTTONUP:
             if self.game.dragging_charm_index != -1:
@@ -588,9 +623,10 @@ class ShopState(State):
                         self.game.shop_charms.insert(i, charm)
                     return
 
-            # Pack buys
-            pack_costs = [3, 5, 7, 3, 5, 9]
-            pack_choices_num = [2, 3, 5, 3, 4, 3]
+             # Pack buys
+            pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9]  # Append rune pack costs
+            pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5]  # Append rune pack choices
+            pack_select_num = [1, 1, 1, 1, 1, 1, 1, 1, 2]  # New: Select counts (1 for most, 2 for Super Rune)
             for pack_rect, pack_idx in self.pack_rects or []:
                 if pack_rect.collidepoint(mouse_pos):
                     cost = pack_costs[pack_idx]
@@ -602,12 +638,19 @@ class ShopState(State):
                             self.game.pack_choices = random.sample(data.HAND_TYPES, pack_choices_num[pack_idx])
                             self.game.state_machine.change_state(PackSelectState(self.game))
                             self.game.available_packs.remove(pack_idx)
-                        else:
+                        elif pack_idx in [3, 4, 5]:
                             if pack_idx == 5:
-                                self.game.pack_choices = random.sample(constants.SPECIAL_COLORS, 3)
+                                self.game.pack_choices = random.sample(constants.SPECIAL_COLORS, pack_choices_num[pack_idx])
                             else:
                                 self.game.pack_choices = random.sample(constants.BASE_COLORS, pack_choices_num[pack_idx])
                             self.game.state_machine.change_state(DiceSelectState(self.game))
+                            self.game.available_packs.remove(pack_idx)
+                        elif pack_idx in [6, 7, 8]:  # New: Rune packs
+                            rune_pack = data.RUNE_PACKS[pack_idx - 6]  # Map to 0-2 index
+                            self.game.pack_choices = random.sample(data.MYSTIC_RUNES, pack_choices_num[pack_idx])
+                            self.game.pack_select_count = pack_select_num[pack_idx]  # Track how many to select
+                            self.game.selected_runes = []  # For multi-select/holding
+                            self.game.state_machine.change_state(RuneSelectState(self.game))
                             self.game.available_packs.remove(pack_idx)
                     return
 
@@ -773,6 +816,165 @@ class ShopState(State):
             draw_tooltip(self.game, x, tooltip_y, tooltip_text)
         
         return charm_rects + [(equip_all_rect, 'equip_all'), (close_rect, 'close')]
+    
+class RuneSelectState(State):
+    def __init__(self, game):
+        super().__init__(game)
+        self.selected_rune_index = -1
+        self.selected_die_indices = []  # List for multi-select
+        self.random_dice = random.sample(self.game.bag, min(8, len(self.game.bag)))  # 8 random for mod
+        self.rune_rects = []  # To store for handle_event
+        self.die_rects = []   # To store for handle_event
+        self.confirm_rect = None
+        self.hold_rect = None
+        self.skip_rect = None  # For skip button
+        self.continue_rect = None  # New for post-apply
+        self.applied_count = 0  # Track how many applied/held
+        self.hover_rune_index = -1  # For tooltip
+        self.preview_mode = False  # Flag for post-apply preview
+        self.preview_message = ""  # For non-die feedback
+
+    def draw(self):
+        self.game.screen.fill(constants.THEME['background'])
+        # Calculate start_x dynamically for centering
+        num_runes = len(self.game.pack_choices)
+        total_rune_width = num_runes * constants.CHARM_BOX_WIDTH + (num_runes - 1) * constants.CHARM_SPACING
+        start_x = (self.game.width - total_rune_width) // 2
+
+        # Top: Runes (placeholders with wrapped name)
+        self.rune_rects = []
+        for i, rune in enumerate(self.game.pack_choices):
+            rune_x = start_x + i * (constants.CHARM_BOX_WIDTH + constants.CHARM_SPACING)
+            rune_rect = pygame.Rect(rune_x, 50, constants.CHARM_BOX_WIDTH, constants.CHARM_BOX_HEIGHT)
+            pygame.draw.rect(self.game.screen, (200,200,200), rune_rect)  # Gray box
+            
+            # Wrap text if too long (use your utils.wrap_text; assumes it returns list of lines)
+            lines = wrap_text(self.game.small_font, rune['name'], constants.CHARM_BOX_WIDTH - 20)  # Padding 10 each side
+            y_offset = rune_rect.centery - (len(lines) * self.game.small_font.get_height() // 2)
+            for line in lines:
+                text = self.game.small_font.render(line, True, constants.THEME['text'])
+                self.game.screen.blit(text, (rune_rect.centerx - text.get_width()//2, y_offset))
+                y_offset += self.game.small_font.get_height()
+            
+            if i == self.selected_rune_index:
+                pygame.draw.rect(self.game.screen, (255,255,0), rune_rect, width=3)  # Yellow border
+            self.rune_rects.append(rune_rect)
+
+        # Bottom: 8 Dice (refresh shows changes)
+        num_dice = len(self.random_dice)
+        total_die_width = num_dice * constants.DIE_SIZE + (num_dice - 1) * 10  # Assuming 10 spacing
+        die_start_x = (self.game.width - total_die_width) // 2
+        self.die_rects = []
+        for j, die in enumerate(self.random_dice):
+            die_x = die_start_x + j * (constants.DIE_SIZE + 10)
+            die_rect = pygame.Rect(die_x, self.game.height//2, constants.DIE_SIZE, constants.DIE_SIZE)
+            draw_rounded_element(self.game.screen, die_rect, constants.COLORS[die['color']], inner_content=lambda r: self.draw_dots_or_icon(die))  # Use self. if method
+            if j in self.selected_die_indices:  # Highlight multi
+                pygame.draw.rect(self.game.screen, (255,255,0), die_rect, width=3)
+            self.die_rects.append(die_rect)
+
+        # Buttons (hide in preview except continue)
+        if not self.preview_mode:
+            # Confirm button
+            self.confirm_rect = pygame.Rect(self.game.width//2 - constants.BUTTON_WIDTH//2, self.game.height - 100, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
+            draw_custom_button(self.game, self.confirm_rect, "Apply Rune")
+
+            # Hold button (left of confirm)
+            self.hold_rect = pygame.Rect(self.game.width//2 - constants.BUTTON_WIDTH//2 - 160, self.game.height - 100, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
+            draw_custom_button(self.game, self.hold_rect, "Hold Rune")
+
+            # Skip button (right of confirm)
+            self.skip_rect = pygame.Rect(self.game.width//2 - constants.BUTTON_WIDTH//2 + 160, self.game.height - 100, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
+            draw_custom_button(self.game, self.skip_rect, "Skip Pack")
+        else:
+            # Continue button in preview
+            self.continue_rect = pygame.Rect(self.game.width//2 - constants.BUTTON_WIDTH//2, self.game.height - 100, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
+            draw_custom_button(self.game, self.continue_rect, "Continue")
+
+            if self.preview_message:
+                msg_text = self.game.small_font.render(self.preview_message, True, (255, 255, 0))
+                self.game.screen.blit(msg_text, (self.game.width // 2 - msg_text.get_width() // 2, self.game.height // 2 + 50))
+
+        # Draw tooltip if hovering (only in select mode)
+        if not self.preview_mode and self.hover_rune_index != -1:
+            mouse_pos = pygame.mouse.get_pos()  # Get current mouse for pos
+            draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20, self.game.pack_choices[self.hover_rune_index]['desc'])
+
+    def draw_dots_or_icon(self, die):  # Placeholder method; move to utils/screens if not defined
+        # Implement your dot/icon drawing logic here, e.g., for standard dice pips
+        pass  # Replace with actual code from your draw functions
+
+    def handle_event(self, event):
+        if self.preview_mode:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_pos = pygame.mouse.get_pos()
+                if self.continue_rect.collidepoint(mouse_pos):
+                    self.preview_mode = False
+                    self.preview_message = ""
+                    self.selected_rune_index = -1
+                    self.selected_die_indices = []
+                    self.random_dice = random.sample(self.game.bag, min(8, len(self.game.bag)))  # Refresh after preview
+                    if self.applied_count >= self.game.pack_select_count:
+                        self.game.state_machine.change_state(ShopState(self.game))
+            return  # Skip other events in preview
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            mouse_pos = pygame.mouse.get_pos()  # Get mouse_pos here
+            # Select rune/die by rect collide
+            for i, rune_rect in enumerate(self.rune_rects):
+                if rune_rect.collidepoint(mouse_pos):
+                    self.selected_rune_index = i
+                    self.selected_die_indices = []  # Reset dice on new rune select (optional; to enforce per rune)
+
+            # Die select: Toggle for multi
+            for j, die_rect in enumerate(self.die_rects):
+                if die_rect.collidepoint(mouse_pos):
+                    if self.selected_rune_index == -1:
+                        continue  # Skip if no rune selected
+                    if j in self.selected_die_indices:
+                        self.selected_die_indices.remove(j)
+                    else:
+                        self.selected_die_indices.append(j)
+                    # Limit based on rune
+                    if self.selected_rune_index != -1:
+                        rune = self.game.pack_choices[self.selected_rune_index]
+                        max_dice = rune.get('max_dice', 1)  # Default 1
+                        while len(self.selected_die_indices) > max_dice:
+                            self.selected_die_indices.pop(0)  # Remove first if over (or pop() for last)
+
+            if self.confirm_rect.collidepoint(mouse_pos) and self.selected_rune_index != -1:
+                rune = self.game.pack_choices[self.selected_rune_index]
+                dies = [self.random_dice[j] for j in self.selected_die_indices]  # Always list
+                self.game.apply_rune_effect(rune, dies)  # Pass list
+                self.game.pack_choices.pop(self.selected_rune_index)  # Remove used
+                self.applied_count += 1  # Increment count
+                self.preview_mode = True  # Enter preview after apply
+                if len(dies) == 0:
+                    self.preview_message = "Rune applied (no dice affected)!"  # For non-die
+
+            if self.hold_rect.collidepoint(mouse_pos) and self.selected_rune_index != -1:
+                rune = self.game.pack_choices[self.selected_rune_index]
+                if None in self.game.rune_tray:  # Room check
+                    slot = self.game.rune_tray.index(None)
+                    self.game.rune_tray[slot] = rune
+                    self.game.pack_choices.pop(self.selected_rune_index)  # Remove from choices
+                    self.applied_count += 1  # Count hold as select
+                    self.selected_rune_index = -1
+                    self.selected_die_indices = []
+                    self.random_dice = random.sample(self.game.bag, min(8, len(self.game.bag)))  # Refresh after hold
+                    if self.applied_count >= self.game.pack_select_count:
+                        self.game.state_machine.change_state(ShopState(self.game))
+
+            if self.skip_rect.collidepoint(mouse_pos):
+                self.game.pack_choices = []  # Discard
+                self.game.state_machine.change_state(ShopState(self.game))  # Back
+
+        if event.type == pygame.MOUSEMOTION:  # Hover tooltip
+            self.hover_rune_index = -1
+            for i, rune_rect in enumerate(self.rune_rects):
+                if rune_rect.collidepoint(event.pos):
+                    self.hover_rune_index = i
+                    break  # Only one at a time
 
 class PauseMenuState(State):
     def __init__(self, game):
@@ -792,25 +994,26 @@ class PauseMenuState(State):
         self.button_rects = self.game.get_pause_button_rects()  # Assuming this method exists and returns rects
 
     def handle_event(self, event):    
-
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                self.game.state_machine.change_state(self.game.previous_state)  # Exit pause
+                print("Escape pressed in Pause - Resuming")  # Debug
+                self.game.state_machine.change_state(GameState(self.game))  # Direct resume, no load
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
             for rect, opt in self.button_rects or []:
                 if self.game.mute_button_rect.collidepoint(mouse_pos):
-                    self.game.toggle_mute()  # Toggles mute and updates volumes/icons
+                    self.game.toggle_mute()
                 if rect.collidepoint(mouse_pos):
-                    if opt == "Return to Game":
-                        self.game.state_machine.change_state(self.game.previous_state)
+                    if opt == "Return to Game" or event.key == pygame.K_ESCAPE:
+                        self.game.is_resuming = True  # Flag
+                        self.game.state_machine.change_state(self.game.previous_state)  # Instance
                     elif opt == "Main Menu":
                         savegame.delete_save()
                         self.game.reset_game()
                         self.game.state_machine.change_state(InitState(self.game))
                     elif opt == "Quit":
-                        savegame.save_game(self.game)  # Save before quit
+                        savegame.save_game(self.game)
                         pygame.quit()
                         sys.exit()
                     break

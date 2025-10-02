@@ -224,6 +224,7 @@ def draw_game_screen(game):
             game.broken_dice = []
             game.break_effect_start = 0
     draw_text(game)
+
     draw_bag_visual(game)
     # Add equipped charms drawing loop here (with grayscale for disabled)
     for i, charm in enumerate(game.equipped_charms):
@@ -231,20 +232,43 @@ def draw_game_screen(game):
         y = 10  # Top for game screen
         rect = pygame.Rect(x, y, constants.CHARM_SIZE, constants.CHARM_SIZE)
         draw_charm_die(game, rect, charm, index=i)  # Draw directly with frame, icon, and grayscale if disabled
-        # Add tooltip on hover
+        # Optional tooltip on hover
         if rect.collidepoint(mouse_pos):
             tooltip_text = charm['name'] + ": " + charm['desc']
             if charm['type'] == 'sacrifice_mult':
-                tooltip_text += f" (Current mult: x{game.score_mult})"
+                tooltip_text += f" (Current mult: x{game.score_mult:.1f})"
                 if game.score_mult < 10.0:
                     tooltip_text += " (max x10)"
             elif charm['type'] == 'empty_slot_mult':
                 current_mult = game.get_stencil_mult()
-                tooltip_text += f" (Current: x{current_mult})"
+                tooltip_text += f" (Current: x{current_mult:.1f})"
             if i in game.disabled_charms:
                 tooltip_text += " (Disabled this round by Boss Effect)"
             draw_tooltip(game, x, y + constants.CHARM_SIZE + constants.TOOLTIP_PADDING, tooltip_text)
     # Removed self.draw_charms() to eliminate duplicate drawing and tooltip issues
+
+    # Calculate bag_rect dynamically
+    columns = 5
+    rows = math.ceil(len(game.bag) / columns) if game.bag else 1
+    bag_width = columns * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING) - constants.SMALL_DIE_SPACING + constants.BAG_PADDING * 2
+    bag_height = rows * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING) - constants.SMALL_DIE_SPACING + constants.BAG_PADDING * 2
+    bag_x = game.width - bag_width - 20
+    bag_y = 50
+    bag_rect = pygame.Rect(bag_x, bag_y, bag_width, bag_height)
+
+    # New: Tray to the left of bag
+    tray_width = 2 * constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING
+    tray_x = max(bag_rect.left - tray_width - 10, 10)  # Left of bag, clamp to screen left
+    tray_y = bag_rect.y  # Align top
+    for i in range(2):
+        slot_rect = pygame.Rect(tray_x + i * (constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING), tray_y, constants.TRAY_SLOT_SIZE, constants.TRAY_SLOT_SIZE)
+        pygame.draw.rect(game.screen, (150, 150, 150), slot_rect, border_radius=5)
+        if game.rune_tray[i]:
+            text = game.tiny_font.render(f"#{game.rune_tray[i].get('id', i+1)}", True, constants.THEME['text'])
+            game.screen.blit(text, (slot_rect.centerx - text.get_width()//2, slot_rect.centery - text.get_height()//2))
+        else:
+            pygame.draw.rect(game.screen, (255, 0, 0), slot_rect, width=2)  # Temp red debug to confirm visibility (remove after)
+
     draw_buttons(game)
     draw_ui_panel(game)
     if game.temp_message and time.time() - game.temp_message_start < game.temp_message_duration:
@@ -295,6 +319,32 @@ def draw_game_screen(game):
     if game.show_popup:
         draw_popup(game)
 
+    # New: Store rects for hand dice (assuming draw_dice(game) draws them but doesn't store rects)
+    game.state_machine.current_state.hand_die_rects = []  # Clear first
+    total_dice_width = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
+    start_x = (game.width - total_dice_width) // 2
+    for i in range(constants.NUM_DICE_IN_HAND):  # Loop to calc rects (match your draw_dice logic)
+        x = start_x + i * (constants.DIE_SIZE + 20)
+        size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[i] else constants.DIE_SIZE
+        offset = (constants.DIE_SIZE - size) / 2 if game.held[i] else 0
+        die_rect = pygame.Rect(x + offset, game.height - constants.DIE_SIZE - 100 + offset, size, size)
+        game.state_machine.current_state.hand_die_rects.append(die_rect)
+
+    # New: Store rects for bag dice (assuming draw_bag_visual(game) draws small dice in a grid/row)
+    game.state_machine.current_state.bag_die_rects = []
+    # Assuming bag is in upper right, e.g., bag_x = game.width - (constants.SMALL_DIE_SIZE * math.ceil(len(game.bag)/5) + spacing) - padding
+    # You'll need to adjust based on your draw_bag_visual code; here's a placeholder assuming row of small dice
+    bag_x = game.width - 200  # Example start x for upper right bag
+    bag_y = 50  # Example y
+    rows = math.ceil(len(game.bag) / 5)  # Assume 5 per row
+    for j, die in enumerate(game.bag):  # Or your visible subset
+        row = j // 5
+        col = j % 5
+        small_rect = pygame.Rect(bag_x + col * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING), 
+                                 bag_y + row * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING), 
+                                 constants.SMALL_DIE_SIZE, constants.SMALL_DIE_SIZE)
+        game.state_machine.current_state.bag_die_rects.append(small_rect)
+
 def draw_shop_screen(game, skip_tooltips=False):
     """Draws the shop screen with equipped charms (sell), shop charms (buy), and Prism Packs."""
     mouse_pos = pygame.mouse.get_pos()
@@ -317,6 +367,31 @@ def draw_shop_screen(game, skip_tooltips=False):
     reroll_y = coins_y - 10  # Align vertically with coins (slight offset if needed)
     reroll_rect = pygame.Rect(reroll_x, reroll_y, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
     draw_custom_button(game, reroll_rect, "Reroll (5)", is_hover=reroll_rect.collidepoint(mouse_pos))
+
+    # Calculate bag_rect dynamically (keep for consistency, even if not used for tray)
+    columns = 5
+    rows = math.ceil(len(game.bag) / columns) if game.bag else 1
+    bag_width = columns * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING) - constants.SMALL_DIE_SPACING + constants.BAG_PADDING * 2
+    bag_height = rows * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING) - constants.SMALL_DIE_SPACING + constants.BAG_PADDING * 2
+    bag_x = game.width - bag_width - 20
+    bag_y = 50
+    bag_rect = pygame.Rect(bag_x, bag_y, bag_width, bag_height)
+
+    # New: Tray underneath continue (use multipliers_button_rect as proxy; adjust if actual continue differs)
+    multipliers_button_rect = pygame.Rect(game.width - constants.MULTIPLIERS_BUTTON_SIZE - 10, game.height - constants.MULTIPLIERS_BUTTON_SIZE - 100, constants.MULTIPLIERS_BUTTON_SIZE, constants.MULTIPLIERS_BUTTON_SIZE)  # From your code
+    continue_rect = multipliers_button_rect  # Proxy; replace with actual continue_rect if defined
+    tray_width = 2 * constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING
+    tray_x = continue_rect.centerx - tray_width // 2  # Center under
+    tray_y = continue_rect.bottom + 10  # Below
+    tray_y = min(tray_y, game.height - constants.TRAY_SLOT_SIZE - 10)  # Clamp to bottom
+    for i in range(2):
+        slot_rect = pygame.Rect(tray_x + i * (constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING), tray_y, constants.TRAY_SLOT_SIZE, constants.TRAY_SLOT_SIZE)
+        pygame.draw.rect(game.screen, (150, 150, 150), slot_rect, border_radius=5)
+        if game.rune_tray[i]:
+            text = game.tiny_font.render(f"#{game.rune_tray[i].get('id', i+1)}", True, constants.THEME['text'])
+            game.screen.blit(text, (slot_rect.centerx - text.get_width()//2, slot_rect.centery - text.get_height()//2))
+        else:
+            pygame.draw.rect(game.screen, (255, 0, 0), slot_rect, width=2)  # Temp red debug (remove after)
 
     # Define large panel for purchasables (shop charms and packs, expanded for future additions)
     panel_width = int(game.width * 0.9)  # 90% width for more space
@@ -416,9 +491,13 @@ def draw_shop_screen(game, skip_tooltips=False):
 
     pack_y = shop_charms_y + constants.CHARM_BOX_HEIGHT + 50  # Space below charms
     pack_rects = []
-    pack_costs = [3, 5, 7, 3, 5, 9]
-    pack_choices_num = [2, 3, 5, 3, 4, 3]
-    pack_names = ["Basic Prism (1 of 2)", "Standard Prism (1 of 3)", "Premium Prism (1 of 5)", "Dice Pack (1 of 3)", "Dice Pack (1 of 4)", "Special Dice Pack (1 of 3)"]
+    pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9]  # Append rune pack costs
+    pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5]  # Append rune pack choices
+    pack_names = [
+        "Basic Prism (1 of 2)", "Standard Prism (1 of 3)", "Premium Prism (1 of 5)",
+        "Dice Pack (1 of 3)", "Dice Pack (1 of 4)", "Special Dice Pack (1 of 3)",
+        "Basic Rune Pack (1 of 3)", "Mega Rune Pack (1 of 5)", "Super Rune Pack (2 of 5)"
+    ]  # Append rune pack names
     pack_x_start = panel_x + inner_padding  # Left-aligned (restore original start)
     pack_x = pack_x_start
     for pack_idx in game.available_packs:
@@ -428,9 +507,13 @@ def draw_shop_screen(game, skip_tooltips=False):
         # Draw icon centered (updated methods handle)
         if pack_idx in [0,1,2]:
             draw_prism_pack_icon(game, pack_idx, pack_rect.x, pack_rect.y + 10)
-        else:
+        elif pack_idx in [3,4,5]:
             cycle = constants.BASE_COLORS if pack_idx in [3,4] else constants.SPECIAL_COLORS
             draw_pack_icon(game, pack_rect, pack_choices_num[pack_idx], cycle)
+        elif pack_idx in [6,7,8]:  # New: Generic brown rect for rune packs
+            pygame.draw.rect(game.screen, constants.BAG_COLOR, pack_rect, border_radius=constants.BAG_BORDER_RADIUS)  # Generic brown
+            text = game.small_font.render(f"Rune Pack ${pack_costs[pack_idx]}", True, constants.THEME['text'])
+            game.screen.blit(text, (pack_rect.centerx - text.get_width()//2, pack_rect.centery))
         if not skip_tooltips and pack_rect.collidepoint(mouse_pos):
             tooltip_text = f"{pack_names[pack_idx]}\nCost: {pack_costs[pack_idx]}"
             tooltip_y = pack_rect.y + 80 + 5  # Lowered
@@ -844,6 +927,118 @@ def draw_bag_visual(game):
             else:
                 break
 
+# In screens.py, add this function to handle enhancements visuals for hand dice (full animations)
+# Call it inside draw_rounded_element's inner_content lambda, after drawing base dots/icon: draw_enhancement_visuals(game, r, die)
+# You'll need to import time and random at top if not already: import time, import random
+
+def draw_enhancement_visuals(game, die_rect, die):
+    """Draws animated visuals for die enhancements in hand (full anims)."""
+    current_time = time.time()
+    enhancements = die.get('enhancements', {})  # Safe get
+    
+    if 'Lucky' in enhancements:
+        # Twinkle: Draw random circles (particles)
+        for _ in range(3):
+            pos = (random.randint(die_rect.left, die_rect.right), random.randint(die_rect.top, die_rect.bottom))
+            pygame.draw.circle(game.screen, (255, 255, 0), pos, 5, width=2)  # Yellow twinkles
+        # Optional small star icon static in corner
+        # Assume you add a star.png later; for now, draw a simple star shape
+        pygame.draw.polygon(game.screen, (255, 255, 0), [
+            (die_rect.topright[0] - 10, die_rect.topright[1] + 5),
+            (die_rect.topright[0] - 5, die_rect.topright[1] + 15),
+            (die_rect.topright[0] - 15, die_rect.topright[1] + 15),
+            (die_rect.topright[0] - 10, die_rect.topright[1] + 5)
+        ])  # Simple triangle star
+
+    if 'Mult' in enhancements:
+        # Purple "x" icon in center; pulsing border
+        text = game.tiny_font.render("x", True, (128, 0, 128))  # Purple
+        game.screen.blit(text, (die_rect.centerx - text.get_width()//2, die_rect.centery - text.get_height()//2))
+        pulse_alpha = int(128 * (math.sin(current_time * 5) + 1) / 2)  # Pulse 0-128 alpha
+        pygame.draw.rect(game.screen, (128, 0, 128, pulse_alpha), die_rect, width=2)  # Pulsing purple border
+
+    if 'Bonus' in enhancements:
+        # Green "+" icon in bottom corner; faint glow
+        text = game.tiny_font.render("+", True, (0, 255, 0))  # Green
+        game.screen.blit(text, (die_rect.bottomright[0] - 15, die_rect.bottomright[1] - 15))
+        glow_surf = pygame.Surface((die_rect.width + 20, die_rect.height + 20)).convert_alpha()
+        glow_surf.fill((0, 255, 0, 50))  # Faint green
+        game.screen.blit(glow_surf, (die_rect.x - 10, die_rect.y - 10))
+
+    if 'Steel' in enhancements:
+        # Thick metallic gray border; shiny reflection (scrolling shine)
+        pygame.draw.rect(game.screen, (100, 100, 100), die_rect, width=4)
+        shine_surf = pygame.Surface((die_rect.width, 10)).convert_alpha()
+        shine_surf.fill((255, 255, 255, 100))  # Semi-transparent white
+        shine_y = (current_time % 1) * die_rect.height  # Scroll down
+        game.screen.blit(shine_surf, (die_rect.x, die_rect.y + shine_y - 5))  # Center shine
+
+    if 'Fragile' in enhancements:
+        # Cracked glass pattern overlay; if breaking, shatter anim
+        # Draw static cracks: Lines across die
+        pygame.draw.line(game.screen, (0, 0, 0, 150), die_rect.topleft, die_rect.bottomright, 2)
+        pygame.draw.line(game.screen, (0, 0, 0, 150), die_rect.topright, die_rect.bottomleft, 2)
+        # Optional shatter: If game.break_effect_start, add fragments (circles flying out)
+        if game.broken_dice and time.time() - game.break_effect_start < 0.5:  # Short anim
+            for _ in range(5):
+                frag_pos = (die_rect.centerx + random.randint(-20, 20), die_rect.centery + random.randint(-20, 20))
+                pygame.draw.circle(game.screen, (173, 216, 230), frag_pos, 3)  # Glass color fragments
+
+    if 'Fate' in enhancements:  # Assuming editions; placeholder tint
+        # Random edition visual (e.g., foil sheen)
+        sheen_surf = pygame.Surface((die_rect.width, die_rect.height)).convert_alpha()
+        sheen_surf.fill((255, 255, 255, 50))  # Shiny overlay
+        game.screen.blit(sheen_surf, die_rect.topleft)
+
+    if 'Strength' in enhancements:
+        # Clustered pips + warm tint
+        tint_surf = pygame.Surface((die_rect.width, die_rect.height)).convert_alpha()
+        tint_surf.fill((255, 165, 0, 50))  # Orange warm tint
+        game.screen.blit(tint_surf, die_rect.topleft)
+        # Extra pips: Draw additional dots in clusters (assume base dots drawn first)
+
+    if 'Stone' in enhancements:
+        # Gray rocky texture (simple noise) + fixed pip
+        for _ in range(20):  # Noise dots for texture
+            pos = (random.randint(die_rect.left, die_rect.right), random.randint(die_rect.top, die_rect.bottom))
+            pygame.draw.circle(game.screen, (100, 100, 100), pos, 1)
+        # Fixed pip: Draw single large dot in center (override base if needed)
+
+    # Color swaps (Red/Blue/etc.): Already handled by base die color, no extra visual needed
+    # Non-die effects (Wealth, Balance, Judgement, Sacrifice, Transmute): Handled in apply, no ongoing visual
+
+# For bag: Simpler static version (call in draw_bag_visual after each small die draw)
+def draw_bag_enhancement_visuals(game, small_die_rect, die):
+    """Draws static icons/tints for die enhancements in bag."""
+    enhancements = die.get('enhancements', {})
+    
+    if 'Lucky' in enhancements:
+        pygame.draw.circle(game.screen, (255, 255, 0), small_die_rect.topright, 3)  # Small static star
+
+    if 'Mult' in enhancements:
+        pygame.draw.rect(game.screen, (128, 0, 128), small_die_rect, width=1)  # Static purple border
+
+    if 'Bonus' in enhancements:
+        pygame.draw.circle(game.screen, (0, 255, 0), small_die_rect.bottomright, 3)  # Green dot
+
+    if 'Steel' in enhancements:
+        pygame.draw.rect(game.screen, (100, 100, 100), small_die_rect, width=2)  # Thick gray border
+
+    if 'Fragile' in enhancements:
+        pygame.draw.line(game.screen, (0, 0, 0, 150), small_die_rect.topleft, small_die_rect.bottomright, 1)  # Single crack
+
+    if 'Fate' in enhancements:
+        pygame.draw.rect(game.screen, (255, 255, 255, 50), small_die_rect, width=1)  # Shiny border
+
+    if 'Strength' in enhancements:
+        tint_surf = pygame.Surface((small_die_rect.width, small_die_rect.height)).convert_alpha()
+        tint_surf.fill((255, 165, 0, 50))  # Static warm tint
+
+    if 'Stone' in enhancements:
+        pygame.draw.rect(game.screen, (100, 100, 100, 50), small_die_rect)  # Gray fill tint
+
+    # Colors: Already by base color
+
 def draw_ui_panel(game):
     """Draws the UI panel with hands, discards, rolls left."""
     panel_x = 50
@@ -1060,6 +1255,7 @@ def draw_pause_menu(game):
     overlay.fill((0, 0, 0))
     overlay.set_alpha(128)  # Semi-transparent black
     game.screen.blit(overlay, (0, 0))
+    
 
     # Centered popup rect (reuse POPUP sizes)
     popup_x = (game.width - constants.POPUP_WIDTH) // 2
