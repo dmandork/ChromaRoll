@@ -6,13 +6,20 @@ import sys  # For exiting the game
 import time  # For animation delays
 import copy
 import sys
+sys.path.insert(0, '.')
 import data
 import screens
 import savegame
 import os
 from constants import *
 from utils import draw_rounded_element, resource_path, create_dice_bag, wrap_text, get_easing
-from statemachine import StateMachine, SplashState, GameOverState
+from statemachine import StateMachine, GameOverState
+from states.splash import SplashState
+from states.prompt import PromptState
+from states.init import InitState
+from states.shop import ShopState
+
+
 
 # Rarity base weights (0-1 scale)
 RARITY_WEIGHTS = {
@@ -49,13 +56,13 @@ class ChromaRollGame:
         self.rolls = []  # Current rolls: list of (die, value)
         self.held = [False] * NUM_DICE_IN_HAND  # Track held dice
         self.discard_selected = [False] * NUM_DICE_IN_HAND  # Track selected for discard
-        self.rerolls_left = MAX_REROLLS if not DEBUG else -1  # -1 for unlimited in debug
+        self.rerolls_left = -1 if DEBUG and DEBUG_UNLIMITED_REROLLS else MAX_REROLLS  # Rerolls per turn (-1 for unlimited in debug)
         self.discards_left = MAX_DISCARDS  # Discards per round
         self.discard_used_this_round = False  # Track if discard was used in the current hand's discard phase
         self.hands_left = MAX_HANDS  # Hands (scores) per round
         self.coins = 0  # Chroma Coins for upgrades
         self.extra_coins = 0  # For tracking bonus coins from gold and silver dice
-        if DEBUG:
+        if DEBUG and DEBUG_INFINITE_COINS:
             self.coins = 999999  # Infinite coins for debug (large value to simulate infinity without breaking int ops)
         self.round_score = 0  # Score for current blind/round
         self.current_stake = 1  # Current stake level
@@ -93,6 +100,7 @@ class ChromaRollGame:
         self.confirm_sell_index = -1  # Index of charm to confirm sell
         self.shop_reroll_cost = 5  # Initial reroll cost for shop
         self.available_packs = random.sample([0, 1, 2, 3, 4], 2)  # Random 2 from 5 packs
+        self.available_rune_packs = []
         self.multipliers_hover = False  # For showing multipliers panel
         self.current_pouch = None
         self.active_tags = []
@@ -100,6 +108,11 @@ class ChromaRollGame:
         # Dedup CHARMS_POOL by name (safeguard against old dups)
         seen_names = set()
         self.is_resuming = False  # Flag
+        self.select_count = 1  # For multi-select in packs
+        self.selected_runes = []  # Temp for rune selection
+        self.current_rune = None  # For 
+        self.current_rune_slot = -1
+        self.selected_dice = []  # For die selection during apply
 
         # In __init__, add the icon paths and cache
         self.charm_icon_paths = {
@@ -293,7 +306,7 @@ class ChromaRollGame:
             else:
                 self.bag[:] = full_refill
         
-        if DEBUG:
+        if DEBUG and DEBUG_FORCE_BAG_COLORS:
             # Default to empty if not defined (e.g., commented out)
             debug_colors = globals().get('DEBUG_COLORS', [])  # Safely get global if commented
             if debug_colors:  # Only force if non-empty list
@@ -303,14 +316,18 @@ class ChromaRollGame:
                     available = [d for d in self.bag if d['color'] == color]
                     if available:
                         selected = random.choice(available)
-                        hand.append(selected)
+                        hand.append(copy.deepcopy(selected))  # Deepcopy to avoid mutating original bag dice
                     else:
                         # New: If no dice of this color (e.g., Glass for testing), create temp one
                         temp_id = f"Temp{color}{len(hand) + 1}"
-                        temp_die = {'id': temp_id, 'color': color, 'faces': DICE_FACES[:]}
+                        temp_die = {'id': temp_id, 'color': color, 'faces': DICE_FACES[:], 'is_temp': True}  # Flag as temp (optional: skip in saves)
                         hand.append(temp_die)  # Add temp without modifying bag
-                return hand[:num_dice]  # Ensure exactly num_dice
+                print(f"DEBUG: Forced hand colors: {[d['color'] for d in hand]}")  # Log for insight (remove if noisy)
+                return hand[:num_dice]  # Ensure exactly num_dice (trim if extra)
             # If empty, fall through to normal draw (with other DEBUG perks active)
+        else:
+            # Normal bag creation (your existing code here)
+            pass  # No additional logic needed here; continue to normal draw below
         
         # Normal draw (or DEBUG fallback)
         actual_num = min(num_dice, len(self.bag))
@@ -819,6 +836,7 @@ class ChromaRollGame:
 
     def get_hand_type_and_score(self):
         """Determines the hand type, base score, modifier, and final score."""
+        
         held_rolls = [(die, value) for i, (die, value) in enumerate(self.rolls) if self.held[i]]
         if not held_rolls:
             return "Nothing", 0, "None", 0, 0, 0.0
@@ -884,16 +902,7 @@ class ChromaRollGame:
             # Find the 3ok and pair groups
             three_group = next(g for g in groups.values() if len(g) == 3)
             pair_group = next(g for g in groups.values() if len(g) == 2)
-            # Mono checks with wild
-            mono_three = len(set(c for c in three_group if c != 'Rainbow')) <= 1
-            mono_pair = len(set(c for c in pair_group if c != 'Rainbow')) <= 1
-            if mono_three and mono_pair:
-                base_modifier *= 2.0
-                modifier_desc = "Both Mono x2"
-            elif mono_three or mono_pair:
-                base_modifier *= 1.5
-                modifier_desc = "One Mono x1.5"
-            # Full mono/rainbow with priority to mono
+            # Full mono/rainbow check first (override group checks to avoid doubling)
             actual_colors = [c for c in colors_list if c != 'Rainbow']
             actual_set = set(actual_colors)
             if len(actual_set) <= 1:
@@ -901,7 +910,17 @@ class ChromaRollGame:
                 modifier_desc = "Full Mono x4"
             elif len(actual_colors) == len(actual_set):
                 base_modifier *= 3.0
-                modifier_desc = f"{modifier_desc + ' + ' if modifier_desc != 'None' else ''}Rainbow x3"
+                modifier_desc = "Rainbow x3"
+            else:
+                # Group mono only if not full
+                mono_three = len(set(c for c in three_group if c != 'Rainbow')) <= 1
+                mono_pair = len(set(c for c in pair_group if c != 'Rainbow')) <= 1
+                if mono_three and mono_pair:
+                    base_modifier *= 2.0
+                    modifier_desc = "Both Mono x2"
+                elif mono_three or mono_pair:
+                    base_modifier *= 1.5
+                    modifier_desc = "One Mono x1.5"
         elif sorted_values in [[1,2,3,4,5], [2,3,4,5,6]] or (has_four_fingers and any(all(x in values for x in s) for s in short_straights_large)):
             hand_type = "Large Straight"
             base_score = 160
@@ -919,7 +938,7 @@ class ChromaRollGame:
                 modifier_desc = "Monochrome x2"
             elif len(actual_colors) == len(actual_set):
                 base_modifier *= 2.0
-                modifier_desc = f"{modifier_desc + ' + ' if 'Mono' in modifier_desc else ''}Rainbow x2"
+                modifier_desc = f"{modifier_desc + ' + ' if modifier_desc != 'None' else ''}Rainbow x2"
         elif any(all(x in values for x in s) for s in straights) or (has_four_fingers and any(all(x in values for x in s) for s in short_straights_small)):
             hand_type = "Small Straight"
             base_score = 90
@@ -937,7 +956,7 @@ class ChromaRollGame:
                 modifier_desc = "Monochrome x2"
             elif len(actual_colors) == len(actual_set):
                 base_modifier *= 2.0
-                modifier_desc = f"{modifier_desc + ' + ' if 'Mono' in modifier_desc else ''}Rainbow x2"
+                modifier_desc = f"{modifier_desc + ' + ' if modifier_desc != 'None' else ''}Rainbow x2"
         elif max_count == 3:
             hand_type = "3 of a Kind"
             base_score = 80
@@ -996,6 +1015,37 @@ class ChromaRollGame:
             if effect_name == 'Mono Mixup' and len(set(colors_list)) > 1:  # Use updated colors_list
                 base_modifier /= 2
 
+        # New: Apply rune enhancements from held dice (before charms)
+        rune_chips = 0
+        rune_mult = 1.0  # New: Separate multiplicative
+        rune_add_mult = 0.0  # New: Separate additive
+        rune_break_dies = []  # For Fragile break
+        for die, value in held_rolls:
+            enh = die.get('enhancements', [])
+            if 'Bonus' in enh:
+                rune_chips += 10
+            if 'Mult' in enh:
+                rune_add_mult += 0.5
+            if 'Lucky' in enh and random.random() < 0.25:
+                # Choose coin or mult
+                if random.random() < 0.5:
+                    self.coins += 1
+                else:
+                    rune_add_mult += 0.5
+            if 'Steel' in enh:
+                rune_mult *= 1.5
+            if 'Fragile' in enh:
+                rune_mult *= 2
+                if random.random() < 0.25:
+                    rune_break_dies.append(die)  # Queue break
+            if 'Stone' in enh:
+                rune_chips += 50
+            # Add more (e.g., if 'Strength' affects score, here)
+
+        # Apply queued breaks (after scoring to get mult)
+        for die in rune_break_dies:
+            self.broken_dice.append(held_rolls.index((die, value)))  # Index for animation
+
         # Apply charms (skip disabled)
         charm_chips = 0
         charm_color_mult_add = 0.0  # Renamed from charm_mono_add
@@ -1052,7 +1102,7 @@ class ChromaRollGame:
                 charm_mult_add *= self.score_mult  # Add this for dagger; adjust if self.score_mult is pre-set elsewhere (e.g., cap at 10.0)
             # Skip Mime, Debt for now
 
-        total_modifier = (base_modifier + charm_color_mult_add) * charm_mult_add  # Removed * self.score_mult (now handled in loop)
+        total_modifier = (base_modifier + charm_color_mult_add + rune_add_mult) * charm_mult_add * rune_mult  # * rune_mult (new)
 
         if hand_type in self.hand_multipliers:
             total_modifier *= self.hand_multipliers[hand_type]  # Apply Prism Pack multiplier
@@ -1065,10 +1115,10 @@ class ChromaRollGame:
         glass_count = sum(1 for die, _ in held_rolls if die['color'] == 'Glass')
         glass_mult = (4 ** glass_count) if not silence_glass else 1.0  # x4 per held Glass, or 1 if silenced
 
-        # If Mime equipped (and not disabled), double the Glass mult (retrigger)
+        # If Mime equipped (and not disabled), re-apply Glass mult (change to *=4 ** count for retrigger, but if bug, *= glass_mult to double existing)
         has_mime = any(c['type'] == 'retrigger_held' for idx, c in enumerate(self.equipped_charms) if idx not in self.disabled_charms)
         if has_mime and not silence_glass:
-            glass_mult *= (4 ** glass_count)  # Apply again for retrigger
+            glass_mult *= (4 ** glass_count)  # Keep as is; if bug, change to glass_mult *= glass_mult to double
 
         total_modifier *= glass_mult
 
@@ -1076,7 +1126,7 @@ class ChromaRollGame:
         if self.current_blind == 'Boss' and self.current_boss_effect and self.current_boss_effect['name'] == 'Multiplier Mute':
             total_modifier = min(total_modifier, 1.5)
 
-        final_score = int((base_score + charm_chips) * total_modifier)  # Round to int for clean display
+        final_score = int((base_score + charm_chips + rune_chips) * total_modifier)  # Round to int for clean display; add rune_chips
         return hand_type, base_score, modifier_desc, final_score, charm_chips, charm_color_mult_add
     
     def calculate_score(self):
@@ -1389,7 +1439,17 @@ class ChromaRollGame:
         else:
             self.shop_charms = random.sample(available_pool, num_shop) if available_pool else []
         
+        self.available_rune_packs = random.sample(data.RUNE_PACKS, min(2, len(data.RUNE_PACKS)))  # Random 1-2 rune packs
+
         print("DEBUG: Generated shop charms:", [c['name'] for c in self.shop_charms])  # Optional: Confirm no dups (remove after test)
+
+    def add_to_rune_tray(self, rune):
+        for k in range(len(self.rune_tray)):
+            if self.rune_tray[k] is None:
+                self.rune_tray[k] = copy.deepcopy(rune)
+                return True
+        self.temp_message = "Rune tray full - discard a rune first."
+        return False
 
     def reroll_shop(self):
         if self.coins >= self.shop_reroll_cost:
@@ -1398,26 +1458,29 @@ class ChromaRollGame:
             self.generate_shop()
 
     def apply_rune_effect(self, rune, die_list=None):
-        name = rune['name']
         if die_list is None:
             die_list = []
-
-        print(f"Applying {name} to {len(die_list)} dice")  # Debug: Confirm call
+        name = rune['name']
+        max_dice = rune.get('max_dice', 0)
+        if len(die_list) > max_dice:
+            self.temp_message = "Too many dice selected!"
+            return
 
         if name == 'Mystic Fool Rune':
-            # Create copy of last rune (track self.last_rune in game; assume set on apply)
-            if hasattr(self, 'last_rune') and self.last_rune:
-                self.rune_tray.append(copy.deepcopy(self.last_rune)) if len(self.rune_tray) < 2 else print("Tray full")  # Or add to inventory
+            if hasattr(self, 'last_rune') and self.last_rune and self.add_to_rune_tray(self.last_rune):
+                self.temp_message = "Copied last rune!"
+            else:
+                self.temp_message = "No last rune or tray full."
 
         elif name == 'Mystic Luck Rune':
-            if len(die_list) > 0:
-                die_list[0]['enhancements'].append('Lucky')
+            for die in die_list[:1]:
+                die['enhancements'].append('Lucky')
 
         elif name == 'Mystic Oracle Rune':
-            # Create 2 random Upgrade Runes (placeholder; add UPGRADE_RUNES list in data.py if implementing hand upgrades)
+            # Assume UPGRADE_RUNES exists or stub: add 2 random hand boosts
             for _ in range(2):
-                upgrade = random.choice(data.UPGRADE_RUNES) if hasattr(data, 'UPGRADE_RUNES') else {}  # Stub
-                self.rune_tray.append(upgrade) if len(self.rune_tray) < 2 else print("Tray full")
+                ht = random.choice(data.HAND_TYPES)
+                self.hand_multipliers[ht] += 0.5  # Or add to rune tray if upgrades are runes
 
         elif name == 'Mystic Mult Rune':
             for die in die_list[:2]:
@@ -1426,114 +1489,96 @@ class ChromaRollGame:
         elif name == 'Mystic Emperor Rune':
             for _ in range(2):
                 new_rune = random.choice(data.MYSTIC_RUNES)
-                self.rune_tray.append(copy.deepcopy(new_rune)) if len(self.rune_tray) < 2 else print("Tray full")
+                self.add_to_rune_tray(new_rune)
 
         elif name == 'Mystic Bonus Rune':
             for die in die_list[:2]:
                 die['enhancements'].append('Bonus')
 
         elif name == 'Mystic Wild Rune':
-            if len(die_list) > 0:
-                die_list[0]['color'] = 'Rainbow'
-                die_list[0]['enhancements'].append('Wild')
+            for die in die_list[:1]:
+                die['color'] = 'Rainbow'
+                die['enhancements'].append('Wild')
 
         elif name == 'Mystic Steel Rune':
-            if len(die_list) > 0:
-                die_list[0]['enhancements'].append('Steel')
+            for die in die_list[:1]:
+                die['enhancements'].append('Steel')
 
         elif name == 'Mystic Fragile Rune':
-            if len(die_list) > 0:
-                die_list[0]['enhancements'].append('Fragile')
+            for die in die_list[:1]:
+                die['enhancements'].append('Fragile')
 
         elif name == 'Mystic Wealth Rune':
-            self.coins = min(self.coins * 2, self.coins + 20)  # Double max +20
+            gain = min(self.coins, 20)
+            self.coins += gain
+            self.temp_message = f"Gained {gain} coins!"
 
         elif name == 'Mystic Fate Rune':
-            # Random edition (placeholder; add EDITIONS if implementing)
-            if self.bag:
+            if random.random() < 0.25 and self.bag:
                 die = random.choice(self.bag)
                 edition = random.choice(['Foil', 'Holo', 'Poly'])
                 die['enhancements'].append(edition)
-                die['enhancements'].append('Fate')  # Track
+                die['enhancements'].append('Fate')
 
         elif name == 'Mystic Strength Rune':
             for die in die_list[:2]:
-                # Harmonize faces: Duplicate mid-high
-                faces = sorted(die['faces'])  # Assume [1,2,3,4,5,6]
-                die['faces'] = faces[2:] + faces[3:5] + [faces[-1]]  # e.g., [3,4,5,6,4,5,6] but trim to 6
-                die['faces'] = die['faces'][:6]  # Ensure 6
+                faces = sorted(die['faces'])
+                die['faces'] = faces[2:] + random.choices(faces[3:], k=2)  # Mid-high dups
+                die['faces'] = die['faces'][:6]
                 die['enhancements'].append('Strength')
 
         elif name == 'Mystic Sacrifice Rune':
             for die in die_list[:2]:
-                value = 5 if die['color'] in BASE_COLORS else 10  # Example coins
+                value = 10 if die['color'] in SPECIAL_COLORS else 5
                 self.coins += value
-                self.bag.remove(die)  # Destroy
+                self.bag.remove(die)
                 if die in self.full_bag:
-                    self.full_bag.remove(die)  # Update full_bag
+                    self.full_bag.remove(die)
+                die['enhancements'].append('Sacrifice')  # Optional track
 
         elif name == 'Mystic Transmute Rune':
             if len(die_list) == 2:
-                target, source = die_list[0], die_list[1]
+                target, source = die_list
                 target['color'] = source['color']
-                target['faces'] = copy.deepcopy(source['faces'])
+                target['faces'] = source['faces'][:]
                 target['enhancements'].append('Transmute')
 
         elif name == 'Mystic Balance Rune':
-            total = sum(c['cost'] for c in self.equipped_charms)  # Example sell value = cost
+            total = sum(c.get('cost', 0) for c in self.equipped_charms)
             self.coins += min(total, 50)
 
         elif name == 'Mystic Gold Rune':
-            if len(die_list) > 0:
-                die_list[0]['color'] = 'Gold'
+            for die in die_list[:1]:
+                die['color'] = 'Gold'
+                die['enhancements'].append('Gold')
 
         elif name == 'Mystic Stone Rune':
-            if len(die_list) > 0:
-                die_list[0]['enhancements'].append('Stone')
-                die_list[0]['faces'] = [4] * 6  # Fixed mid value; adjust
+            for die in die_list[:1]:
+                die['enhancements'].append('Stone')
+                die['faces'] = [random.randint(3,6)] * 6  # Fixed high-ish
 
-        elif name == 'Mystic Red Rune':
+        elif name in ['Mystic Red Rune', 'Mystic Blue Rune', 'Mystic Green Rune', 'Mystic Purple Rune', 'Mystic Yellow Rune']:
+            color = name.split()[1].capitalize()  # Red, etc.
             for die in die_list[:3]:
-                print(f"Changing die {die['id']} to Red")  # Debug
-                die['color'] = 'Red'
-                die['enhancements'].append('Red')
-
-        elif name == 'Mystic Blue Rune':
-            for die in die_list[:3]:
-                print(f"Changing die {die['id']} to Blue")  # Debug
-                die['color'] = 'Blue'
-                die['enhancements'].append('Blue')
-
-        elif name == 'Mystic Green Rune':
-            for die in die_list[:3]:
-                die['color'] = 'Green'
-                die['enhancements'].append('Green')
+                die['color'] = color
+                die['enhancements'].append(color)
 
         elif name == 'Mystic Judgement Rune':
             charm = random.choice([c for c in data.CHARMS_POOL if c['rarity'] == 'Common'])
-            if len(self.equipped_charms) < 5:  # Hardcoded max from your code
+            if len(self.equipped_charms) < self.max_charms:
                 self.equipped_charms.append(charm)
-
-        elif name == 'Mystic Purple Rune':
-            for die in die_list[:3]:
-                die['color'] = 'Purple'
-                die['enhancements'].append('Purple')
-
-        elif name == 'Mystic Yellow Rune':
-            for die in die_list[:3]:
-                die['color'] = 'Yellow'
-                die['enhancements'].append('Yellow')
+                self.temp_message = f"Added {charm['name']}!"
+            else:
+                self.temp_message = "Charm slots full!"
 
         elif name == 'Mystic Silver Rune':
-            if len(die_list) > 0:
-                die_list[0]['color'] = 'Silver'
-                die_list[0]['enhancements'].append('Silver')
-            else:
-                print("No die selected for Silver Rune")  # Debug; optional error message in game
+            for die in die_list[:1]:
+                die['color'] = 'Silver'
+                die['enhancements'].append('Silver')
 
         self.last_rune = rune  # Track for Fool
-        self.refresh_bag()
-        self.temp_message = f"Applied {name}!"
+        self.refresh_bag()  # Update visuals
+        self.temp_message = f"Applied {name}!" if not self.temp_message else self.temp_message
 
     def refresh_bag(self):
         """Force update bag visuals after rune apply."""

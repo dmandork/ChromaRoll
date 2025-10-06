@@ -3,7 +3,13 @@ import os
 import copy
 import data  # For restoring pouch by name
 import constants
-from statemachine import ShopState, BlindsState, GameState  # For state restoration
+from states.splash import SplashState  # Add this
+from statemachine import GameState  # Keep these until extracted
+from states.prompt import PromptState
+from states.init import InitState
+from states.tutorial import TutorialState
+from states.blinds import BlindsState
+from states.shop import ShopState
 
 def save_game(game):
     """Saves the game state to JSON."""
@@ -48,6 +54,7 @@ def save_game(game):
         'current_state': current_state_name,
         'previous_state': previous_state_name,  # New: Save previous for pause cases
         'mute': game.mute,  # Save mute state
+        'rune_tray': copy.deepcopy(game.rune_tray),
         # Dagger/Score Multipliers
         'score_mult': getattr(game, 'score_mult', 1.0),  # Safe default if not present
         'dagger_mult': getattr(game, 'dagger_mult', 0.0),
@@ -138,6 +145,7 @@ def load_game(game):
         game.mute = save_data.get('mute', False)
         game.toggle_mute()  # Applies volumes immediately (ensures SFX are set correctly on load)
         game.hand_multipliers = copy.deepcopy(save_data.get('hand_multipliers', {}))
+        game.rune_tray = copy.deepcopy(save_data.get('rune_tray', [None, None]))
         for ht in data.HAND_TYPES:
             if ht not in game.hand_multipliers:
                 game.hand_multipliers[ht] = 1.0

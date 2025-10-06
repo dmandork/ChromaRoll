@@ -319,31 +319,29 @@ def draw_game_screen(game):
     if game.show_popup:
         draw_popup(game)
 
-    # New: Store rects for hand dice (assuming draw_dice(game) draws them but doesn't store rects)
-    game.state_machine.current_state.hand_die_rects = []  # Clear first
+    # New: Build and return hand_rects, rolls, bag_rects, bag for animations in GameState
+    hand_rects = []
     total_dice_width = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
     start_x = (game.width - total_dice_width) // 2
-    for i in range(constants.NUM_DICE_IN_HAND):  # Loop to calc rects (match your draw_dice logic)
+    for i in range(constants.NUM_DICE_IN_HAND):
         x = start_x + i * (constants.DIE_SIZE + 20)
         size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[i] else constants.DIE_SIZE
         offset = (constants.DIE_SIZE - size) / 2 if game.held[i] else 0
         die_rect = pygame.Rect(x + offset, game.height - constants.DIE_SIZE - 100 + offset, size, size)
-        game.state_machine.current_state.hand_die_rects.append(die_rect)
-
-    # New: Store rects for bag dice (assuming draw_bag_visual(game) draws small dice in a grid/row)
-    game.state_machine.current_state.bag_die_rects = []
-    # Assuming bag is in upper right, e.g., bag_x = game.width - (constants.SMALL_DIE_SIZE * math.ceil(len(game.bag)/5) + spacing) - padding
-    # You'll need to adjust based on your draw_bag_visual code; here's a placeholder assuming row of small dice
-    bag_x = game.width - 200  # Example start x for upper right bag
-    bag_y = 50  # Example y
-    rows = math.ceil(len(game.bag) / 5)  # Assume 5 per row
-    for j, die in enumerate(game.bag):  # Or your visible subset
-        row = j // 5
-        col = j % 5
-        small_rect = pygame.Rect(bag_x + col * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING), 
-                                 bag_y + row * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING), 
-                                 constants.SMALL_DIE_SIZE, constants.SMALL_DIE_SIZE)
-        game.state_machine.current_state.bag_die_rects.append(small_rect)
+        hand_rects.append(die_rect)
+    
+    bag_rects = []
+    columns = 5
+    rows = math.ceil(len(game.bag) / columns) if game.bag else 1
+    for j in range(len(game.bag)):
+        col = j % columns
+        row = j // columns
+        small_x = bag_x + constants.BAG_PADDING + col * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING)
+        small_y = bag_y + constants.BAG_PADDING + row * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING)
+        small_rect = pygame.Rect(small_x, small_y, constants.SMALL_DIE_SIZE, constants.SMALL_DIE_SIZE)
+        bag_rects.append(small_rect)
+    
+    return hand_rects, game.rolls, bag_rects, game.bag  # Add this return
 
 def draw_shop_screen(game, skip_tooltips=False):
     """Draws the shop screen with equipped charms (sell), shop charms (buy), and Prism Packs."""
@@ -875,8 +873,13 @@ def draw_dice(game):
                 outer_rect = pygame.Rect(x + offset - 3, y + offset - 3, size + 6, size + 6)
                 pygame.draw.rect(game.screen, (255, 0, 0), outer_rect, 3, border_radius=constants.DIE_BORDER_RADIUS)
             # Draw dots
-            draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=_draw_dots)
+            inner_content = lambda r: [
+                _draw_dots(r),  # Existing pips
+                draw_enhancement_visuals(game, r, die)  # Add enhancements/animations
+            ]
+            draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=inner_content)
 
+# In screens.py, update draw_bag_visual to use inner_content with lambda for enhancements (no need for draw_dots_or_icon if small dies have no pips; add if needed)
 def draw_bag_visual(game):
     """Draws a brown bag with rounded corners and black border, with dice inside."""
     num_dice = len(game.bag)
@@ -896,19 +899,18 @@ def draw_bag_visual(game):
     bag_color = game.get_bag_color()
     # Draw upside-down triangle at bottom of Z-order
     triangle_points = [
-        (bag_x + bag_width // 2, bag_y + 10),  # bottom tip
-        (bag_x + bag_width // 2 - 15, bag_y - 10),  # top left
-        (bag_x + bag_width // 2 + 15, bag_y - 10)   # top right
+        (bag_x + bag_width // 2, bag_y + 10), # bottom tip
+        (bag_x + bag_width // 2 - 15, bag_y - 10), # top left
+        (bag_x + bag_width // 2 + 15, bag_y - 10) # top right
     ]
     pygame.draw.polygon(game.screen, bag_color, triangle_points)
     pygame.draw.polygon(game.screen, (0, 0, 0), triangle_points, 2)
     draw_rounded_element(game.screen, bag_rect, bag_color, border_color=(0, 0, 0), border_width=2, radius=constants.BAG_BORDER_RADIUS, inner_content=None)
-
     sorted_bag = sorted(game.bag, key=lambda d: list(constants.COLORS.keys()).index(d['color']))
     start_x = bag_x + constants.BAG_PADDING
     start_y = bag_y + constants.BAG_PADDING
     index = 0
-    current_time = time.time()  # For animation
+    current_time = time.time() # For animation
     for row in range(rows):
         y = start_y + row * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING)
         for col in range(columns):
@@ -922,7 +924,8 @@ def draw_bag_visual(game):
                     color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
                 else:
                     color_rgb = constants.COLORS[color]
-                draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=1, radius=constants.SMALL_DIE_BORDER_RADIUS, inner_content=None)
+                inner_content = lambda r: draw_bag_enhancement_visuals(game, r, die)  # Add this; no pips for small dies
+                draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=1, radius=constants.SMALL_DIE_BORDER_RADIUS, inner_content=inner_content)
                 index += 1
             else:
                 break
@@ -932,112 +935,92 @@ def draw_bag_visual(game):
 # You'll need to import time and random at top if not already: import time, import random
 
 def draw_enhancement_visuals(game, die_rect, die):
-    """Draws animated visuals for die enhancements in hand (full anims)."""
-    current_time = time.time()
-    enhancements = die.get('enhancements', {})  # Safe get
-    
-    if 'Lucky' in enhancements:
-        # Twinkle: Draw random circles (particles)
-        for _ in range(3):
-            pos = (random.randint(die_rect.left, die_rect.right), random.randint(die_rect.top, die_rect.bottom))
-            pygame.draw.circle(game.screen, (255, 255, 0), pos, 5, width=2)  # Yellow twinkles
-        # Optional small star icon static in corner
-        # Assume you add a star.png later; for now, draw a simple star shape
-        pygame.draw.polygon(game.screen, (255, 255, 0), [
-            (die_rect.topright[0] - 10, die_rect.topright[1] + 5),
-            (die_rect.topright[0] - 5, die_rect.topright[1] + 15),
-            (die_rect.topright[0] - 15, die_rect.topright[1] + 15),
-            (die_rect.topright[0] - 10, die_rect.topright[1] + 5)
-        ])  # Simple triangle star
-
-    if 'Mult' in enhancements:
-        # Purple "x" icon in center; pulsing border
-        text = game.tiny_font.render("x", True, (128, 0, 128))  # Purple
-        game.screen.blit(text, (die_rect.centerx - text.get_width()//2, die_rect.centery - text.get_height()//2))
-        pulse_alpha = int(128 * (math.sin(current_time * 5) + 1) / 2)  # Pulse 0-128 alpha
-        pygame.draw.rect(game.screen, (128, 0, 128, pulse_alpha), die_rect, width=2)  # Pulsing purple border
-
-    if 'Bonus' in enhancements:
-        # Green "+" icon in bottom corner; faint glow
-        text = game.tiny_font.render("+", True, (0, 255, 0))  # Green
-        game.screen.blit(text, (die_rect.bottomright[0] - 15, die_rect.bottomright[1] - 15))
-        glow_surf = pygame.Surface((die_rect.width + 20, die_rect.height + 20)).convert_alpha()
-        glow_surf.fill((0, 255, 0, 50))  # Faint green
-        game.screen.blit(glow_surf, (die_rect.x - 10, die_rect.y - 10))
-
-    if 'Steel' in enhancements:
-        # Thick metallic gray border; shiny reflection (scrolling shine)
-        pygame.draw.rect(game.screen, (100, 100, 100), die_rect, width=4)
-        shine_surf = pygame.Surface((die_rect.width, 10)).convert_alpha()
-        shine_surf.fill((255, 255, 255, 100))  # Semi-transparent white
-        shine_y = (current_time % 1) * die_rect.height  # Scroll down
-        game.screen.blit(shine_surf, (die_rect.x, die_rect.y + shine_y - 5))  # Center shine
-
-    if 'Fragile' in enhancements:
-        # Cracked glass pattern overlay; if breaking, shatter anim
-        # Draw static cracks: Lines across die
-        pygame.draw.line(game.screen, (0, 0, 0, 150), die_rect.topleft, die_rect.bottomright, 2)
-        pygame.draw.line(game.screen, (0, 0, 0, 150), die_rect.topright, die_rect.bottomleft, 2)
-        # Optional shatter: If game.break_effect_start, add fragments (circles flying out)
-        if game.broken_dice and time.time() - game.break_effect_start < 0.5:  # Short anim
-            for _ in range(5):
-                frag_pos = (die_rect.centerx + random.randint(-20, 20), die_rect.centery + random.randint(-20, 20))
-                pygame.draw.circle(game.screen, (173, 216, 230), frag_pos, 3)  # Glass color fragments
-
-    if 'Fate' in enhancements:  # Assuming editions; placeholder tint
-        # Random edition visual (e.g., foil sheen)
-        sheen_surf = pygame.Surface((die_rect.width, die_rect.height)).convert_alpha()
-        sheen_surf.fill((255, 255, 255, 50))  # Shiny overlay
-        game.screen.blit(sheen_surf, die_rect.topleft)
-
-    if 'Strength' in enhancements:
-        # Clustered pips + warm tint
-        tint_surf = pygame.Surface((die_rect.width, die_rect.height)).convert_alpha()
-        tint_surf.fill((255, 165, 0, 50))  # Orange warm tint
-        game.screen.blit(tint_surf, die_rect.topleft)
-        # Extra pips: Draw additional dots in clusters (assume base dots drawn first)
-
-    if 'Stone' in enhancements:
-        # Gray rocky texture (simple noise) + fixed pip
-        for _ in range(20):  # Noise dots for texture
-            pos = (random.randint(die_rect.left, die_rect.right), random.randint(die_rect.top, die_rect.bottom))
-            pygame.draw.circle(game.screen, (100, 100, 100), pos, 1)
-        # Fixed pip: Draw single large dot in center (override base if needed)
+    enhs = die.get('enhancements', [])
+    if not enhs:
+        return
+    icon_size = 15
+    start_x = die_rect.x + 5
+    start_y = die_rect.y + die_rect.height - icon_size - 5  # Bottom row
+    for idx, enh in enumerate(enhs):
+        # Skip color-specific and Wild—no indicators needed; they render as normal dice
+        if enh in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild']:
+            continue  # No visual, just apply color change
+        x = start_x + idx * (icon_size + 5)
+        color = (255, 255, 255)  # White default
+        if enh == 'Lucky':
+            color = (255, 215, 0)  # Gold
+            pygame.draw.polygon(game.screen, color, [(x+7, start_y), (x, start_y+icon_size//2), (x+icon_size, start_y+icon_size//2)])  # Triangle star
+        elif enh == 'Mult':
+            text = game.tiny_font.render("x", True, (0, 255, 0))  # Green x
+            game.screen.blit(text, (x, start_y))
+        elif enh == 'Bonus':
+            pygame.draw.circle(game.screen, (0, 255, 0), (x+7, start_y+7), 5)  # Green dot
+        elif enh == 'Steel':
+            pygame.draw.rect(game.screen, (169, 169, 169), pygame.Rect(x, start_y, icon_size, icon_size), 2)  # Gray border
+        elif enh == 'Fragile':
+            pygame.draw.line(game.screen, (255, 0, 0), (x, start_y), (x+icon_size, start_y+icon_size), 2)  # Red crack
+        elif enh == 'Fate':
+            text = game.tiny_font.render("E", True, (255, 0, 255))  # Magenta E for edition
+            game.screen.blit(text, (x, start_y))
+        elif enh == 'Strength':
+            pygame.draw.polygon(game.screen, (0, 0, 255), [(x+7, start_y), (x, start_y+icon_size), (x+icon_size, start_y+icon_size)])  # Blue arrow
+        elif enh == 'Sacrifice':
+            pygame.draw.circle(game.screen, (255, 0, 0), (x+7, start_y+7), 7, 2)  # Red circle (destroyed)
+        elif enh == 'Transmute':
+            text = game.tiny_font.render("T", True, (128, 0, 128))  # Purple T
+            game.screen.blit(text, (x, start_y))
+        elif enh in ['Gold', 'Silver']:
+            color = constants.COLORS[enh]
+            pygame.draw.rect(game.screen, color, pygame.Rect(x, start_y, icon_size, icon_size))
+        elif enh == 'Stone':
+            pygame.draw.rect(game.screen, (128, 128, 128), pygame.Rect(x, start_y, icon_size, icon_size))  # Gray block
+        # Add more if new enh (e.g., 'Judgement' no visual needed)
 
     # Color swaps (Red/Blue/etc.): Already handled by base die color, no extra visual needed
     # Non-die effects (Wealth, Balance, Judgement, Sacrifice, Transmute): Handled in apply, no ongoing visual
 
 # For bag: Simpler static version (call in draw_bag_visual after each small die draw)
-def draw_bag_enhancement_visuals(game, small_die_rect, die):
-    """Draws static icons/tints for die enhancements in bag."""
-    enhancements = die.get('enhancements', {})
-    
-    if 'Lucky' in enhancements:
-        pygame.draw.circle(game.screen, (255, 255, 0), small_die_rect.topright, 3)  # Small static star
-
-    if 'Mult' in enhancements:
-        pygame.draw.rect(game.screen, (128, 0, 128), small_die_rect, width=1)  # Static purple border
-
-    if 'Bonus' in enhancements:
-        pygame.draw.circle(game.screen, (0, 255, 0), small_die_rect.bottomright, 3)  # Green dot
-
-    if 'Steel' in enhancements:
-        pygame.draw.rect(game.screen, (100, 100, 100), small_die_rect, width=2)  # Thick gray border
-
-    if 'Fragile' in enhancements:
-        pygame.draw.line(game.screen, (0, 0, 0, 150), small_die_rect.topleft, small_die_rect.bottomright, 1)  # Single crack
-
-    if 'Fate' in enhancements:
-        pygame.draw.rect(game.screen, (255, 255, 255, 50), small_die_rect, width=1)  # Shiny border
-
-    if 'Strength' in enhancements:
-        tint_surf = pygame.Surface((small_die_rect.width, small_die_rect.height)).convert_alpha()
-        tint_surf.fill((255, 165, 0, 50))  # Static warm tint
-
-    if 'Stone' in enhancements:
-        pygame.draw.rect(game.screen, (100, 100, 100, 50), small_die_rect)  # Gray fill tint
-
-    # Colors: Already by base color
+def draw_bag_enhancement_visuals(game, die_rect, die):
+    enhs = die.get('enhancements', [])
+    if not enhs:
+        return
+    icon_size = 15
+    start_x = die_rect.x + 5
+    start_y = die_rect.y + die_rect.height - icon_size - 5  # Bottom row
+    for idx, enh in enumerate(enhs):
+        # Skip color-specific and Wild—no indicators needed; they render as normal dice
+        if enh in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild']:
+            continue  # No visual, just apply color change
+        x = start_x + idx * (icon_size + 5)
+        color = (255, 255, 255)  # White default
+        if enh == 'Lucky':
+            color = (255, 215, 0)  # Gold
+            pygame.draw.polygon(game.screen, color, [(x+7, start_y), (x, start_y+icon_size//2), (x+icon_size, start_y+icon_size//2)])  # Triangle star
+        elif enh == 'Mult':
+            text = game.tiny_font.render("x", True, (0, 255, 0))  # Green x
+            game.screen.blit(text, (x, start_y))
+        elif enh == 'Bonus':
+            pygame.draw.circle(game.screen, (0, 255, 0), (x+7, start_y+7), 5)  # Green dot
+        elif enh == 'Steel':
+            pygame.draw.rect(game.screen, (169, 169, 169), pygame.Rect(x, start_y, icon_size, icon_size), 2)  # Gray border
+        elif enh == 'Fragile':
+            pygame.draw.line(game.screen, (255, 0, 0), (x, start_y), (x+icon_size, start_y+icon_size), 2)  # Red crack
+        elif enh == 'Fate':
+            text = game.tiny_font.render("E", True, (255, 0, 255))  # Magenta E for edition
+            game.screen.blit(text, (x, start_y))
+        elif enh == 'Strength':
+            pygame.draw.polygon(game.screen, (0, 0, 255), [(x+7, start_y), (x, start_y+icon_size), (x+icon_size, start_y+icon_size)])  # Blue arrow
+        elif enh == 'Sacrifice':
+            pygame.draw.circle(game.screen, (255, 0, 0), (x+7, start_y+7), 7, 2)  # Red circle (destroyed)
+        elif enh == 'Transmute':
+            text = game.tiny_font.render("T", True, (128, 0, 128))  # Purple T
+            game.screen.blit(text, (x, start_y))
+        elif enh in ['Gold', 'Silver']:
+            color = constants.COLORS[enh]
+            pygame.draw.rect(game.screen, color, pygame.Rect(x, start_y, icon_size, icon_size))
+        elif enh == 'Stone':
+            pygame.draw.rect(game.screen, (128, 128, 128), pygame.Rect(x, start_y, icon_size, icon_size))  # Gray block
+        # Add more if new enh (e.g., 'Judgement' no visual needed)
 
 def draw_ui_panel(game):
     """Draws the UI panel with hands, discards, rolls left."""
@@ -1521,10 +1504,11 @@ def draw_dice_select_screen(game):
             color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
         else:
             color_rgb = constants.COLORS[color]
-        pygame.draw.rect(game.screen, color_rgb, die_rect, border_radius=constants.DIE_BORDER_RADIUS)
-        pygame.draw.rect(game.screen, (0, 0, 0), die_rect, 2, border_radius=constants.DIE_BORDER_RADIUS)
-        # Single pip
-        pygame.draw.circle(game.screen, (0, 0, 0), die_rect.center, constants.DOT_RADIUS)
+        inner_content = lambda r: [
+            pygame.draw.circle(game.screen, (0, 0, 0), r.center, constants.DOT_RADIUS),  # Single pip
+            draw_enhancement_visuals(game, r, {'color': color, 'enhancements': []})  # Stub die for preview
+        ]
+        draw_rounded_element(game.screen, die_rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=inner_content)
         choice_rects.append((choice_rect, color))
     mouse_pos = pygame.mouse.get_pos()
     for rect, color in choice_rects:

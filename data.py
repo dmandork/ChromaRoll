@@ -178,9 +178,9 @@ CHARMS_POOL = [
 # Add to data.py (e.g., at the end or near CHARMS_POOL)
 
 RUNE_PACKS = [
-    {'name': 'Basic Rune Pack', 'cost': 4, 'choices': 3, 'select': 1, 'rarity': 'Common'},
-    {'name': 'Mega Rune Pack', 'cost': 7, 'choices': 5, 'select': 1, 'rarity': 'Uncommon'},
-    {'name': 'Super Rune Pack', 'cost': 9, 'choices': 5, 'select': 2, 'rarity': 'Rare'}
+    {'name': 'Basic Rune Pack', 'cost': 4, 'choices': 3, 'select': 1, 'rarity': 'Common', 'desc': 'Choose 1 from 3 common mystic runes.'},
+    {'name': 'Mega Rune Pack', 'cost': 7, 'choices': 5, 'select': 1, 'rarity': 'Uncommon', 'desc': 'Choose 1 from 5 uncommon mystic runes.'},
+    {'name': 'Super Rune Pack', 'cost': 9, 'choices': 5, 'select': 2, 'rarity': 'Rare', 'desc': 'Choose 2 from 5 rare mystic runes.'}
 ]
 
 # In data.py, update MYSTIC_RUNES to add 'max_dice' key (0 for no die, 1 default, 2/3 for multi)
