@@ -1274,6 +1274,9 @@ def draw_pause_menu(game):
     if game.mute_button_rect.collidepoint(pygame.mouse.get_pos()):
         pygame.draw.rect(game.screen, constants.THEME['button_hover'], game.mute_button_rect, border_radius=5, width=2)  # Border glow
 
+    # Return the rects for handle_event
+    return button_rects, game.mute_button_rect
+
 def draw_popup(game):
     """Draws the beaten blind popup with a single Continue button and $ animation."""
     popup_rect = pygame.Rect(game.width // 2 - constants.POPUP_WIDTH // 2, 200, constants.POPUP_WIDTH, constants.POPUP_HEIGHT)

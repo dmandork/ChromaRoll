@@ -3,12 +3,9 @@ import pygame
 import time
 import math
 from states.base import State  # Import from base
-from states.shop import ShopState  # For transition after popup
-from states.pause import PauseMenuState  # For ESC pause (adjust file if different)
-from states.rune_use import RuneUseState  # For rune tray clicks (adjust if different)
 from screens import draw_game_screen, draw_popup, draw_buttons, draw_tooltip, draw_enhancement_visuals
-from constants import DEBUG, NUM_DICE_IN_HAND, THEME, DIE_SIZE, HELD_DIE_SCALE, CHARM_SIZE
-from data import ENH_DESC
+from constants import DEBUG, NUM_DICE_IN_HAND, THEME, DIE_SIZE, HELD_DIE_SCALE, CHARM_SIZE, CHARM_BOX_WIDTH, CHARM_SPACING, CHARM_BOX_HEIGHT, SPECIAL_COLORS, PACK_BOOST
+from data import *
 import savegame
 
 class GameState(State):
@@ -48,12 +45,9 @@ class GameState(State):
 
     def draw(self):
         self.game.screen.fill(THEME['background'])  # Clear relics and prevent stacking
+        from screens import draw_game_screen
         # Modified: Assume draw_game_screen now returns hand_rects, rolls, bag_rects, bag for animations
         hand_rects, rolls, bag_rects, bag = draw_game_screen(self.game)  # Main game elements + return data
-        
-        # Store rects for hover/clicks in handle_event
-        self.hand_die_rects = hand_rects or []
-        self.bag_die_rects = bag_rects or []
         
         # Add animations using returned data
         current_time = time.time()
@@ -104,7 +98,7 @@ class GameState(State):
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                
+                from states.pause import PauseMenuState  # Lazy import
                 print("Escape pressed in GameState - Pausing")  # Debug
                 savegame.save_game(self.game)  # Save
                 self.game.previous_state = self  # Instance
@@ -158,7 +152,6 @@ class GameState(State):
                     self.game.drag_offset_y = mouse_pos[1] - y
                     break
 
-            # New: Tray click to use rune
             for i, tray_rect in enumerate(self.tray_rects):
                 if tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
                     rune = self.game.rune_tray[i]
