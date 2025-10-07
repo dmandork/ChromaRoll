@@ -4,7 +4,7 @@ import pygame
 from constants import *  # For THEME, BUTTON_WIDTH, etc.
 from utils import draw_rounded_element, resource_path  # If used for buttons/tooltips
 from screens import draw_init_screen, draw_custom_button  # For main drawing and buttons
-from statemachine import State  # Keep these if not extracted
+from states.base import State  # Keep these if not extracted
 from states.tutorial import TutorialState  # New location for TutorialState
 from states.blinds import BlindsState
 # If references other states (e.g., change to GameState), import them

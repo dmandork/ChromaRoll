@@ -6,11 +6,12 @@ import savegame  # Module import for savegame.load_game and savegame.delete_save
 from constants import *  # For THEME, BUTTON_WIDTH, etc.
 from screens import draw_custom_button  # Correct: Assuming it's in screens.py based on your original code
 from screens import draw_confirm_sell_popup  # If used; remove if not needed
-from statemachine import State
 # Import unextracted states (they're still in statemachine.py until you move them)
-from statemachine import GameState, ShopState, PauseMenuState
+from states.shop import ShopState
 from states.init import InitState
 from states.blinds import BlindsState
+from states.base import State
+from states.game import GameState
 
 class PromptState(State):
     def __init__(self, game):

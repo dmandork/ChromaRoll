@@ -1,15 +1,16 @@
+# savegame.py
 import json
 import os
 import copy
 import data  # For restoring pouch by name
 import constants
 from states.splash import SplashState  # Add this
-from statemachine import GameState  # Keep these until extracted
-from states.prompt import PromptState
-from states.init import InitState
-from states.tutorial import TutorialState
-from states.blinds import BlindsState
-from states.shop import ShopState
+from states.game import GameState  # Updated from statemachine
+from states.blinds import BlindsState  # Updated from statemachine
+from states.shop import ShopState  # Updated from statemachine
+# Add imports for other states as needed, e.g.:
+# from states.pause import PauseMenuState
+# from states.game_over import GameOverState
 
 def save_game(game):
     """Saves the game state to JSON."""

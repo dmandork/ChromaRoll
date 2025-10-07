@@ -5,13 +5,13 @@ import copy
 from constants import *  # For THEME, BUTTON_WIDTH, BASE_TARGETS, etc.
 from utils import draw_rounded_element, resource_path  # For buttons/UI elements
 from screens import draw_blinds_screen, draw_custom_button  # For main blinds drawing/buttons
-from statemachine import State
+from states.base import State
 # Import extracted states if referenced (e.g., for button transitions)
 # from states.game import GameState  # If extracted; else from statemachine import GameState
 # from states.shop import ShopState  # If extracted and referenced
 from data import BOSS_EFFECTS
-from statemachine import GameState
-from states.shop import ShopState
+from states.game import GameState
+
 
 class BlindsState(State):
     def __init__(self, game):
@@ -39,6 +39,7 @@ class BlindsState(State):
         self.continue_rect, self.debug_button_rect, self.up_rect, self.down_rect, self.debug_jump_rect = draw_blinds_screen(self.game)
 
     def handle_event(self, event):
+        from states.shop import ShopState  # Lazy import
         from states.init import InitState
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()

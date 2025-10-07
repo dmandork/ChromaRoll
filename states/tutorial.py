@@ -4,7 +4,7 @@ import time  # If used for timers/animations
 from constants import *  # For THEME, BUTTON_WIDTH, etc.
 from utils import get_easing, draw_rounded_element, wrap_text, resource_path  # If used for UI
 from screens import draw_tutorial_screen, draw_custom_button  # For main drawing/buttons
-from statemachine import State
+from states.base import State
 # Import referenced states (e.g., InitState for change_state calls)
 # If other states like BlindsState are referenced, add them (e.g., from statemachine import BlindsState if not extracted)
 

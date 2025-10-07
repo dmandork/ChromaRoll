@@ -13,11 +13,13 @@ import savegame
 import os
 from constants import *
 from utils import draw_rounded_element, resource_path, create_dice_bag, wrap_text, get_easing
-from statemachine import StateMachine, GameOverState
+
 from states.splash import SplashState
 from states.prompt import PromptState
 from states.init import InitState
 from states.shop import ShopState
+from states.base import StateMachine
+from states.game_over import GameOverState
 
 
 

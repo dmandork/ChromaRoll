@@ -7,11 +7,9 @@ import os
 from constants import *  # For THEME, BUTTON_WIDTH, SHOP_REROLL_COST, etc.
 from utils import draw_rounded_element, resource_path, wrap_text  # For UI/buttons
 from screens import draw_shop_screen, draw_custom_button, draw_tooltip  # For main shop drawing/buttons
-from data import CHARMS_POOL, PACK_BOOST  # For charm generation/packs
-from statemachine import State
+from data import CHARMS_POOL  # For charm generation/packs
+from states.base import State  # Updated: Import base State here
 # Import extracted states if referenced (e.g., for continue/back buttons)
-from states.blinds import BlindsState  # If back to blinds
-from statemachine import GameState, PauseMenuState, DebugMenuState, DebugCharmState, DebugPrismState, ConfirmSellState, PackSelectState, DiceSelectState, RuneSelectState, RuneUseState  # If extracted and referenced
 
 class ShopState(State):
     def __init__(self, game):
@@ -224,11 +222,11 @@ class ShopState(State):
                     if rect.collidepoint(mouse_pos):
                         target_index = i
                         break
-                if target_index != -1 and target_index != self.game.dragging_charm_index:
-                    self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
-                        self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
-                self.game.dragging_charm_index = -1
-                self.game.dragging_shop = False
+                    if target_index != -1 and target_index != self.game.dragging_charm_index:
+                        self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
+                            self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
+                    self.game.dragging_charm_index = -1
+                    self.game.dragging_shop = False
 
         if event.type == pygame.MOUSEWHEEL and DEBUG and self.debug_panel_open:
             icons_per_row = 4
@@ -243,23 +241,6 @@ class ShopState(State):
         if event.type == pygame.MOUSEMOTION:
             if self.game.dragging_charm_index != -1:
                 pass  # Dragging handled in draw_shop_screen
-
-        if event.type == pygame.MOUSEBUTTONUP:
-            if self.game.dragging_charm_index != -1:
-                mouse_pos = pygame.mouse.get_pos()
-                target_index = -1
-                for i in range(len(self.game.equipped_charms)):
-                    x = 50 + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
-                    y = 150
-                    rect = pygame.Rect(x, y, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
-                    if rect.collidepoint(mouse_pos):
-                        target_index = i
-                        break
-                if target_index != -1 and target_index != self.game.dragging_charm_index:
-                    self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
-                        self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
-                self.game.dragging_charm_index = -1
-                self.game.dragging_shop = False
 
     def draw_debug_panel(self):
         """Draws the debug panel with improved spacing and text readability."""

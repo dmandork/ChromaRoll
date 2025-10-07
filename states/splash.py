@@ -6,9 +6,9 @@ import sys
 from constants import *  # Absolute: Assumes run from root
 from utils import get_easing, draw_rounded_element, wrap_text, resource_path
 from screens import draw_splash_screen
-from statemachine import State
 from states.prompt import PromptState  # For transition after splash if needed
 from states.init import InitState
+from states.base import State
 
 class SplashState(State):
     def __init__(self, game):
