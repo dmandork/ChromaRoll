@@ -8,14 +8,7 @@ from constants import *  # For THEME, BUTTON_WIDTH, SHOP_REROLL_COST, etc.
 from utils import draw_rounded_element, resource_path, wrap_text  # For UI/buttons
 from screens import draw_shop_screen, draw_custom_button, draw_tooltip  # For main shop drawing/buttons
 from data import CHARMS_POOL  # For charm generation/packs
-from states.base import State  # Updated: Import base State here
-# Import extracted states if referenced (e.g., for continue/back buttons)
-from states.debug import DebugMenuState
-from states.pause import PauseMenuState
-from states.rune import RuneSelectState, RuneUseState
-from states.dice_select import DiceSelectState
-from states.pack_select import PackSelectState
-from states.confirm_sell import ConfirmSellState
+from states.base import State
 
 class ShopState(State):
     def __init__(self, game):
@@ -73,13 +66,14 @@ class ShopState(State):
         from states.blinds import BlindsState  # Lazy import here - loads only when method runs
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                from states.pause import PauseMenuState  # Lazy import
                 self.game.previous_state = self.game.state_machine.current_state
                 self.game.state_machine.change_state(PauseMenuState(self.game))
             elif DEBUG and self.debug_panel_open:
                 # Keyboard scrolling
                 icons_per_row = 4
                 row_height = 100 + 50  # Match draw_debug_panel
-                num_rows = (len(data.CHARMS_POOL) + icons_per_row - 1) // icons_per_row
+                num_rows = (len(CHARMS_POOL) + icons_per_row - 1) // icons_per_row
                 total_content_height = num_rows * row_height + 70
                 max_scroll = max(0, total_content_height - DEBUG_PANEL_HEIGHT)
                 if event.key == pygame.K_UP:
@@ -105,7 +99,7 @@ class ShopState(State):
                             self.game.temp_message = "Debug panel closed"
                             self.game.temp_message_start = time.time()
                         elif action == 'equip_all':
-                            for charm in data.CHARMS_POOL:
+                            for charm in CHARMS_POOL:
                                 if charm['name'] not in [c['name'] for c in self.game.equipped_charms] and len(self.game.equipped_charms) < self.game.max_charms * 2:
                                     self.game.equipped_charms.append(copy.deepcopy(charm))
                             print("DEBUG: Equipped all available charms!")
@@ -128,6 +122,7 @@ class ShopState(State):
             
             # Add this: Handle new debug menu button click
             if DEBUG and DEBUG_MENU_IN_SHOP and self.debug_button_rect.collidepoint(mouse_pos):
+                from states.debug import DebugMenuState  # Lazy import
                 self.game.state_machine.change_state(DebugMenuState(self.game))  # New state below
                 return
             
@@ -140,6 +135,7 @@ class ShopState(State):
             # Handle sell
             for i, sell_rect in enumerate(self.sell_rects or []):
                 if sell_rect.collidepoint(mouse_pos):
+                    from states.confirm_sell import ConfirmSellState  # Lazy import
                     self.game.confirm_sell_index = i
                     self.game.state_machine.change_state(ConfirmSellState(self.game))
                     return
@@ -172,10 +168,12 @@ class ShopState(State):
                     if self.game.coins - cost >= min_coins:
                         self.game.coins -= cost
                         if pack_idx in [0, 1, 2]:
+                            from states.pack_select import PackSelectState  # Lazy import
                             self.game.pack_choices = random.sample(data.HAND_TYPES, pack_choices_num[pack_idx])
                             self.game.state_machine.change_state(PackSelectState(self.game))
                             self.game.available_packs.remove(pack_idx)
                         elif pack_idx in [3, 4, 5]:
+                            from states.dice_select import DiceSelectState  # Lazy import
                             if pack_idx == 5:
                                 self.game.pack_choices = random.sample(SPECIAL_COLORS, pack_choices_num[pack_idx])
                             else:
@@ -183,6 +181,7 @@ class ShopState(State):
                             self.game.state_machine.change_state(DiceSelectState(self.game))
                             self.game.available_packs.remove(pack_idx)
                         elif pack_idx in [6, 7, 8]:  # New: Rune packs
+                            from states.rune import RuneSelectState  # Lazy import
                             rune_pack = data.RUNE_PACKS[pack_idx - 6]  # Map to 0-2 index
                             self.game.pack_choices = random.sample(data.MYSTIC_RUNES, pack_choices_num[pack_idx])
                             self.game.pack_select_count = pack_select_num[pack_idx]  # Track how many to select
@@ -211,6 +210,7 @@ class ShopState(State):
             # New: Tray click to use rune
             for i, tray_rect in enumerate(self.tray_rects):
                 if tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
+                    from states.rune import RuneUseState  # Lazy import
                     rune = self.game.rune_tray[i]
                     self.game.previous_state = self  # Store for back
                     self.game.state_machine.change_state(RuneUseState(self.game, rune))
@@ -228,11 +228,11 @@ class ShopState(State):
                     if rect.collidepoint(mouse_pos):
                         target_index = i
                         break
-                    if target_index != -1 and target_index != self.game.dragging_charm_index:
-                        self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
-                            self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
-                    self.game.dragging_charm_index = -1
-                    self.game.dragging_shop = False
+                if target_index != -1 and target_index != self.game.dragging_charm_index:
+                    self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
+                        self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
+                self.game.dragging_charm_index = -1
+                self.game.dragging_shop = False
 
         if event.type == pygame.MOUSEWHEEL and DEBUG and self.debug_panel_open:
             icons_per_row = 4
@@ -247,6 +247,23 @@ class ShopState(State):
         if event.type == pygame.MOUSEMOTION:
             if self.game.dragging_charm_index != -1:
                 pass  # Dragging handled in draw_shop_screen
+
+        if event.type == pygame.MOUSEBUTTONUP:
+            if self.game.dragging_charm_index != -1:
+                mouse_pos = pygame.mouse.get_pos()
+                target_index = -1
+                for i in range(len(self.game.equipped_charms)):
+                    x = 50 + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
+                    y = 150
+                    rect = pygame.Rect(x, y, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
+                    if rect.collidepoint(mouse_pos):
+                        target_index = i
+                        break
+                if target_index != -1 and target_index != self.game.dragging_charm_index:
+                    self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
+                        self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
+                self.game.dragging_charm_index = -1
+                self.game.dragging_shop = False
 
     def draw_debug_panel(self):
         """Draws the debug panel with improved spacing and text readability."""
@@ -265,7 +282,7 @@ class ShopState(State):
         icon_size = 100
         spacing = 30
         row_height = icon_size + 50
-        num_rows = (len(data.CHARMS_POOL) + icons_per_row - 1) // icons_per_row
+        num_rows = (len(CHARMS_POOL) + icons_per_row - 1) // icons_per_row
         total_content_height = num_rows * row_height + 70
         
         start_x = DEBUG_PANEL_X + 20
@@ -281,9 +298,9 @@ class ShopState(State):
         for row in range(visible_start_row, visible_end_row):
             for col in range(icons_per_row):
                 i = row * icons_per_row + col
-                if i >= len(data.CHARMS_POOL):
+                if i >= len(CHARMS_POOL):
                     break
-                charm = data.CHARMS_POOL[i]
+                charm = CHARMS_POOL[i]
                 x = start_x + col * (icon_size + spacing)
                 y = start_y + (row - visible_start_row) * row_height
                 icon_rect = pygame.Rect(x, y, icon_size, icon_size)
@@ -358,7 +375,7 @@ class ShopState(State):
             pygame.draw.rect(self.game.screen, (255, 255, 255), (bar_x, int(thumb_y), bar_width, int(thumb_height)))  # White thumb for contrast
         
         # Draw collected tooltips last (on top)
-        for x, tooltip_y, tooltip_text in tooltips_to_draw:
-            draw_tooltip(self.game, x, tooltip_y, tooltip_text)
+        for x, y, tooltip_text in tooltips_to_draw:
+            draw_tooltip(self.game, x, y, tooltip_text)
         
         return charm_rects + [(equip_all_rect, 'equip_all'), (close_rect, 'close')]

@@ -4,11 +4,9 @@ import time
 import math
 import random
 from states.base import State
-from states.shop import ShopState  # For returning to shop after selection/use
 from screens import draw_custom_button, draw_tooltip, draw_rounded_element
 from utils import wrap_text
-from constants import *  # THEME, CHARM_BOX_WIDTH, CHARM_SPACING, BUTTON_WIDTH, BUTTON_HEIGHT, DIE_SIZE, DOT_RADIUS
-from data import ENH_DESC  # If needed for tooltips; add if used
+from constants import *  # THEME, CHARM_BOX_WIDTH, CHARM_SPACING, BUTTON_WIDTH, BUTTON_HEIGHT, DIE_SIZE, DOT_RADIUS, COLORS
 
 class RuneSelectState(State):
     def __init__(self, game):
@@ -147,6 +145,7 @@ class RuneSelectState(State):
         pass  # Replace with actual code from your draw functions
 
     def handle_event(self, event):
+        from states.shop import ShopState  # Lazy import
         if self.preview_mode:
             if event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()

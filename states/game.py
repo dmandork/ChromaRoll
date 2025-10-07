@@ -4,8 +4,8 @@ import time
 import math
 from states.base import State  # Import from base
 from screens import draw_game_screen, draw_popup, draw_buttons, draw_tooltip, draw_enhancement_visuals
-from constants import DEBUG, NUM_DICE_IN_HAND, THEME, DIE_SIZE, HELD_DIE_SCALE, CHARM_SIZE, CHARM_BOX_WIDTH, CHARM_SPACING, CHARM_BOX_HEIGHT, SPECIAL_COLORS, PACK_BOOST
-from data import *
+from constants import DEBUG, NUM_DICE_IN_HAND, THEME, DIE_SIZE, HELD_DIE_SCALE, CHARM_SIZE
+from data import ENH_DESC
 import savegame
 
 class GameState(State):
@@ -108,6 +108,7 @@ class GameState(State):
             mouse_pos = pygame.mouse.get_pos()
             if self.game.show_popup:
                 if self.continue_rect and self.continue_rect.collidepoint(mouse_pos):
+                    from states.shop import ShopState  # Lazy import
                     self.game.show_popup = False
                     self.game.advance_blind()
                     self.game.generate_shop()
@@ -154,6 +155,7 @@ class GameState(State):
 
             for i, tray_rect in enumerate(self.tray_rects):
                 if tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
+                    from states.rune import RuneUseState  # Lazy import
                     rune = self.game.rune_tray[i]
                     # Prompt for die if max_dice > 0 (change to RuneUseState similar to Select)
                     self.game.state_machine.change_state(RuneUseState(self.game, rune))  # New state stub

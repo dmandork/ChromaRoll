@@ -2,7 +2,6 @@
 import pygame
 import copy
 from states.base import State
-from states.shop import ShopState  # For returning to shop after selection
 from screens import draw_dice_select_screen
 from constants import THEME, DICE_FACES
 
@@ -22,6 +21,7 @@ class DiceSelectState(State):
         self.choice_rects = draw_dice_select_screen(self.game)
 
     def handle_event(self, event):
+        from states.shop import ShopState  # Lazy import to break cycle
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
             for choice_rect, color in self.choice_rects or []:
