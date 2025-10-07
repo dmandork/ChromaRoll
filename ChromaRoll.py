@@ -2,7 +2,6 @@ from cmath import rect
 import math  # For ceil in bag rows
 import random  # For rolling dice and drawing from bag
 import pygame  # For graphics and input handling
-import sys  # For exiting the game
 import time  # For animation delays
 import copy
 import sys
@@ -1479,10 +1478,10 @@ class ChromaRollGame:
                 die['enhancements'].append('Lucky')
 
         elif name == 'Mystic Oracle Rune':
-            # Assume UPGRADE_RUNES exists or stub: add 2 random hand boosts
             for _ in range(2):
                 ht = random.choice(data.HAND_TYPES)
-                self.hand_multipliers[ht] += 0.5  # Or add to rune tray if upgrades are runes
+                self.hand_multipliers[ht] += 0.5  # Boost specific hand type
+            self.temp_message = "Boosted 2 random hand types by +0.5x!"
 
         elif name == 'Mystic Mult Rune':
             for die in die_list[:2]:
@@ -1536,14 +1535,15 @@ class ChromaRollGame:
                 self.bag.remove(die)
                 if die in self.full_bag:
                     self.full_bag.remove(die)
-                die['enhancements'].append('Sacrifice')  # Optional track
 
         elif name == 'Mystic Transmute Rune':
-            if len(die_list) == 2:
-                target, source = die_list
-                target['color'] = source['color']
-                target['faces'] = source['faces'][:]
-                target['enhancements'].append('Transmute')
+            if len(die_list) != 2:
+                self.temp_message = "Select exactly 2 dice (target and source)!"
+                return
+            target, source = die_list
+            target['color'] = source['color']
+            target['faces'] = source['faces'][:]
+            target['enhancements'].append('Transmute')
 
         elif name == 'Mystic Balance Rune':
             total = sum(c.get('cost', 0) for c in self.equipped_charms)

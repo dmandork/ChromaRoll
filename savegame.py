@@ -4,13 +4,16 @@ import os
 import copy
 import data  # For restoring pouch by name
 import constants
-from states.splash import SplashState  # Add this
-from states.game import GameState  # Updated from statemachine
-from states.blinds import BlindsState  # Updated from statemachine
-from states.shop import ShopState  # Updated from statemachine
-# Add imports for other states as needed, e.g.:
-# from states.pause import PauseMenuState
-# from states.game_over import GameOverState
+# At the top of savegame.py, ensure these imports are present (add any missing ones):
+from states.splash import SplashState
+from states.prompt import PromptState
+from states.init import InitState
+from states.shop import ShopState
+from states.game import GameState
+from states.blinds import BlindsState
+from states.game_over import GameOverState
+# If you have a pause state (commented in your code), add:
+from states.pause import PauseMenuState
 
 def save_game(game):
     """Saves the game state to JSON."""
@@ -86,6 +89,18 @@ def save_game(game):
             json.dump(save_data, f, default=lambda o: o.__dict__ if hasattr(o, '__dict__') else o)
     except IOError as e:
         print(f"Error saving game: {e}")  # Basic logging; could set game.temp_message instead
+
+# Then, inside load_game (or just before it), add this dict:
+STATE_MAP = {
+    'SplashState': SplashState,
+    'PromptState': PromptState,
+    'InitState': InitState,
+    'ShopState': ShopState,
+    'GameState': GameState,
+    'BlindsState': BlindsState,
+    'GameOverState': GameOverState,
+    'PauseMenuState': PauseMenuState,
+}
 
 def load_game(game):
     """Loads the game state from JSON."""
@@ -188,14 +203,8 @@ def load_game(game):
         saved_state = save_data.get('current_state')
         saved_previous = save_data.get('previous_state')
         resume_state = saved_previous if saved_state == 'PauseMenuState' else saved_state
-        if resume_state == 'ShopState':
-            game.state_machine.change_state(ShopState(game))
-        elif resume_state == 'GameState':
-            game.state_machine.change_state(GameState(game))
-        elif resume_state == 'BlindsState':
-            game.state_machine.change_state(BlindsState(game))
-        else:
-            game.state_machine.change_state(BlindsState(game))  # Fallback
+        state_class = STATE_MAP.get(resume_state, BlindsState)  # Fallback to BlindsState
+        game.state_machine.change_state(state_class(game))
         return save_data  # Return the dict for PromptState
     except FileNotFoundError:
         return None  # No save

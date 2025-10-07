@@ -194,7 +194,7 @@ MYSTIC_RUNES = [
     {'name': 'Mystic Wild Rune', 'desc': 'Converts 1 selected die in bag to Rainbow color (acts as any color for mono/rainbow bonuses).', 'max_dice': 1},
     {'name': 'Mystic Steel Rune', 'desc': 'Enhances 1 selected die in bag to "Steel" (x1.5 mult, can\'t break like Glass).', 'max_dice': 1},
     {'name': 'Mystic Fragile Rune', 'desc': 'Enhances 1 selected die in bag to "Fragile" (x2 mult, 25% break chance—stacks/modifies Glass).', 'max_dice': 1},
-    {'name': 'Mystic Wealth Rune', 'desc': 'Doubles current coins (max +20).', 'max_dice': 0},
+    {'name': 'Mystic Wealth Rune', 'desc': 'Adds coins equal to current coins, up to a maximum gain of 20.', 'max_dice': 0},
     {'name': 'Mystic Fate Rune', 'desc': '1 in 4 chance to add a random Edition (Foil, Holo, or Poly) to a random die in bag.', 'max_dice': 0},  # Random, no select
     {'name': 'Mystic Strength Rune', 'desc': 'Enhances up to 2 selected dice to "harmonize" faces toward mid-high values (e.g., [1,2,3,4,5,6] becomes [3,4,4,5,5,6]—duplicates mids/highs, removes lows for better kinds/straights).', 'max_dice': 2},
     {'name': 'Mystic Sacrifice Rune', 'desc': 'Destroys up to 2 selected dice in bag (gain coins equal to their "value" based on color/rarity).', 'max_dice': 2},
