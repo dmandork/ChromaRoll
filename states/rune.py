@@ -254,6 +254,16 @@ class RuneUseState(State):
                 draw_rounded_element(self.game.screen, die_rect, COLORS[die['color']], inner_content=lambda r: self.draw_dots_or_icon(die))
                 if j in self.selected_die_indices:
                     pygame.draw.rect(self.game.screen, (255,255,0), die_rect, width=3)
+                    
+                    # New: Label "1" and "2" for Transmute selected order
+                    if self.rune['name'] == 'Mystic Transmute Rune':
+                        order_index = self.selected_die_indices.index(j) + 1  # 1-based: first selected = 1 (target)
+                        if order_index <= 2:  # Only label up to 2
+                            label_text = self.game.small_font.render(str(order_index), True, (255, 255, 255))  # White text
+                            text_x = die_rect.centerx - label_text.get_width() // 2
+                            text_y = die_rect.centery - label_text.get_height() // 2
+                            self.game.screen.blit(label_text, (text_x, text_y))
+                
                 self.die_rects.append(die_rect)
         else:
             self.die_rects = []  # No dice needed
@@ -287,7 +297,7 @@ class RuneUseState(State):
                             self.selected_die_indices.append(j)
                         max_dice = self.rune.get('max_dice', 1)
                         while len(self.selected_die_indices) > max_dice:
-                            self.selected_die_indices.pop(0)
+                            self.selected_die_indices.pop(0)  # Remove oldest if over
 
             if self.confirm_rect.collidepoint(mouse_pos):
                 dies = [self.random_dice[j] for j in self.selected_die_indices]

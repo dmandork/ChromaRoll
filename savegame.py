@@ -21,6 +21,7 @@ def save_game(game):
     current_state_name = type(game.state_machine.current_state).__name__ if hasattr(game, 'state_machine') and game.state_machine.current_state else None
     previous_state_name = type(game.previous_state).__name__ if game.previous_state and not isinstance(game.previous_state, str) else game.previous_state
     save_data = {
+        'turn_initialized': game.turn_initialized,
         'version': 1,  # Add versioning for future-proofing (increment on breaking changes)
         'coins': game.coins,
         'extra_coins': game.extra_coins,
@@ -117,6 +118,7 @@ def load_game(game):
             print("Old save detected—attempting load with defaults.")
         
         # All setters moved here (from the old if block)
+        game.turn_initialized = save_data.get('turn_initialized', False)
         game.coins = save_data.get('coins', 0)
         game.extra_coins = save_data.get('extra_coins', 0)
         game.bag = copy.deepcopy(save_data.get('bag', []))
@@ -204,6 +206,11 @@ def load_game(game):
         saved_previous = save_data.get('previous_state')
         resume_state = saved_previous if saved_state == 'PauseMenuState' else saved_state
         state_class = STATE_MAP.get(resume_state, BlindsState)  # Fallback to BlindsState
+
+        # Set is_resuming if loading into GameState
+        if resume_state == 'GameState':
+            game.is_resuming = True
+
         game.state_machine.change_state(state_class(game))
         return save_data  # Return the dict for PromptState
     except FileNotFoundError:

@@ -370,6 +370,16 @@ class DebugDiceSelectForRune(State):
             draw_enhancement_visuals(self.game, rect, die)
             if die in self.selected_dice:
                 pygame.draw.rect(self.game.screen, (255, 255, 0), rect, 3)
+                
+                # New: Label "1" and "2" for Transmute selected order
+                if self.game.current_rune['name'] == 'Mystic Transmute Rune':
+                    order_index = self.selected_dice.index(die) + 1  # 1-based: first selected = 1 (target)
+                    if order_index <= 2:  # Only label up to 2
+                        label_text = self.game.small_font.render(str(order_index), True, (255, 255, 255))  # White text
+                        text_x = rect.centerx - label_text.get_width() // 2
+                        text_y = rect.centery - label_text.get_height() // 2
+                        self.game.screen.blit(label_text, (text_x, text_y))
+            
             if rect.collidepoint(mouse_pos):
                 enh_desc = ', '.join(ENH_DESC.get(e, e) for e in die['enhancements'])
                 tooltips_to_draw.append((x, y + die_size + 10, f"{die['color']} Die - {enh_desc or 'None'}"))

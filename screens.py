@@ -1438,8 +1438,8 @@ def draw_confirm_sell_popup(game):
     popup_width = 300  # Adjust if your popup size is different
     popup_height = 150  # Adjust as needed
     popup_rect = pygame.Rect(game.width // 2 - popup_width // 2, game.height // 2 - popup_height // 2, popup_width, popup_height)
-    pygame.draw.rect(game.screen, (100, 100, 100), popup_rect)  # Gray background
-    pygame.draw.rect(game.screen, (255, 255, 255), popup_rect, 3)  # White border
+    pygame.draw.rect(game.screen, constants.THEME['panel_bg'], popup_rect)  # Gray background
+    pygame.draw.rect(game.screen, constants.THEME['tooltip_border'], popup_rect, 3)  # White border
 
     # Message with wrapping and centering
     message = "Are you sure you want to sell this charm?"
@@ -1456,12 +1456,12 @@ def draw_confirm_sell_popup(game):
 
     # Yes/No buttons (unchanged)
     yes_rect = pygame.Rect(popup_rect.x + 50, popup_rect.y + popup_height - 60, 100, 40)
-    pygame.draw.rect(game.screen, (0, 150, 0), yes_rect)
+    pygame.draw.rect(game.screen, constants.THEME['yes_button'], yes_rect)
     yes_text = game.small_font.render("Yes", True, constants.THEME['text'])
     game.screen.blit(yes_text, (yes_rect.x + (100 - yes_text.get_width()) // 2, yes_rect.y + 10))
 
     no_rect = pygame.Rect(popup_rect.x + popup_width - 150, popup_rect.y + popup_height - 60, 100, 40)
-    pygame.draw.rect(game.screen, (150, 0, 0), no_rect)
+    pygame.draw.rect(game.screen, constants.THEME['no_button'], no_rect)
     no_text = game.small_font.render("No", True, constants.THEME['text'])
     game.screen.blit(no_text, (no_rect.x + (100 - no_text.get_width()) // 2, no_rect.y + 10))
 

@@ -27,8 +27,14 @@ class GameState(State):
             self.game.is_resuming = False
             return  # Skip dice pull
         # Init or reset game vars (call new_turn only if no loaded hand/rolls)
+        print("DEBUG: GameState.enter - checking conditions")
         if not self.game.hand or not self.game.rolls or not self.game.has_rolled:
-            self.game.new_turn()
+            if self.game.turn_initialized and self.game.is_discard_phase:
+                print("DEBUG: Resuming discard - skipping pull")
+            else:
+                self.game.new_turn()
+        else:
+            self.game.new_turn()  # If has hand but not rolled? Rare, but handle
 
     def update(self, dt):
         # Handle animations/timers (e.g., break effects, temp messages)

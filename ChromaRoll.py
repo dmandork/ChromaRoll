@@ -34,6 +34,8 @@ RARITY_WEIGHTS = {
 class ChromaRollGame:
     def __init__(self):
         pygame.init()  # Initialize Pygame
+        self.loaded_from_save = False
+        self.turn_initialized = False
 
         # Dedup CHARMS_POOL by name (safeguard against old dups or mutations)
         unique_pool = {}
@@ -51,69 +53,23 @@ class ChromaRollGame:
         self.font = pygame.font.Font(resource_path(THEME['font_main_path']), THEME['font_main_size'])  # Font for text
         self.small_font = pygame.font.Font(resource_path(THEME['font_small_path']), THEME['font_small_size'])  # Smaller font for hand/modifier info
         self.tiny_font = pygame.font.Font(resource_path(THEME['font_tiny_path']), THEME['font_tiny_size'])  # Even smaller for top texts
-        self.bag = create_dice_bag()  # Create dice bag (mutable list for removal)
-        self.hand = []  # Current hand of dice
-        self.full_bag = [d.copy() for d in self.bag]  # Template of all owned dice
-        self.rolls = []  # Current rolls: list of (die, value)
-        self.held = [False] * NUM_DICE_IN_HAND  # Track held dice
-        self.discard_selected = [False] * NUM_DICE_IN_HAND  # Track selected for discard
-        self.rerolls_left = -1 if DEBUG and DEBUG_UNLIMITED_REROLLS else MAX_REROLLS  # Rerolls per turn (-1 for unlimited in debug)
-        self.discards_left = MAX_DISCARDS  # Discards per round
-        self.discard_used_this_round = False  # Track if discard was used in the current hand's discard phase
-        self.hands_left = MAX_HANDS  # Hands (scores) per round
-        self.coins = 0  # Chroma Coins for upgrades
-        self.extra_coins = 0  # For tracking bonus coins from gold and silver dice
-        if DEBUG and DEBUG_INFINITE_COINS:
-            self.coins = 999999  # Infinite coins for debug (large value to simulate infinity without breaking int ops)
-        self.round_score = 0  # Score for current blind/round
-        self.current_stake = 1  # Current stake level
-        self.current_blind = 'Small'  # Current blind: Small, Big, Boss
-        self.game_state = 'splash'  # Start with splash instead of 'blinds'
-        self.splash_start_time = 0  # Timestamp for anim start
-        self.splash_image = None  # Loaded image
-        self.splash_phase = 'pan'  # Phases: 'pan', 'hold', 'zoom_out', 'done'
-        self.previous_state = None  # Init to starting state
-        self.pause_menu_selection = None  # For button handling (optional)
-        self.show_popup = False  # Flag for beaten blind popup
-        self.broken_dice = []  # List of indices (0-4) of breaking Glass dice
-        self.break_effect_start = 0  # Timestamp when effect starts
-        self.break_effect_duration = 1.0  # Seconds for fade-out
-        self.break_icon = None  # Cached scaled PNG
-        self.popup_message = ""  # Message for beaten blind popup
-        self.temp_message = None  # Text for temporary messages
-        self.temp_message_start = 0  # Timestamp for fade start
-        self.temp_message_duration = 3.0  # Seconds to show message
-        self.turn = 0  # Current turn number
-        self.current_hand_text = ""  # Text for current hand type and base points
-        self.current_modifier_text = ""  # Text for color modifier
-        self.is_discard_phase = True  # Start in discard phase before first roll
-        self.has_rolled = False  # Track if initial roll happened
-        self.max_charms = 5
-        self.equipped_charms = []
-        self.shop_charms = []
-        self.dragging_charm_index = -1  # For drag and drop
-        self.dragging_shop = False  # Flag if dragging in shop
-        self.drag_offset_x = 0
-        self.drag_offset_y = 0
-        self.score_mult = 1.0  # For Dagger charm
-        self.hand_multipliers = {ht: 1.0 for ht in data.HAND_TYPES}  # Multipliers for hand types
-        self.pack_choices = []  # Choices for pack selection
-        self.confirm_sell_index = -1  # Index of charm to confirm sell
-        self.shop_reroll_cost = 5  # Initial reroll cost for shop
-        self.available_packs = random.sample([0, 1, 2, 3, 4], 2)  # Random 2 from 5 packs
-        self.available_rune_packs = []
-        self.multipliers_hover = False  # For showing multipliers panel
-        self.current_pouch = None
-        self.active_tags = []
-        self.rune_tray = [None, None]  # Two rune slots
-        # Dedup CHARMS_POOL by name (safeguard against old dups)
-        seen_names = set()
-        self.is_resuming = False  # Flag
-        self.select_count = 1  # For multi-select in packs
-        self.selected_runes = []  # Temp for rune selection
-        self.current_rune = None  # For 
-        self.current_rune_slot = -1
-        self.selected_dice = []  # For die selection during apply
+
+        # Show loading text during heavy loads
+        self.screen.fill(THEME['background'])
+        loading_text = self.font.render("Loading...", True, (THEME['text']))
+        self.screen.blit(loading_text, (self.width // 2 - loading_text.get_width() // 2, self.height // 2 - loading_text.get_height() // 2))
+        pygame.display.flip()
+
+        # Pre-load splash image
+        try:
+            self.splash_image = pygame.image.load(resource_path('assets/images/titlescreen.png')).convert()
+        except pygame.error as e:
+            print(f"Error loading splash: {e}")
+            self.splash_image = pygame.Surface((838, 1248))  # Fallback blank
+            self.splash_image.fill((0, 0, 0))  # Black if missing
+
+        # Pre-load other assets (icons, sounds, etc.) here as before
+        # e.g., your charm pre-load loop, mixer.init(), Sound loads
 
         # In __init__, add the icon paths and cache
         self.charm_icon_paths = {
@@ -181,23 +137,6 @@ class ChromaRollGame:
             except Exception as e:
                 print(f"Failed to load button {path}: {e}")
 
-        # Show loading text during heavy loads
-        self.screen.fill(THEME['background'])
-        loading_text = self.font.render("Loading...", True, (THEME['text']))
-        self.screen.blit(loading_text, (self.width // 2 - loading_text.get_width() // 2, self.height // 2 - loading_text.get_height() // 2))
-        pygame.display.flip()
-
-        # Pre-load splash image
-        try:
-            self.splash_image = pygame.image.load(resource_path('assets/images/titlescreen.png')).convert()
-        except pygame.error as e:
-            print(f"Error loading splash: {e}")
-            self.splash_image = pygame.Surface((838, 1248))  # Fallback blank
-            self.splash_image.fill((0, 0, 0))  # Black if missing
-
-        # Pre-load other assets (icons, sounds, etc.) here as before
-        # e.g., your charm pre-load loop, mixer.init(), Sound loads
-
         # Pre-load all charm icons into cache (for efficiency—no reloads in loops)
         inner_size = int(CHARM_DIE_SIZE * INNER_ICON_SCALE)  # e.g., 80 for 0.8 scale
         for name, path in self.charm_icon_paths.items():
@@ -248,7 +187,6 @@ class ChromaRollGame:
 
         self.mute_button_rect = pygame.Rect(self.width - 50, 10, 40, 40)  # Top-right; adjust as needed
 
-        # In ChromaRollGame __init__, add:
         self.current_boss_effect = None  # Current active boss effect dict, or None
         self.disabled_charms = []  # For effects like Charm Glitch/Eclipse: list of indices or names
         self.boss_reroll_count = 0  # Track rerolls used for effects like Break Surge
@@ -261,10 +199,71 @@ class ChromaRollGame:
         self.debug_boss_scroll_offset = 0  # For scrolling long list
         self.debug_boss_selected = None  # Temp for selection
 
-        self.selected_pouch = None  # Track chosen pouch for bonuses
-        self.green_pouch_active = False  # Flag for Green Pouch effect
-        self.pouch_offset = 0  # For carousel scrolling
-        self.unlocks = {}  # Future: Track unlocks, e.g., self.unlocks['Black Pouch'] = False; for now, use pouch['unlocked']
+        self._init_defaults()  # Call after one-time setups
+
+    def _init_defaults(self):
+        self.bag = create_dice_bag()  # Create dice bag (mutable list for removal)
+        self.hand = []  # Current hand of dice
+        self.full_bag = [d.copy() for d in self.bag]  # Template of all owned dice
+        self.rolls = []  # Current rolls: list of (die, value)
+        self.held = [False] * NUM_DICE_IN_HAND  # Track held dice
+        self.discard_selected = [False] * NUM_DICE_IN_HAND  # Track selected for discard
+        self.rerolls_left = -1 if DEBUG and DEBUG_UNLIMITED_REROLLS else MAX_REROLLS  # Rerolls per turn (-1 for unlimited in debug)
+        self.discards_left = MAX_DISCARDS  # Discards per round
+        self.discard_used_this_round = False  # Track if discard was used in the current hand's discard phase
+        self.hands_left = MAX_HANDS  # Hands (scores) per round
+        self.coins = 0  # Chroma Coins for upgrades
+        self.extra_coins = 0  # For tracking bonus coins from gold and silver dice
+        if DEBUG and DEBUG_INFINITE_COINS:
+            self.coins = 999999  # Infinite coins for debug (large value to simulate infinity without breaking int ops)
+        self.round_score = 0  # Score for current blind/round
+        self.current_stake = 1  # Current stake level
+        self.current_blind = 'Small'  # Current blind: Small, Big, Boss
+        self.game_state = 'splash'  # Start with splash instead of 'blinds'
+        self.splash_start_time = 0  # Timestamp for anim start
+        self.splash_phase = 'pan'  # Phases: 'pan', 'hold', 'zoom_out', 'done'
+        self.previous_state = None  # Init to starting state
+        self.pause_menu_selection = None  # For button handling (optional)
+        self.show_popup = False  # Flag for beaten blind popup
+        self.broken_dice = []  # List of indices (0-4) of breaking Glass dice
+        self.break_effect_start = 0  # Timestamp when effect starts
+        self.break_effect_duration = 1.0  # Seconds for fade-out
+        self.popup_message = ""  # Message for beaten blind popup
+        self.temp_message = None  # Text for temporary messages
+        self.temp_message_start = 0  # Timestamp for fade start
+        self.temp_message_duration = 3.0  # Seconds to show message
+        self.turn = 0  # Current turn number
+        self.current_hand_text = ""  # Text for current hand type and base points
+        self.current_modifier_text = ""  # Text for color modifier
+        self.is_discard_phase = True  # Start in discard phase before first roll
+        self.has_rolled = False  # Track if initial roll happened
+        self.max_charms = 5
+        self.equipped_charms = []
+        self.shop_charms = []
+        self.dragging_charm_index = -1  # For drag and drop
+        self.dragging_shop = False  # Flag if dragging in shop
+        self.drag_offset_x = 0
+        self.drag_offset_y = 0
+        self.score_mult = 1.0  # For Dagger charm
+        self.hand_multipliers = {ht: 1.0 for ht in data.HAND_TYPES}  # Multipliers for hand types
+        self.pack_choices = []  # Choices for pack selection
+        self.confirm_sell_index = -1  # Index of charm to confirm sell
+        self.shop_reroll_cost = 5  # Initial reroll cost for shop
+        self.available_packs = random.sample([0, 1, 2, 3, 4], 2)  # Random 2 from 5 packs
+        self.available_rune_packs = []
+        self.multipliers_hover = False  # For showing multipliers panel
+        self.current_pouch = None
+        self.active_tags = []
+        self.rune_tray = [None, None]  # Two rune slots
+        # Dedup CHARMS_POOL by name (safeguard against old dups)
+        seen_names = set()
+        self.is_resuming = False  # Flag
+        self.select_count = 1  # For multi-select in packs
+        self.selected_runes = []  # Temp for rune selection
+        self.current_rune = None  # For 
+        self.current_rune_slot = -1
+        self.selected_dice = []  # For die selection during apply
+
         # Set initial hand texts
         self.update_hand_text()
         self.tutorial_step = 0  # Current step in tutorial (0-5)
@@ -274,6 +273,20 @@ class ChromaRollGame:
         if DEBUG:
             for pouch in pouches[4:]:  # Indices 4-7 for 5-8
                 pouch['unlocked'] = True
+        self.selected_pouch = None  # Track chosen pouch for bonuses
+        self.green_pouch_active = False  # Flag for Green Pouch effect
+        self.pouch_offset = 0  # For carousel scrolling
+        self.unlocks = {}  # Future: Track unlocks, e.g., self.unlocks['Black Pouch'] = False; for now, use pouch['unlocked']
+        self.current_boss_effect = None  # Current active boss effect dict, or None
+        self.disabled_charms = []  # For effects like Charm Glitch/Eclipse: list of indices or names
+        self.boss_reroll_count = 0  # Track rerolls used for effects like Break Surge
+        self.boss_rainbow_color = None  # For Rainbow Restriction: fixed color for the round
+        self.boss_shuffled_faces = {}  # Die ID to shuffled faces for Face Shuffle
+        self.upcoming_boss_effect = None  # Preview of the Boss effect for the current round
+        self.upcoming_boss_effect = random.choice(data.BOSS_EFFECTS)  # Initial preview for first round
+        self.debug_boss_dropdown_open = False  # Flag for dropdown panel
+        self.debug_boss_scroll_offset = 0  # For scrolling long list
+        self.debug_boss_selected = None  # Temp for selection
 
     def toggle_mute(self):
         self.mute = not self.mute
@@ -412,6 +425,7 @@ class ChromaRollGame:
         self.hands_left = MAX_HANDS
         self.discards_left = MAX_DISCARDS
         self.extra_coins = 0
+        self.turn_initialized = False  # Reset for new round/turn
         self.bag[:] = [copy.deepcopy(d) for d in self.full_bag]  # Refill bag from owned template
         if self.current_boss_effect and self.current_boss_effect['name'] == 'Charm Eclipse':
             self.disabled_charms = list(range(len(self.equipped_charms)))  # Ensure all current charms disabled
@@ -438,7 +452,9 @@ class ChromaRollGame:
 
     def new_turn(self):
         """Starts a new turn: draw hand, set to value 1, reset holds and rerolls."""
+        print("DEBUG: Calling new_turn - pulling dice")  # Log to see when triggered
         self.hand = self.draw_hand()
+        self.turn_initialized = True
         self.rolls = [(die, 1) for die in self.hand]  # Start with value 1 (single pip)
         self.held = [False] * NUM_DICE_IN_HAND
         self.discard_selected = [False] * NUM_DICE_IN_HAND
@@ -1318,6 +1334,7 @@ class ChromaRollGame:
     def reset_game(self):
         # Existing resets (e.g., coins=0, stake=1, blind='Small', etc.)
         self.coins = 999999 if DEBUG else 0
+        self.turn_initialized = False  # Reset for new round/turn
         self.current_stake = 1
         self.current_blind = 'Small'
         self.round_score = 0
@@ -1463,6 +1480,9 @@ class ChromaRollGame:
             die_list = []
         name = rune['name']
         max_dice = rune.get('max_dice', 0)
+        if max_dice > 0 and len(die_list) == 0:
+            self.temp_message = f"Select at least 1 die for {name}!"
+            return
         if len(die_list) > max_dice:
             self.temp_message = "Too many dice selected!"
             return
@@ -1474,17 +1494,21 @@ class ChromaRollGame:
                 self.temp_message = "No last rune or tray full."
 
         elif name == 'Mystic Luck Rune':
-            for die in die_list[:1]:
+            if len(die_list) != 1:
+                self.temp_message = "Select exactly 1 die!"
+                return
+            for die in die_list:
                 die['enhancements'].append('Lucky')
 
         elif name == 'Mystic Oracle Rune':
+            # Assume UPGRADE_RUNES exists or stub: add 2 random hand boosts
             for _ in range(2):
                 ht = random.choice(data.HAND_TYPES)
-                self.hand_multipliers[ht] += 0.5  # Boost specific hand type
-            self.temp_message = "Boosted 2 random hand types by +0.5x!"
+                self.hand_multipliers[ht] += 0.5  # Or add to rune tray if upgrades are runes
 
         elif name == 'Mystic Mult Rune':
-            for die in die_list[:2]:
+            # Up to 2, but allow fewer
+            for die in die_list:
                 die['enhancements'].append('Mult')
 
         elif name == 'Mystic Emperor Rune':
@@ -1493,20 +1517,30 @@ class ChromaRollGame:
                 self.add_to_rune_tray(new_rune)
 
         elif name == 'Mystic Bonus Rune':
-            for die in die_list[:2]:
+            # Up to 2
+            for die in die_list:
                 die['enhancements'].append('Bonus')
 
         elif name == 'Mystic Wild Rune':
-            for die in die_list[:1]:
+            if len(die_list) != 1:
+                self.temp_message = "Select exactly 1 die!"
+                return
+            for die in die_list:
                 die['color'] = 'Rainbow'
                 die['enhancements'].append('Wild')
 
         elif name == 'Mystic Steel Rune':
-            for die in die_list[:1]:
+            if len(die_list) != 1:
+                self.temp_message = "Select exactly 1 die!"
+                return
+            for die in die_list:
                 die['enhancements'].append('Steel')
 
         elif name == 'Mystic Fragile Rune':
-            for die in die_list[:1]:
+            if len(die_list) != 1:
+                self.temp_message = "Select exactly 1 die!"
+                return
+            for die in die_list:
                 die['enhancements'].append('Fragile')
 
         elif name == 'Mystic Wealth Rune':
@@ -1522,14 +1556,16 @@ class ChromaRollGame:
                 die['enhancements'].append('Fate')
 
         elif name == 'Mystic Strength Rune':
-            for die in die_list[:2]:
+            # Up to 2
+            for die in die_list:
                 faces = sorted(die['faces'])
                 die['faces'] = faces[2:] + random.choices(faces[3:], k=2)  # Mid-high dups
                 die['faces'] = die['faces'][:6]
                 die['enhancements'].append('Strength')
 
         elif name == 'Mystic Sacrifice Rune':
-            for die in die_list[:2]:
+            # Up to 2
+            for die in die_list:
                 value = 10 if die['color'] in SPECIAL_COLORS else 5
                 self.coins += value
                 self.bag.remove(die)
@@ -1538,9 +1574,9 @@ class ChromaRollGame:
 
         elif name == 'Mystic Transmute Rune':
             if len(die_list) != 2:
-                self.temp_message = "Select exactly 2 dice (target and source)!"
+                self.temp_message = "Select exactly 2 dice!"
                 return
-            target, source = die_list
+            target, source = die_list  # First selected = target (#1), second = source (#2)
             target['color'] = source['color']
             target['faces'] = source['faces'][:]
             target['enhancements'].append('Transmute')
@@ -1550,18 +1586,25 @@ class ChromaRollGame:
             self.coins += min(total, 50)
 
         elif name == 'Mystic Gold Rune':
-            for die in die_list[:1]:
+            if len(die_list) != 1:
+                self.temp_message = "Select exactly 1 die!"
+                return
+            for die in die_list:
                 die['color'] = 'Gold'
                 die['enhancements'].append('Gold')
 
         elif name == 'Mystic Stone Rune':
-            for die in die_list[:1]:
+            if len(die_list) != 1:
+                self.temp_message = "Select exactly 1 die!"
+                return
+            for die in die_list:
                 die['enhancements'].append('Stone')
                 die['faces'] = [random.randint(3,6)] * 6  # Fixed high-ish
 
         elif name in ['Mystic Red Rune', 'Mystic Blue Rune', 'Mystic Green Rune', 'Mystic Purple Rune', 'Mystic Yellow Rune']:
+            # Up to 3
             color = name.split()[1].capitalize()  # Red, etc.
-            for die in die_list[:3]:
+            for die in die_list:
                 die['color'] = color
                 die['enhancements'].append(color)
 
@@ -1574,7 +1617,10 @@ class ChromaRollGame:
                 self.temp_message = "Charm slots full!"
 
         elif name == 'Mystic Silver Rune':
-            for die in die_list[:1]:
+            if len(die_list) != 1:
+                self.temp_message = "Select exactly 1 die!"
+                return
+            for die in die_list:
                 die['color'] = 'Silver'
                 die['enhancements'].append('Silver')
 

@@ -60,6 +60,16 @@ THEME = {
     'border': (0, 0, 0),  # Black borders (keep or change to (50, 50, 50) for softer gray)
     'text': (220, 220, 220),  # Off-white text for readability on dark bg
     'highlight': (200, 160, 0),  # Warm gold for holds/coins (brighter than your (255, 215, 0) for retro shine)
+    'yes_button': (0, 150, 0),  # Green for yes/confirm
+    'no_button': (150, 0, 0),  # Red for no/cancel
+    'disabled': (100, 100, 100),  # Gray for disabled elements
+    'tooltip_bg': (50, 50, 50),  # Dark gray for tooltip background
+    'tooltip_border': (200, 200, 200),  # Light gray for tooltip border
+    'tooltip_text': (255, 255, 255),  # White for tooltip text
+    'debug_panel_bg': (30, 30, 30),  # Dark gray for debug panel
+    'debug_text': (0, 255, 0),  # Bright green for debug text
+    'debug_button_bg': (50, 50, 50),  # Dark gray for debug button
+    'debug_button_hover': (0, 200, 0),  # Bright green for debug button hover
     'font_main_path': 'assets/fonts/VT323-Regular.ttf',  # Pixel for main
     'font_main_size': 36,
     'font_small_path': 'assets/fonts/VT323-Regular.ttf',  # Vintage for small
