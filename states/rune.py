@@ -28,6 +28,7 @@ class RuneSelectState(State):
 
     def draw(self):
         self.game.screen.fill(THEME['background'])
+        mouse_pos = pygame.mouse.get_pos()  # Moved to top for both modes
         if not self.preview_mode:
             # Calculate start_x dynamically for centering
             num_runes = len(self.game.pack_choices)
@@ -36,7 +37,6 @@ class RuneSelectState(State):
 
             # Top: Runes (placeholders with wrapped name)
             self.rune_rects = []
-            mouse_pos = pygame.mouse.get_pos()  # Get mouse for hover
             current_time = time.time()  # For animations
             for i, rune in enumerate(self.game.pack_choices):
                 rune_x = start_x + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
@@ -100,17 +100,17 @@ class RuneSelectState(State):
                     pygame.draw.rect(self.game.screen, (255,255,0), die_rect, width=3)
                 self.die_rects.append(die_rect)
 
-            # Confirm button
-            self.confirm_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
-            draw_custom_button(self.game, self.confirm_rect, "Apply Rune")
+                # Confirm button
+                self.confirm_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
+                draw_custom_button(self.game, self.confirm_rect, "Apply Rune", is_hover=self.confirm_rect.collidepoint(mouse_pos))
 
-            # Hold button (left of confirm)
-            self.hold_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 - 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
-            draw_custom_button(self.game, self.hold_rect, "Hold Rune")
+                # Hold button (left of confirm)
+                self.hold_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 - 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
+                draw_custom_button(self.game, self.hold_rect, "Hold Rune", is_hover=self.hold_rect.collidepoint(mouse_pos))
 
-            # Skip button (right of confirm)
-            self.skip_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 + 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
-            draw_custom_button(self.game, self.skip_rect, "Skip Pack")
+                # Skip button (right of confirm)
+                self.skip_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 + 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
+                draw_custom_button(self.game, self.skip_rect, "Skip Pack", is_hover=self.skip_rect.collidepoint(mouse_pos))
 
         else:
             # Preview mode: Show updated dice (no runes, no borders)
@@ -133,11 +133,10 @@ class RuneSelectState(State):
 
             # Continue button
             self.continue_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
-            draw_custom_button(self.game, self.continue_rect, "Continue")
+            draw_custom_button(self.game, self.continue_rect, "Continue", is_hover=self.continue_rect.collidepoint(mouse_pos))
 
         # Draw tooltip if hovering (only in select mode)
         if not self.preview_mode and self.hover_rune_index != -1:
-            mouse_pos = pygame.mouse.get_pos()  # Get current mouse for pos
             draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20, self.game.pack_choices[self.hover_rune_index]['desc'])
 
     def draw_dots_or_icon(self, die):  # Placeholder method; move to utils/screens if not defined
@@ -187,6 +186,7 @@ class RuneSelectState(State):
                 dies = [self.random_dice[j] for j in self.selected_die_indices]  # Always list
                 self.game.apply_rune_effect(rune, dies)  # Pass list
                 self.game.pack_choices.pop(self.selected_rune_index)  # Remove used
+                self.selected_rune_index = -1  # Reset after pop to avoid index error
                 self.applied_count += 1  # Increment count
                 self.preview_dies = dies  # Store for preview
                 self.preview_mode = True  # Enter preview
@@ -199,8 +199,8 @@ class RuneSelectState(State):
                     slot = self.game.rune_tray.index(None)
                     self.game.rune_tray[slot] = rune
                     self.game.pack_choices.pop(self.selected_rune_index)  # Remove from choices
+                    self.selected_rune_index = -1  # Reset after pop
                     self.applied_count += 1  # Count hold as select
-                    self.selected_rune_index = -1
                     self.selected_die_indices = []
                     self.random_dice = random.sample(self.game.bag, min(8, len(self.game.bag)))  # Refresh after hold
                     if self.applied_count >= self.game.pack_select_count:
