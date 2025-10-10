@@ -465,6 +465,10 @@ class ChromaRollGame:
         self.has_rolled = False  # No initial roll yet
         self.update_hand_text()  # Update initial hand text
         # In new_turn():
+        if not game.turn_initialized:
+            # ... (existing turn setup)
+            game.apply_boss_face_shuffle()
+            game.turn_initialized = True
         # Add after setting self.rerolls_left, etc.
         if self.current_blind == 'Boss' and self.current_boss_effect:
             effect_name = self.current_boss_effect['name']
@@ -725,6 +729,7 @@ class ChromaRollGame:
             pygame.display.flip()  # Update screen during animation
             time.sleep(ANIMATION_DELAY)
         # Final roll
+        self.apply_boss_face_shuffle()  # Ensure shuffle before rolling
         self.rolls = self.roll_hand()
         self.discard_selected = [False] * NUM_DICE_IN_HAND  # Clear selections
         self.update_hand_text()
@@ -1474,6 +1479,17 @@ class ChromaRollGame:
             self.coins -= self.shop_reroll_cost
             self.shop_reroll_cost += 3
             self.generate_shop()
+
+    def apply_boss_face_shuffle(self):
+        """Applies shuffled faces from the current boss effect to all relevant dice if active."""
+        if self.current_boss_effect and self.current_boss_effect.get('name') == 'Face Shuffle' and self.boss_shuffled_faces:
+            all_dice = self.full_bag + self.bag + self.hand + [r[0] for r in self.rolls] + self.broken_dice
+            for die in all_dice:
+                if die['id'] in self.boss_shuffled_faces:
+                    die['faces'] = copy.deepcopy(self.boss_shuffled_faces[die['id']])
+            # Optional: Log for debug
+            if DEBUG:
+                print("Applied boss face shuffle to", len(all_dice), "dice")
 
     def apply_rune_effect(self, rune, die_list=None):
         if die_list is None:

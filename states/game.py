@@ -20,6 +20,7 @@ class GameState(State):
         self.hand_die_rects = []  # For 5 in-play dice
         self.bag_die_rects = []   # For bag visuals (upper right)
         self.tray_rects = []  # Store for click
+        game.apply_boss_face_shuffle()  # Apply on resume/load into game state
 
     def enter(self):
         if self.game.is_resuming:

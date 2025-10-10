@@ -192,11 +192,8 @@ def load_game(game):
         # Unlocks (new)
         game.unlocks = copy.deepcopy(save_data.get('unlocks', {}))
 
-        # Reapply boss shuffled faces to dice
-        if game.boss_shuffled_faces:
-            for die in game.full_bag + game.bag + game.hand + [r[0] for r in game.rolls]:
-                if die['id'] in game.boss_shuffled_faces:
-                    die['faces'] = copy.deepcopy(game.boss_shuffled_faces[die['id']])
+        # In load_game, remove/replace the existing if-block with:
+        game.apply_boss_face_shuffle()
 
         # Recompute hand/modifier texts based on loaded state
         game.update_hand_text()
