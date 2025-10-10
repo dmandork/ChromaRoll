@@ -9,13 +9,48 @@ from constants import *  # Or specific: THEME, CHARM_BOX_WIDTH, etc.
 from data import CHARMS_POOL, MYSTIC_RUNES, HAND_TYPES, ENH_DESC
 from utils import wrap_text
 
+class TextBox:
+    def __init__(self, x, y, width, height, font, active_color=(255, 255, 0), inactive_color=(200, 200, 200)):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.color = inactive_color
+        self.active_color = active_color
+        self.inactive_color = inactive_color
+        self.text = ''
+        self.font = font
+        self.active = False
+        self.txt_surface = self.font.render(self.text, True, (255, 255, 255))
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if self.rect.collidepoint(event.pos):
+                self.active = not self.active
+            else:
+                self.active = False
+            self.color = self.active_color if self.active else self.inactive_color
+        if self.active and event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                return self.text  # Optional: "Submit" search
+            elif event.key == pygame.K_BACKSPACE:
+                self.text = self.text[:-1]
+            else:
+                self.text += event.unicode
+            self.txt_surface = self.font.render(self.text, True, (255, 255, 255))
+
+    def draw(self, screen):
+        pygame.draw.rect(screen, self.color, self.rect, 2)  # Border
+        screen.blit(self.txt_surface, (self.rect.x + 5, self.rect.y + 5))  # Text with padding
+
 class DebugMenuState(State):
     def __init__(self, game):
         super().__init__(game)
-        self.charm_button_rect = None
-        self.prism_button_rect = None
-        self.rune_button_rect = None
-        self.back_button_rect = None
+        button_y = 150
+        self.charm_button_rect = pygame.Rect(self.game.width // 2 - 150, button_y, 300, 50)
+        button_y += 60
+        self.prism_button_rect = pygame.Rect(self.game.width // 2 - 150, button_y, 300, 50)
+        button_y += 60
+        self.rune_button_rect = pygame.Rect(self.game.width // 2 - 150, button_y, 300, 50)
+        button_y += 60
+        self.back_button_rect = pygame.Rect(self.game.width // 2 - 150, button_y, 300, 50)
 
     def draw(self):
         self.game.screen.fill(THEME['background'])
@@ -23,20 +58,10 @@ class DebugMenuState(State):
         self.game.screen.blit(title_text, (self.game.width // 2 - title_text.get_width() // 2, 50))
 
         mouse_pos = pygame.mouse.get_pos()
-        button_y = 150
-        self.charm_button_rect = pygame.Rect(self.game.width // 2 - 150, button_y, 300, 50)
+        # No need to re-set rects; just draw buttons
         draw_custom_button(self.game, self.charm_button_rect, "Buy Any Charm", is_hover=self.charm_button_rect.collidepoint(mouse_pos))
-
-        button_y += 60
-        self.prism_button_rect = pygame.Rect(self.game.width // 2 - 150, button_y, 300, 50)
         draw_custom_button(self.game, self.prism_button_rect, "Apply Any Prism Upgrade", is_hover=self.prism_button_rect.collidepoint(mouse_pos))
-
-        button_y += 60
-        self.rune_button_rect = pygame.Rect(self.game.width // 2 - 150, button_y, 300, 50)
         draw_custom_button(self.game, self.rune_button_rect, "Apply Any Rune", is_hover=self.rune_button_rect.collidepoint(mouse_pos))
-
-        button_y += 60
-        self.back_button_rect = pygame.Rect(self.game.width // 2 - 150, button_y, 300, 50)
         draw_custom_button(self.game, self.back_button_rect, "Back to Shop", is_hover=self.back_button_rect.collidepoint(mouse_pos))
 
     def handle_event(self, event):
@@ -62,11 +87,15 @@ class DebugCharmState(State):
         self.next_rect = None
         self.page = 0
         self.last_wheel_time = 0  # For debounce
+        self.search_box = TextBox(50, 80, 300, 30, game.small_font)  # Search bar init (adjust pos/size)
 
     def draw(self):
         self.game.screen.fill(THEME['background'])
         title_text = self.game.font.render("Debug: Select Charm to Add", True, THEME['text'])
         self.game.screen.blit(title_text, (self.game.width // 2 - title_text.get_width() // 2, 50))
+
+        # Draw search bar
+        self.search_box.draw(self.game.screen)
 
         mouse_pos = pygame.mouse.get_pos()
         box_size = 140
@@ -74,11 +103,16 @@ class DebugCharmState(State):
         cols = 4
         per_page = 20
         start_idx = self.page * per_page
-        end_idx = min(start_idx + per_page, len(CHARMS_POOL))
-        visible_charms = CHARMS_POOL[start_idx:end_idx]
+
+        # Filter charms based on search text
+        search_text = self.search_box.text.lower()
+        filtered_charms = [c for c in CHARMS_POOL if search_text in c['name'].lower()]
+        end_idx = min(start_idx + per_page, len(filtered_charms))
+        visible_charms = filtered_charms[start_idx:end_idx]
+
         rows = math.ceil(len(visible_charms) / cols)
         total_height = rows * (box_size + spacing) + spacing
-        start_y = 100 + self.scroll_y
+        start_y = 120 + self.scroll_y  # Below search bar
         self.charm_rects = []
         tooltips_to_draw = []  # Collect for last draw
         for i, charm in enumerate(visible_charms):
@@ -110,7 +144,7 @@ class DebugCharmState(State):
         if start_idx > 0:
             self.prev_rect = pygame.Rect(50, self.game.height - 50, 100, 40)
             draw_custom_button(self.game, self.prev_rect, "Prev Page", is_hover=self.prev_rect.collidepoint(mouse_pos))
-        if end_idx < len(CHARMS_POOL):
+        if end_idx < len(filtered_charms):
             self.next_rect = pygame.Rect(self.game.width - 150, self.game.height - 50, 100, 40)
             draw_custom_button(self.game, self.next_rect, "Next Page", is_hover=self.next_rect.collidepoint(mouse_pos))
 
@@ -123,6 +157,9 @@ class DebugCharmState(State):
             draw_tooltip(self.game, x, y, text)
 
     def handle_event(self, event):
+        # Handle search box events first
+        self.search_box.handle_event(event)
+
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
             current_time = time.time()
@@ -280,7 +317,7 @@ class DebugRuneSelectState(State):
                 tooltips_to_draw.append((x, y + box_size + 10, rune['desc']))
             self.rune_rects.append((rect, rune))
 
-        # Scrollbar
+        # Scrollbar if needed
         if total_height > self.game.height - 200:
             bar_width = 10
             bar_x = self.game.width - bar_width - 10

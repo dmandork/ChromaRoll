@@ -287,6 +287,14 @@ class ChromaRollGame:
         self.debug_boss_dropdown_open = False  # Flag for dropdown panel
         self.debug_boss_scroll_offset = 0  # For scrolling long list
         self.debug_boss_selected = None  # Temp for selection
+        self.hands_played_this_round = 0  # (increment on score)
+        self.avoid_streak = 0  # (reset on most_played use, +1 otherwise)
+        self.most_played_hand = None  # (update post-score with max freq)
+        self.lucky_triggers = 0  # (from rune logic)
+        self.shop_rerolls = 0  # (increment on reroll_shop)
+        self.stake_milestones = 0  # ( +1 on blind/boss win)
+        self.die_score_bonus = 0  # (for Hiker permanent)
+        self.permanent_score_bonus = 0  # (for Square scaling—add charm['value'] on condition met)
 
     def toggle_mute(self):
         self.mute = not self.mute
@@ -1110,7 +1118,7 @@ class ChromaRollGame:
                     charm_chips += charm['value']
             elif charm['type'] == 'empty_slot_mult':
                 empty_slots = self.max_charms - len(self.equipped_charms)
-                charm_mult_add *= (1 + empty_slots)  # x1 for each empty + this one? Adjust as needed
+                charm_mult_add *= (1 + charm['value'] * empty_slots)  # Adjusted to multiplicative for scaling
             elif charm['type'] == 'per_value_bonus':
                 count = 0
                 for _, value in held_rolls:
@@ -1122,7 +1130,67 @@ class ChromaRollGame:
                     charm_color_mult_add += charm['value']
             elif charm['type'] == 'sacrifice_mult':
                 charm_mult_add *= self.score_mult  # Add this for dagger; adjust if self.score_mult is pre-set elsewhere (e.g., cap at 10.0)
-            # Skip Mime, Debt for now
+            # New chunk 1 additions start here
+            elif charm['type'] == 'mult_bonus':
+                if 'hands' in charm:
+                    if hand_type in charm['hands']:
+                        charm_mult_add *= charm['value']  # e.g., Triple Threat x1.5
+                else:
+                    charm_mult_add *= charm['value']  # Flat like Joker Die +4 (but *=4 for mult feel; adjust to += if additive preferred)
+            elif charm['type'] == 'color_mult':
+                count = sum(1 for die, _ in held_rolls if die['color'] == charm['color'])
+                charm_mult_add *= (1 + count * charm['value'])  # Multiplicative scaling; e.g., Envy Echo x(1 + 2*count)
+            elif charm['type'] == 'color_mult_conditional':
+                if not self.rerolls_left == self.rerolls_left_initial:  # Check if rerolls used (for Sloth)
+                    continue
+                count = sum(1 for die, _ in held_rolls if die['color'] == charm['color'])
+                charm_mult_add *= (1 + count * charm['value'])
+            elif charm['type'] == 'mult_conditional':
+                if charm.get('mono', False):
+                    if len(set(colors_list)) == 1:
+                        charm_mult_add *= charm['value']  # Flower Pot x3
+                if charm.get('glass', False):
+                    glass_count = sum(1 for die, _ in held_rolls if die['color'] == 'Glass' or 'Glass' in die.get('enhancements', []))
+                    if glass_count > 0:
+                        charm_mult_add *= charm['value']  # Glass Globe x3
+            elif charm['type'] == 'mult_per_face':
+                count = sum(1 for _, v in held_rolls if v in charm['faces'])
+                charm_mult_add *= charm['value'] ** count  # Triboulet x2 per 5/6
+            elif charm['type'] == 'bonus_per_charm':
+                count = len([c for idx, c in enumerate(self.equipped_charms) if idx not in self.disabled_charms])
+                charm_mult_add += charm['mult'] * count  # Wee +2 mult per
+                charm_chips += charm['score'] * count  # +20 chips per
+            elif charm['type'] == 'mult_per_streak':
+                # Assume self.avoid_streak tracks consecutive avoids of self.most_played_hand (update post-score)
+                charm_mult_add *= 1 + (charm['value'] * self.avoid_streak)  # Obelisk x0.2 per streak
+            elif charm['type'] == 'mult_per_low_bag':
+                low_count = max(0, 25 - len(self.full_bag))  # Erosion +4 per below 25
+                charm_mult_add += charm['value'] * low_count
+            elif charm['type'] == 'mult_per_lucky':
+                # Assume self.lucky_triggers tracks per turn (from rune logic)
+                charm_mult_add *= 1 + (charm['value'] * self.lucky_triggers)  # Lucky Labyrinth x0.2 per
+            elif charm['type'] == 'mult_per_reroll':
+                # Assume self.shop_rerolls tracks total
+                charm_mult_add += charm['value'] * self.shop_rerolls  # Flash +2 per
+            elif charm['type'] == 'mult_per_milestone':
+                # Assume self.stake_milestones tracks (e.g., bosses/blinds beaten)
+                charm_mult_add *= 1 + (charm['value'] * self.stake_milestones)  # Life x0.5 per
+            elif charm['type'] == 'score_per_coin':
+                charm_chips += charm['value'] * self.coins  # Bull +2 per coin
+            elif charm['type'] == 'score_decay':
+                # Assume self.hands_played_this_round tracks
+                charm_chips += charm['start'] - (charm['decay'] * self.hands_played_this_round)  # Ice +100 -5 per hand
+            elif charm['type'] == 'score_conditional':
+                if len(held_rolls) == charm['dice']:
+                    charm_chips += charm['value']  # Square +4 for exactly 4 dice
+                # For permanent scaling (assume self.permanent_score_bonus tracks per charm instance)
+                self.permanent_score_bonus += charm['value']  # Add once per score? Or per game—adjust
+                charm_chips += self.permanent_score_bonus
+            elif charm['type'] == 'die_bonus_perm':
+                # For Hiker: Permanent per scored die—assume self.die_score_bonus = 0 in __init__
+                self.die_score_bonus += len(held_rolls) * charm['value']  # +4 per scored die, permanent
+                charm_chips += self.die_score_bonus
+            # Skip non-scoring for now (e.g., hands_decay in turn init)
 
         total_modifier = (base_modifier + charm_color_mult_add + rune_add_mult) * charm_mult_add * rune_mult  # * rune_mult (new)
 

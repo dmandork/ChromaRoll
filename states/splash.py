@@ -91,7 +91,7 @@ class SplashState(State):
                         self.game.state_machine.change_state(PromptState(self.game))
                     else:
                         print("No save, starting new")
-                        game._init_defaults()
+                        self.game._init_defaults()
                         self.game.state_machine.change_state(InitState(self.game))
                     pass
                 elif self.quit_rect and self.quit_rect.collidepoint(mouse_pos):
