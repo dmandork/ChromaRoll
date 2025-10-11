@@ -232,7 +232,7 @@ def draw_game_screen(game):
         y = 10  # Top for game screen
         rect = pygame.Rect(x, y, constants.CHARM_SIZE, constants.CHARM_SIZE)
         draw_charm_die(game, rect, charm, index=i)  # Draw directly with frame, icon, and grayscale if disabled
-        # Optional tooltip on hover
+        # Optional tooltip on hover - UPDATED HERE
         if rect.collidepoint(mouse_pos):
             tooltip_text = charm['name'] + ": " + charm['desc']
             if charm['type'] == 'sacrifice_mult':
@@ -242,6 +242,10 @@ def draw_game_screen(game):
             elif charm['type'] == 'empty_slot_mult':
                 current_mult = game.get_stencil_mult()
                 tooltip_text += f" (Current: x{current_mult:.1f})"
+            # ADDED: Append most-played hand for Obelisk Orb
+            if charm['name'] == 'Obelisk Orb':
+                most_played = game.most_played_hand or "None"
+                tooltip_text += f" (Most Played: {most_played})"
             if i in game.disabled_charms:
                 tooltip_text += " (Disabled this round by Boss Effect)"
             draw_tooltip(game, x, y + constants.CHARM_SIZE + constants.TOOLTIP_PADDING, tooltip_text)
@@ -1230,6 +1234,8 @@ def draw_tooltip(game, x, y, text):
     for i, line in enumerate(lines):
         desc_surface = game.small_font.render(line, True, (constants.THEME['text']))
         game.screen.blit(desc_surface, (x + constants.TOOLTIP_PADDING, y + constants.TOOLTIP_PADDING + i * line_height))
+
+    
 
 def draw_pause_menu(game):
     """Draws the pause popup with options: Main Menu, Quit, Return."""

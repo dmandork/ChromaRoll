@@ -297,6 +297,8 @@ class ChromaRollGame:
         self.permanent_score_bonus = 0  # (for Square scaling—add charm['value'] on condition met)
         self.discards_used_this_round = 0  # Track for Discard Drake/Acrobat Amulet
         self.rerolls_left_initial = 3
+        self.hand_play_counts = {ht: 0 for ht in data.HAND_TYPES}  # Track counts per hand type
+
 
     def toggle_mute(self):
         self.mute = not self.mute
@@ -747,10 +749,22 @@ class ChromaRollGame:
 
     def score_and_new_turn(self):
         """Manually scores and starts a new turn."""
+        hand_type, base_score, modifier_desc, final_score, charm_chips, charm_mono_add = self.get_hand_type_and_score()
         if self.show_popup:
             return  # Block actions during popup
         score = self.calculate_score()
         self.round_score += score
+
+        # Track hand play counts and streak
+        if hand_type != "Nothing":
+            previous_most_played = self.most_played_hand  # ADDED: Track previous to avoid immediate reset on change
+            self.hand_play_counts[hand_type] += 1
+            self.most_played_hand = max(self.hand_play_counts, key=self.hand_play_counts.get) if any(self.hand_play_counts.values()) else None
+            if previous_most_played and hand_type != previous_most_played:
+                self.avoid_streak += 1
+            else:
+                self.avoid_streak = 0
+
         # Accumulate extra coins from Gold/Silver
         for i, (die, _) in enumerate(self.rolls):
             if die['color'] == 'Gold' and self.held[i]:
@@ -778,7 +792,7 @@ class ChromaRollGame:
         for i, (die, _) in enumerate(self.rolls):
             if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
                 # Play break sound here again (on retrigger break)
-                self.sfx_channel.play(self.glass_break_sound)
+                self.sfx_channel.play(self.break_sound)
                 # Break: Remove from full_bag and bag
                 self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
                 self.bag = [d for d in self.bag if d['id'] != die['id']]
@@ -802,7 +816,7 @@ class ChromaRollGame:
             for i, (die, _) in enumerate(self.rolls):
                 if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
                     # Play break sound here again (on retrigger break)
-                    self.sfx_channel.play(self.glass_break_sound)
+                    self.sfx_channel.play(self.break_sound)
                     self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
                     self.bag = [d for d in self.bag if d['id'] != die['id']]
                     self.coins -= glass_break_penalty
@@ -874,7 +888,7 @@ class ChromaRollGame:
         if not held_rolls:
             return "Nothing", 0, "None", 0, 0, 0.0
         values = [value for die, value in held_rolls]
-        colors_list = [die['color'] for die, value in held_rolls]  # List of colors
+        colors_list = [die['color'] for die, value in held_rolls]
         sorted_values = sorted(values)
         counts = {i: values.count(i) for i in set(values)}
         max_count = max(counts.values()) if counts else 0
@@ -899,7 +913,7 @@ class ChromaRollGame:
         has_four_fingers = any(c['type'] == 'short_straight' for c in self.equipped_charms if self.equipped_charms.index(c) not in self.disabled_charms)
 
         if self.current_blind == 'Boss' and self.current_boss_effect and self.current_boss_effect['name'] == 'Value Vault':
-            values = [7 - v for v in values]  # Invert: 1->6, 2->5, etc.
+            values = [7 - v for v in values]
             sorted_values = sorted(values)
 
         # Collect wild faces with safety check
@@ -920,9 +934,9 @@ class ChromaRollGame:
             non_wild_counts = {k: v for k, v in counts.items() if k not in wild_faces}
             if non_wild_counts:
                 max_non_wild_key = max(non_wild_counts, key=lambda k: (non_wild_counts[k], k))
-                counts[max_non_wild_key] += wild_count  # Add wilds to largest/highest group
+                counts[max_non_wild_key] += wild_count
                 max_count = max(counts.values())
-                # FIXED: Ensure groups update uses flat color list
+                # Update groups to reflect wilds for color checks
                 groups[max_non_wild_key] = groups.get(max_non_wild_key, []) + wild_colors[:wild_count]
                 for wild_face in wild_faces:
                     if wild_face in groups and wild_face != max_non_wild_key:
@@ -960,34 +974,29 @@ class ChromaRollGame:
         elif max_count == 3 and 2 in counts.values():
             hand_type = "Full House"
             base_score = 160
-            # FIXED: Use counts to find three_val and pair_val, then get groups
-            three_val = next((val for val, count in counts.items() if count == 3), None)
+            three_val = next((val for val, count in counts.items() if count == 3), None)  # FIXED: Use next with default None to avoid StopIteration
             pair_val = next((val for val, count in counts.items() if count == 2), None)
-            if three_val is None or pair_val is None:
-                print("Warning: Full House detected but no three/pair val found")  # Debug
-                hand_type = "Nothing"  # Fallback if wilds messed up
+            three_group = groups.get(three_val, [])
+            pair_group = groups.get(pair_val, [])
+            print(f"Full House: three_val={three_val}, pair_val={pair_val}, three_group={three_group}, pair_group={pair_group}")
+            actual_colors = [c for c in colors_list if c != 'Rainbow']
+            print(f"Full House colors_list: {colors_list}, actual_colors: {actual_colors}")
+            actual_set = set(actual_colors)
+            if len(actual_set) <= 1:
+                base_modifier += 3.0
+                modifier_desc.append("Full Mono +3")
+            elif len(actual_colors) == len(actual_set):
+                base_modifier += 2.0
+                modifier_desc.append("Rainbow +2")
             else:
-                three_group = groups.get(three_val, [])
-                pair_group = groups.get(pair_val, [])
-                print(f"Full House: three_val={three_val}, pair_val={pair_val}, three_group={three_group}, pair_group={pair_group}")
-                actual_colors = [c for c in colors_list if c != 'Rainbow']  # Use colors_list for full hand check
-                print(f"Full House colors_list: {colors_list}, actual_colors: {actual_colors}")
-                actual_set = set(actual_colors)
-                if len(actual_set) <= 1:
-                    base_modifier += 3.0
-                    modifier_desc.append("Full Mono +3")
-                elif len(actual_colors) == len(actual_set):
-                    base_modifier += 2.0
-                    modifier_desc.append("Rainbow +2")
-                else:
-                    mono_three = len(set(c for c in three_group if c != 'Rainbow')) <= 1 if three_group else False
-                    mono_pair = len(set(c for c in pair_group if c != 'Rainbow')) <= 1 if pair_group else False
-                    if mono_three and mono_pair:
-                        base_modifier += 1.0
-                        modifier_desc.append("Both Mono +1")
-                    elif mono_three or mono_pair:
-                        base_modifier += 0.5
-                        modifier_desc.append("One Mono +0.5")
+                mono_three = len(set(c for c in three_group if c != 'Rainbow')) <= 1 if three_group else False
+                mono_pair = len(set(c for c in pair_group if c != 'Rainbow')) <= 1 if pair_group else False
+                if mono_three and mono_pair:
+                    base_modifier += 1.0
+                    modifier_desc.append("Both Mono +1")
+                elif mono_three or mono_pair:
+                    base_modifier += 0.5
+                    modifier_desc.append("One Mono +0.5")
         elif sorted_values in [[1,2,3,4,5], [2,3,4,5,6]] or (has_four_fingers and any(all(x in values for x in s) for s in short_straights_large)):
             hand_type = "Large Straight"
             base_score = 160
@@ -1158,7 +1167,7 @@ class ChromaRollGame:
                 for _, value in held_rolls:
                     if (charm['parity'] == 'even' and value % 2 == 0) or (charm['parity'] == 'odd' and value % 2 != 0):
                         count += 1
-                    charm_chips += count * charm['value']
+                charm_chips += count * charm['value']
             elif charm['type'] == 'rainbow_mult_bonus':
                 if is_rainbow:
                     charm_color_mult_add += charm['value']
@@ -1218,7 +1227,7 @@ class ChromaRollGame:
                     modifier_desc.append(f"{charm['name']} +{mult_add} ({count} charms)")
                 charm_chips += charm['score'] * count
             elif charm['type'] == 'mult_per_streak':
-                mult_add = charm['value'] * getattr(self, 'avoid_streak', 0)
+                mult_add = round(charm['value'] * self.avoid_streak, 1)
                 if mult_add > 0:
                     charm_mult_add += mult_add
                     modifier_desc.append(f"{charm['name']} +{mult_add} ({self.avoid_streak} streak)")
@@ -1329,18 +1338,14 @@ class ChromaRollGame:
                     else:
                         modifier_parts.append(dagger_text + " (disabled)")
 
-                # New: Calculate Glass mult from current held rolls
-                held_rolls = [(die, value) for i, (die, value) in enumerate(self.rolls) if self.held[i]]
-                glass_count = sum(1 for die, _ in held_rolls if die['color'] == 'Glass')
-                glass_mult = 4 ** glass_count  # Base x4 per held Glass
+                
 
-                # If Mime equipped (and not disabled), double the Glass mult (retrigger)
-                has_mime = any(c['type'] == 'retrigger_held' for idx, c in enumerate(self.equipped_charms) if idx not in self.disabled_charms)
-                if has_mime:
-                    glass_mult *= (4 ** glass_count)  # Apply again for retrigger
+                # Call get_hand_type_and_score to get the updated hand info, including modifiers
+                hand_type, base_score, modifier_desc, final_score, charm_chips, charm_mono_add = self.get_hand_type_and_score()
 
-                if glass_mult > 1.0:
-                    modifier_parts.append(f"Glass x{glass_mult}")
+                # Update the hand text using the returned values
+                self.current_hand_text = f"{hand_type} ({base_score} base + {charm_chips} charms) = {final_score} total"
+                self.modifiers_text = f"Modifiers: {modifier_desc}"  # Assuming you have a separate text for modifiers
 
                 # Add pack boost if >1.0
                 hand_boost = self.hand_multipliers.get(hand_type, 1.0)
