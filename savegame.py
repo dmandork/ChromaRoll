@@ -60,6 +60,8 @@ def save_game(game):
         'previous_state': previous_state_name,  # New: Save previous for pause cases
         'mute': game.mute,  # Save mute state
         'rune_tray': copy.deepcopy(game.rune_tray),
+        'confirmed_hands_this_round': game.confirmed_hands_this_round,
+        'hands_played_this_round': getattr(game, 'hands_played_this_round', 0),  # Keep for compatibility
         # Dagger/Score Multipliers
         'score_mult': getattr(game, 'score_mult', 1.0),  # Safe default if not present
         'dagger_mult': getattr(game, 'dagger_mult', 0.0),
@@ -163,6 +165,8 @@ def load_game(game):
         game.mute = save_data.get('mute', False)
         game.toggle_mute()  # Applies volumes immediately (ensures SFX are set correctly on load)
         game.hand_multipliers = copy.deepcopy(save_data.get('hand_multipliers', {}))
+        game.confirmed_hands_this_round = save_data.get('confirmed_hands_this_round', 0)
+        game.hands_played_this_round = save_data.get('hands_played_this_round', 0)  # Keep for compatibility
         game.rune_tray = copy.deepcopy(save_data.get('rune_tray', [None, None]))
         for ht in data.HAND_TYPES:
             if ht not in game.hand_multipliers:

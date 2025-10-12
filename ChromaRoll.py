@@ -396,6 +396,8 @@ class ChromaRollGame:
             self.current_blind = 'Small'
             self.upcoming_boss_effect = None  # Reset preview for new round/stake
 
+        self.confirmed_hands_this_round = 0
+
         # Reset boss states
         self.current_boss_effect = None
         self.disabled_charms = []
@@ -472,6 +474,7 @@ class ChromaRollGame:
         self.discard_selected = [False] * NUM_DICE_IN_HAND
         self.rerolls_left = MAX_REROLLS if not DEBUG else -1  # Reset to unlimited in debug
         self.rerolls_left_initial = self.rerolls_left
+        self.confirmed_hands_this_round = 0
         self.turn += 1
         self.discard_used_this_round = False  # Reset per hand
         self.is_discard_phase = True  # Reset to discard phase
@@ -755,6 +758,23 @@ class ChromaRollGame:
         score = self.calculate_score()
         self.round_score += score
 
+        # Increment Ice Shard counter if equipped and not disabled
+        for idx, charm in enumerate(self.equipped_charms):
+            if charm['name'] == 'Ice Shard' and idx not in self.disabled_charms:
+                if 'hands_played' not in charm:
+                    charm['hands_played'] = 0
+                charm['hands_played'] += 1
+                break
+
+        # Apply Hiker Hex per-die bonus if equipped and not disabled
+        held_rolls = [(die, value) for i, (die, value) in enumerate(self.rolls) if self.held[i]]  # Compute held_rolls
+        for idx, charm in enumerate(self.equipped_charms):
+            if charm['type'] == 'die_bonus_perm' and idx not in self.disabled_charms:
+                for die, _ in held_rolls:
+                    die['score_bonus'] = die.get('score_bonus', 0) + charm['value']  # Permanent +4 per scored die
+                    print("Applying Hiker Hex to {} dice".format(len(held_rolls)))
+                break
+
         # Track hand play counts and streak
         if hand_type != "Nothing":
             previous_most_played = self.most_played_hand  # ADDED: Track previous to avoid immediate reset on change
@@ -823,6 +843,8 @@ class ChromaRollGame:
                     self.broken_dice.append(i)  # Add index for animation
                     self.break_effect_start = time.time()  # Start timer
 
+        
+
         self.hands_left -= 1
         self.hands_left = max(0, self.hands_left)  # Clamp to prevent negative
         if self.round_score >= self.get_blind_target():
@@ -881,8 +903,10 @@ class ChromaRollGame:
         self.held[index] = not self.held[index]
         self.update_hand_text()
 
-    def get_hand_type_and_score(self):
-        """Determines the hand type, base score, modifier, and final score."""
+    def get_hand_type_and_score(self, is_preview=False):
+        """Determines the hand type, base score, modifier, and final score.
+        is_preview: If True, compute without side effects (for UI previews).
+        """
         
         held_rolls = [(die, value) for i, (die, value) in enumerate(self.rolls) if self.held[i]]
         if not held_rolls:
@@ -1056,12 +1080,12 @@ class ChromaRollGame:
                     actual_set = set(c for c in group_colors if c != 'Rainbow')
                     if len(actual_set) <= 1:
                         mono_pairs += 1
-            if mono_pairs == 1:
-                base_modifier += 0.5
-                modifier_desc.append("One Mono Pair +0.5")
-            elif mono_pairs == 2:
-                base_modifier += 1.0
-                modifier_desc.append("Two Mono Pairs +1")
+                if mono_pairs == 1:
+                    base_modifier += 0.5
+                    modifier_desc.append("One Mono Pair +0.5")
+                elif mono_pairs == 2:
+                    base_modifier += 1.0
+                    modifier_desc.append("Two Mono Pairs +1")
         elif pair_count == 1:
             hand_type = "Pair"
             base_score = 20
@@ -1124,6 +1148,8 @@ class ChromaRollGame:
         num_dice_used = len(held_rolls)
         is_small_straight = any(all(x in values for x in s) for s in straights) or (has_four_fingers and any(all(x in values for x in s) for s in short_straights_small))
         is_large_straight = sorted_values in [[1,2,3,4,5], [2,3,4,5,6]] or (has_four_fingers and any(all(x in values for x in s) for s in short_straights_large))
+        self.confirmed_hands_this_round = getattr(self, 'confirmed_hands_this_round', 0)  # Ensure initialized
+        print(f"DEBUG: confirmed_hands_this_round = {self.confirmed_hands_this_round}, is_preview = {is_preview}")  # Temp debug
         for idx, charm in enumerate(self.equipped_charms):
             if idx in self.disabled_charms:
                 continue
@@ -1167,7 +1193,7 @@ class ChromaRollGame:
                 for _, value in held_rolls:
                     if (charm['parity'] == 'even' and value % 2 == 0) or (charm['parity'] == 'odd' and value % 2 != 0):
                         count += 1
-                charm_chips += count * charm['value']
+                    charm_chips += count * charm['value']
             elif charm['type'] == 'rainbow_mult_bonus':
                 if is_rainbow:
                     charm_color_mult_add += charm['value']
@@ -1215,7 +1241,7 @@ class ChromaRollGame:
                         modifier_desc.append(f"{charm['name']} +{mult_add}")
             elif charm['type'] == 'mult_per_face':
                 count = sum(1 for _, v in held_rolls if v in charm['faces'])
-                mult_add = (charm['value'] - 1) * count
+                mult_add = charm['value'] * count
                 if mult_add > 0:
                     charm_mult_add += mult_add
                     modifier_desc.append(f"{charm['name']} +{mult_add} ({count} faces)")
@@ -1255,15 +1281,22 @@ class ChromaRollGame:
             elif charm['type'] == 'score_per_coin':
                 charm_chips += charm['value'] * self.coins
             elif charm['type'] == 'score_decay':
-                charm_chips += charm['start'] - (charm['decay'] * getattr(self, 'hands_played_this_round', 0))
+                # Initialize hands_played on the charm if not present (per-charm counter)
+                if 'hands_played' not in charm:
+                    charm['hands_played'] = 0
+                decay_bonus = max(0, charm['start'] - (charm['decay'] * charm['hands_played']))
+                charm_chips += decay_bonus
+                print(f"DEBUG: Ice Shard bonus = {decay_bonus} for hands_played = {charm['hands_played']}")  # Temp debug
             elif charm['type'] == 'score_conditional':
                 if len(held_rolls) == charm['dice']:
                     charm_chips += charm['value']
                 self.permanent_score_bonus = getattr(self, 'permanent_score_bonus', 0) + charm['value']
                 charm_chips += self.permanent_score_bonus
-            elif charm['type'] == 'die_bonus_perm':
-                self.die_score_bonus = getattr(self, 'die_score_bonus', 0) + len(held_rolls) * charm['value']
-                charm_chips += self.die_score_bonus
+            
+
+        # Sum per-die bonuses for scored dice
+        for die, _ in held_rolls:
+            charm_chips += die.get('score_bonus', 0)
 
         total_modifier = base_modifier + charm_color_mult_add + rune_mult_add + charm_mult_add
 

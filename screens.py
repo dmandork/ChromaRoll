@@ -324,16 +324,16 @@ def draw_game_screen(game):
         draw_popup(game)
 
     # New: Build and return hand_rects, rolls, bag_rects, bag for animations in GameState
-    hand_rects = []
-    total_dice_width = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
-    start_x = (game.width - total_dice_width) // 2
-    for i in range(constants.NUM_DICE_IN_HAND):
-        x = start_x + i * (constants.DIE_SIZE + 20)
-        size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[i] else constants.DIE_SIZE
-        offset = (constants.DIE_SIZE - size) / 2 if game.held[i] else 0
-        die_rect = pygame.Rect(x + offset, game.height - constants.DIE_SIZE - 100 + offset, size, size)
-        hand_rects.append(die_rect)
-    
+    hand_rects, rolls = draw_dice(game)  # Update to return values from draw_dice (fixed unpack to 2 values)
+    # Add tooltip for dice hover
+    for i, die_rect in enumerate(hand_rects):
+        if die_rect.collidepoint(mouse_pos):
+            die = rolls[i]  # Get the die from rolls
+            bonus = die.get('score_bonus', 0)
+            if bonus > 0:
+                tooltip_text = f"+{bonus}"
+                draw_tooltip(game, die_rect.x, die_rect.y - 20, tooltip_text)  # Above die, adjust y as needed
+
     bag_rects = []
     columns = 5
     rows = math.ceil(len(game.bag) / columns) if game.bag else 1
@@ -345,7 +345,7 @@ def draw_game_screen(game):
         small_rect = pygame.Rect(small_x, small_y, constants.SMALL_DIE_SIZE, constants.SMALL_DIE_SIZE)
         bag_rects.append(small_rect)
     
-    return hand_rects, game.rolls, bag_rects, game.bag  # Add this return
+    return hand_rects, rolls, bag_rects, game.bag  # Add this return
 
 def draw_shop_screen(game, skip_tooltips=False):
     """Draws the shop screen with equipped charms (sell), shop charms (buy), and Prism Packs."""
@@ -849,6 +849,7 @@ def draw_tutorial_screen(game):
 
 def draw_dice(game):
         """Draws the current rolls on the screen."""
+        hand_rects = []
         total_dice_width = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
         start_x = (game.width - total_dice_width) // 2
         current_time = time.time()  # For animation
@@ -882,6 +883,7 @@ def draw_dice(game):
                 draw_enhancement_visuals(game, r, die)  # Add enhancements/animations
             ]
             draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=inner_content)
+        return hand_rects, game.rolls  # Return rects and rolls
 
 # In screens.py, update draw_bag_visual to use inner_content with lambda for enhancements (no need for draw_dots_or_icon if small dies have no pips; add if needed)
 def draw_bag_visual(game):
