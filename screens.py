@@ -6,6 +6,7 @@ import math
 from utils import *  # For draw_rounded_element, get_easing, etc.
 import constants  # For THEME, SPLASH_*, etc.
 import data  # For DICE_DESCRIPTIONS, etc. if needed in drawing
+from data import ENH_DESC  # For enhancement descriptions in tooltips
 
 def draw_splash_screen(game):
     mouse_pos = pygame.mouse.get_pos()  # For hover
@@ -323,29 +324,37 @@ def draw_game_screen(game):
     if game.show_popup:
         draw_popup(game)
 
-    # New: Build and return hand_rects, rolls, bag_rects, bag for animations in GameState
-    hand_rects, rolls = draw_dice(game)  # Update to return values from draw_dice (fixed unpack to 2 values)
-    # Add tooltip for dice hover
-    for i, die_rect in enumerate(hand_rects):
-        if die_rect.collidepoint(mouse_pos):
-            die = rolls[i]  # Get the die from rolls
-            bonus = die.get('score_bonus', 0)
-            if bonus > 0:
-                tooltip_text = f"+{bonus}"
-                draw_tooltip(game, die_rect.x, die_rect.y - 20, tooltip_text)  # Above die, adjust y as needed
+    # Render tooltips based on hovered state
+    if game.hovered_hand_die is not None:
+        i = game.hovered_hand_die
+        die, _ = game.rolls[i]  # Get die dict
+        desc = ''
+        if 'enhancements' in die and die['enhancements']:
+            for enh in die['enhancements']:
+                desc += f"{enh}: {ENH_DESC.get(enh, 'Unknown effect')}\n"
+        bonus = die.get('score_bonus', 0)
+        if bonus > 0:
+            desc += f"+{bonus} Score Bonus\n"
+        print(f"Rendering hand tooltip for die {i}: desc='{desc}' at pos ({game.hand_die_rects[i].x}, {game.hand_die_rects[i].y - 20})")  # Debug: Confirm call, desc, pos (remove later)
+        if desc:
+            die_rect = game.hand_die_rects[i]
+            draw_tooltip(game, die_rect.x, die_rect.y + die_rect.height + 10, desc.strip())  # Below die for visibility
 
-    bag_rects = []
-    columns = 5
-    rows = math.ceil(len(game.bag) / columns) if game.bag else 1
-    for j in range(len(game.bag)):
-        col = j % columns
-        row = j // columns
-        small_x = bag_x + constants.BAG_PADDING + col * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING)
-        small_y = bag_y + constants.BAG_PADDING + row * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING)
-        small_rect = pygame.Rect(small_x, small_y, constants.SMALL_DIE_SIZE, constants.SMALL_DIE_SIZE)
-        bag_rects.append(small_rect)
-    
-    return hand_rects, rolls, bag_rects, game.bag  # Add this return
+    if game.hovered_bag_die is not None:
+        j = game.hovered_bag_die
+        die = game.bag[j]
+        desc = ''
+        if 'enhancements' in die and die['enhancements']:
+            for enh in die['enhancements']:
+                desc += f"{enh}: {ENH_DESC.get(enh, 'Unknown effect')}\n"
+        bonus = die.get('score_bonus', 0)
+        if bonus > 0:
+            desc += f"+{bonus} Score Bonus\n"
+        print(f"Rendering bag tooltip for die {j}: desc='{desc}' at pos ({game.bag_die_rects[j].x}, {game.bag_die_rects[j].y - 20})")  # Debug
+        if desc:
+            bag_rect = game.bag_die_rects[j]
+            draw_tooltip(game, bag_rect.x, bag_rect.y + bag_rect.height + 10, desc.strip())
+
 
 def draw_shop_screen(game, skip_tooltips=False):
     """Draws the shop screen with equipped charms (sell), shop charms (buy), and Prism Packs."""
@@ -1296,6 +1305,12 @@ def draw_popup(game):
     for i, line in enumerate(lines):
         text = game.tiny_font.render(line, True, (constants.THEME['text']))
         game.screen.blit(text, (popup_rect.x + (constants.POPUP_WIDTH - text.get_width()) // 2, popup_rect.y + 20 + i * 30))
+
+    # Add Lucky bonus coins line if applicable
+    if game.lucky_triggers > 0:
+        lucky_line = f"Lucky Coins: {'$' * game.lucky_triggers}"
+        lucky_text = game.tiny_font.render(lucky_line, True, (constants.THEME['text']))
+        game.screen.blit(lucky_text, (popup_rect.x + (constants.POPUP_WIDTH - lucky_text.get_width()) // 2, popup_rect.y + 20 + len(lines) * 30))
 
     # Draw single Continue button
     continue_rect = pygame.Rect(popup_rect.x + (constants.POPUP_WIDTH - constants.BUTTON_WIDTH) // 2, popup_rect.y + constants.POPUP_HEIGHT - 70, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
