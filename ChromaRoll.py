@@ -204,6 +204,11 @@ class ChromaRollGame:
         self.debug_boss_scroll_offset = 0  # For scrolling long list
         self.debug_boss_selected = None  # Temp for selection
 
+        self.is_last_hand = False         # For Final Forge
+        self.is_final_discard = False     # For Acrobat Amulet
+        self.used_reroll_advantage = False  # For Fate's Favor
+        self.rune_cast_used = False       # For Gambler's Grimoire
+
         self._init_defaults()  # Call after one-time setups
 
     def _init_defaults(self):
@@ -760,7 +765,7 @@ class ChromaRollGame:
 
     def score_and_new_turn(self):
         """Manually scores and starts a new turn."""
-        hand_type, base_score, modifier_desc, final_score, charm_chips, charm_mono_add = self.get_hand_type_and_score()
+        hand_type, base_score, modifier_desc, final_score, charm_chips, charm_mono_add = self.get_hand_type_and_score(is_preview=False)
         if self.show_popup:
             return  # Block actions during popup
         
@@ -805,7 +810,7 @@ class ChromaRollGame:
             if charm['name'] == 'Lucky Labyrinth' and idx not in self.disabled_charms:
                 triggers = self.lucky_triggers
                 if triggers > 0:
-                    charm['permanent_bonus'] = charm.get('permanent_bonus', 0.0) + (0.2 * triggers)  # 0.2 per trigger
+                    charm['permanent_bonus'] = charm.get('permanent_bonus', 0.0) + (charm['value'] * triggers)  # EDIT: Stack charm['value'] per trigger as permanent (e.g., +0.2 per); removed hardcoded 0.2, assuming value=0.2
                     print("Lucky Labyrinth permanent bonus applied:", charm['permanent_bonus'])  # Debug, remove later
                 break
 
@@ -880,7 +885,8 @@ class ChromaRollGame:
                     self.broken_dice.append(i)  # Add index for animation
                     self.break_effect_start = time.time()  # Start timer
 
-        
+        if self.round_score >= self.get_blind_target():
+            self.stake_milestones = getattr(self, 'stake_milestones', 0) + 1  # Increment on blind win
 
         self.hands_left -= 1
         self.hands_left = max(0, self.hands_left)  # Clamp to prevent negative
@@ -906,7 +912,12 @@ class ChromaRollGame:
                 discards_dollars = '$' * self.discards_left
                 interest_dollars = '$' * interest if interest >= 0 else str(interest)
             
-            total_coins = remains_coins + interest + self.extra_coins
+            # EDIT: Add Luck bonus line (visual with $$ per trigger/coin)
+            luck_coins = self.lucky_triggers  # Since +1 per trigger
+            luck_dollars = '$$' * luck_coins if luck_coins > 0 else ''
+            luck_line = f"Luck Bonus: {luck_dollars}\n" if luck_coins > 0 else ""
+            
+            total_coins = remains_coins + interest + self.extra_coins + luck_coins  # EDIT: Explicitly include luck_coins (though already in self.coins; for clarity)
             extras_dollars = '$' * self.extra_coins if self.extra_coins > 0 else ''
             total_dollars = '$' * abs(total_coins) if total_coins >= 0 else str(total_coins)
             extras_line = f"Extras: {extras_dollars}\n" if self.extra_coins > 0 else ""
@@ -915,6 +926,7 @@ class ChromaRollGame:
                                 f"Discards Left: {discards_dollars}\n"
                                 f"Interest: {interest_dollars}\n"
                                 f"{extras_line}"
+                                f"{luck_line}"  # EDIT: Insert Luck line before total
                                 f"Coins gained: {total_dollars}")
             self.coins += total_coins
             self.coins = max(0, self.coins)  # Clamp to prevent negative coins from penalties
@@ -940,7 +952,7 @@ class ChromaRollGame:
         self.held[index] = not self.held[index]
         self.update_hand_text()
 
-    def get_hand_type_and_score(self, is_preview=False):
+    def get_hand_type_and_score(self, is_preview=True):
         """Determines the hand type, base score, modifier, and final score.
         is_preview: If True, compute without side effects (for UI previews).
         """
@@ -1031,7 +1043,7 @@ class ChromaRollGame:
         elif max_count == 3 and 2 in counts.values():
             hand_type = "Full House"
             base_score = 160
-            three_val = next((val for val, count in counts.items() if count == 3), None)  # FIXED: Use next with default None to avoid StopIteration
+            three_val = next((val for val, count in counts.items() if count == 3), None)
             pair_val = next((val for val, count in counts.items() if count == 2), None)
             three_group = groups.get(three_val, [])
             pair_group = groups.get(pair_val, [])
@@ -1160,7 +1172,7 @@ class ChromaRollGame:
                 rune_mult_add += 0.5
             if 'Fragile' in enh:
                 rune_mult_add += 1.0
-                if random.random() < 0.25:
+                if not is_preview and random.random() < 0.25:
                     rune_break_dies.append(die)
             if 'Stone' in enh:
                 rune_chips += 50
@@ -1291,20 +1303,110 @@ class ChromaRollGame:
                     charm_mult_add += mult_add
                     modifier_desc.append(f"{charm['name']} +{mult_add} ({low_count} below 25)")
             elif charm['type'] == 'mult_per_lucky':
-                if is_preview:
-                    continue  # Skip during previews
-                mult_add = charm['value'] * getattr(self, 'lucky_triggers', 0)
-                mult_add += charm.get('permanent_bonus', 0.0)  # Add permanent stack
+                mult_add = charm.get('permanent_bonus', 0.0)  # EDIT: Only add permanent_bonus; no current lucky_triggers mult for this hand
                 if mult_add > 0:
                     charm_mult_add += mult_add
-                    modifier_desc.append(f"{charm['name']} +{mult_add} ({self.lucky_triggers} lucky)")
+                    modifier_desc.append(f"{charm['name']} +{mult_add} (permanent)")  # EDIT: Always show as permanent
             elif charm['type'] == 'mult_per_milestone':
                 mult_add = charm['value'] * getattr(self, 'stake_milestones', 0)
                 if mult_add > 0:
                     charm_mult_add += mult_add
                     modifier_desc.append(f"{charm['name']} +{mult_add} ({self.stake_milestones} milestones)")
+            elif charm['type'] == 'advantage_choice':
+            # Stub: Requires roll logic outside scoring (e.g., in roll phase)
+            # For now, no in-score effect; handle in roll method
+                pass
+            elif charm['type'] == 'reroll_advantage':
+                # Stub: Once per blind, allow advantage reroll; track in game state
+                if not is_preview and not getattr(self, 'used_reroll_advantage', False):
+                    # Logic would go in reroll method; here, no score effect
+                    pass
+            elif charm['type'] == 'rune_cast':
+                # Stub: Cast random rune once per shop; needs state (e.g., self.rune_cast_used)
+                if not is_preview and not getattr(self, 'rune_cast_used', False):
+                    # Apply random rune effect (to be defined in rune system)
+                    pass
+            elif charm['type'] == 'coin_per_lucky':
+                if not is_preview and self.lucky_triggers > 0:
+                    charm_chips += charm['value'] * self.lucky_triggers
+                    modifier_desc.append(f"{charm['name']} +{charm['value'] * self.lucky_triggers} coins ({self.lucky_triggers} lucky)")
+            elif charm['type'] == 'random_rune':
+                # Stub: Add random rune at blind start; no per-hand effect
+                pass
+            elif charm['type'] == 'interest_bonus':
+                # Stub: Adds 1 coin per 10 coins at round end; handle in score_and_new_turn
+                pass
+            elif charm['type'] == 'retrigger_special':
+                # Stub: Retrigger enhancements on special colors; needs color check
+                if not is_preview:
+                    special_colors = ['Gold', 'Silver', 'Glass', 'Rainbow']  # Define as needed
+                    special_count = sum(1 for die, _ in held_rolls if die['color'] in special_colors)
+                    if special_count > 0:
+                        # Retrigger logic (e.g., double coin effects) to be defined
+                        pass
+            elif charm['type'] == 'mult_per_enhance':
+                enhance_count = sum(1 for die, _ in held_rolls if die.get('enhancements'))
+                mult_add = charm['value'] * enhance_count
+                if mult_add > 0:
+                    charm_mult_add += mult_add
+                    modifier_desc.append(f"{charm['name']} +{mult_add} ({enhance_count} enhancements)")
+            elif charm['type'] == 'discard_mult':
+                mult_add = charm['value'] * getattr(self, 'discards_used_this_round', 0)
+                if mult_add > 0:
+                    charm_mult_add += mult_add
+                    modifier_desc.append(f"{charm['name']} +{mult_add} ({self.discards_used_this_round} discards)")
+            elif charm['type'] == 'coin_per_wild':
+                wild_count = sum(1 for die, _ in held_rolls if die['color'] == 'Rainbow' and len(set([d['color'] for d, _ in held_rolls if d['color'] != 'Rainbow'])) <= 1)
+                if not is_preview and wild_count > 0:
+                    charm_chips += charm['value'] * wild_count
+                    modifier_desc.append(f"{charm['name']} +{charm['value'] * wild_count} coins ({wild_count} wilds)")
+            elif charm['type'] == 'final_mult_conditional':
+                # Stub: +3 mult on last hand with enhancement; needs hand count check
+                if not is_preview and getattr(self, 'is_last_hand', False) and any(die.get('enhancements') for die, _ in held_rolls):
+                    charm_mult_add += charm['value']
+                    modifier_desc.append(f"{charm['name']} +{charm['value']} (final)")
+            elif charm['type'] == 'face_buy_high':
+                # Stub: Pay 3 coins for +2 to a face; handle in event/turn logic
+                pass
+            elif charm['type'] == 'coin_per_discard':
+                discards_left = getattr(self, 'discards_left', 0)
+                if not is_preview and discards_left > 0:
+                    charm_chips += charm['value'] * discards_left
+                    modifier_desc.append(f"{charm['name']} +{charm['value'] * discards_left} coins ({discards_left} discards)")
+            elif charm['type'] == 'risk_mult':
+                # Stub: -1 to one die, +0.5 mult; handle die mod in roll phase
+                if not is_preview:
+                    charm_mult_add += charm['value']
+                    modifier_desc.append(f"{charm['name']} +{charm['value']} (risk)")
+            elif charm['type'] == 'loss_prevent':
+                # Stub: Prevent loss once per game; handle in game over logic
+                pass
+            elif charm['type'] == 'rune_scribe':
+                # Stub: Scribe rune on magic 3; handle in scoring or turn start
+                if not is_preview and any(value == 3 for _, value in held_rolls):
+                    # Logic to add to rune tray
+                    pass
+            elif charm['type'] == 'revive_die':
+                # Stub: 50% chance to revive a die; handle in break or turn end
+                pass
+            elif charm['type'] == 'discard_destroy_coin':
+                # Stub: Destroy 1 die for 3 coins on first discard; handle in discard phase
+                pass
+            elif charm['type'] == 'score_per_discard_color':
+                # Stub: +3 per discarded color die; needs discard tracking
+                pass
+            elif charm['type'] == 'mult_final_discard':
+                # Stub: +2 mult on final discard; needs discard count
+                if not is_preview and getattr(self, 'is_final_discard', False):
+                    charm_mult_add += charm['value']
+                    modifier_desc.append(f"{charm['name']} +{charm['value']} (final discard)")
             elif charm['type'] == 'score_per_coin':
                 charm_chips += charm['value'] * self.coins
+            elif charm['type'] == 'score_bonus' and charm['value'] == 'stat_sum':
+                # Sum the face values of all held dice
+                face_sum = sum(value for _, value in held_rolls)
+                charm_chips += face_sum  # Add to chips (base score additive)
+                modifier_desc.append(f"{charm['name']} +{face_sum} (Sum of faces)")
             elif charm['type'] == 'score_decay':
                 # Initialize hands_played on the charm if not present (per-charm counter)
                 if 'hands_played' not in charm:
@@ -1322,7 +1424,7 @@ class ChromaRollGame:
         # Sum per-die bonuses for scored dice
         for die, _ in held_rolls:
             bonus = die.get('score_bonus', 0)
-            print(f"Die ID {die.get('id', 'no_id')} bonus: {bonus}")  # Debug: shows if/why 0
+            #  print(f"Die ID {die.get('id', 'no_id')} bonus: {bonus}")  # Debug: shows if/why 0
             charm_chips += die.get('score_bonus', 0)
 
         total_modifier = base_modifier + charm_color_mult_add + rune_mult_add + charm_mult_add

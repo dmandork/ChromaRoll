@@ -68,9 +68,9 @@ class GameState(State):
                 draw_enhancement_visuals(self.game, die_rect, die)  # Add this after element draw
                 
                 # Animation: Glow border if enhanced (skip for color/wild only)
-                if die.get('enhancements') and any(e not in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild'] for e in die['enhancements']):
-                    glow_color = (255, 255, 0) if math.sin(current_time * 3) > 0 else (255, 215, 0)  # Pulsing yellow
-                    pygame.draw.rect(self.game.screen, glow_color, die_rect, 2)
+                # if die.get('enhancements') and any(e not in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild'] for e in die['enhancements']):
+                    # glow_color = (255, 255, 0) if math.sin(current_time * 3) > 0 else (255, 215, 0)  # Pulsing yellow
+                    # pygame.draw.rect(self.game.screen, glow_color, die_rect, 2)
         
         # For bag draw (grid loop, using self.game.bag_die_rects and self.game.bag)
         for i, small_rect in enumerate(self.game.bag_die_rects or []):
@@ -184,14 +184,14 @@ class GameState(State):
             for i, die_rect in enumerate(self.game.hand_die_rects):
                 if die_rect.collidepoint(mouse_pos):
                     self.game.hovered_hand_die = i
-                    print(f"Hover detected on hand die {i} at {die_rect}")  # Debug: Confirm rect and trigger
+                    #  print(f"Hover detected on hand die {i} at {die_rect}")  # Debug: Confirm rect and trigger
                     break
 
             # Hover on bag dice
             for j, bag_rect in enumerate(self.game.bag_die_rects):
                 if bag_rect.collidepoint(mouse_pos):
                     self.game.hovered_bag_die = j
-                    print(f"Hover detected on bag die {j} at {bag_rect}")  # Debug
+                    #  print(f"Hover detected on bag die {j} at {bag_rect}")  # Debug
                     break
 
         if event.type == pygame.MOUSEBUTTONUP:
@@ -220,7 +220,7 @@ class GameState(State):
     # In class GameState
     def update_die_rects(self):
         # Hand dice rects (from your draw_dice logic)
-        print("Updating die rects")  # Temp debug—remove later
+        #  print("Updating die rects")  # Temp debug—remove later
         self.game.hand_die_rects = []
         for i in range(NUM_DICE_IN_HAND):
             total_dice_width = NUM_DICE_IN_HAND * (DIE_SIZE + 20) - 20

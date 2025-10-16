@@ -1,3 +1,24 @@
 Triple Threat, Envy Echo/Gluttony Glyph/Pride Prism/Sloth Sigil/Greedy Gambler, Face Forgery/Queen's Quill/Kind Keeper/Kind King, 
 Flower Pot Prism/Glass Globe, Obelisk Orb, Wee Widget, Triboulet Token, Joker Die, Ice Shard, Hiker Hex, Square Sphere, 
 Bull Bead, Flash Face, Lucky Labyrinth, Erosion Edge, Life Milestone, Stat Roller
+
+Advantage Amulet - 'advantage_choice' (strategic roll choice).
+Fate's Favor - 'reroll_advantage' (blind-specific advantage).
+Gambler's Grimoire - 'rune_cast' (random rune effect).
+Luck's Locket - 'coin_per_lucky' (lucky synergy).
+Rune Relic - 'random_rune' (blind-start rune).
+Interest Idol - 'interest_bonus' (coin scaling).
+Synergy Scroll - 'retrigger_special' (special color retrigger).
+Enhance Elixir - 'mult_per_enhance' (enhancement mult).
+Discard Drake - 'discard_mult' (discard synergy).
+Wild Warden - 'coin_per_wild' (wild coin bonus).
+Final Forge - 'final_mult_conditional' (enhancement final hand).
+Buy Boon - 'face_buy_high' (face boost).
+Echo Ember - 'coin_per_discard' (discard coin).
+Disadvantage Dice - 'risk_mult' (risk-reward mult).
+Cloak of Cunning - 'loss_prevent' (game-saving mechanic).
+Spellbook Scribe - 'rune_scribe' (magic number rune).
+Necromancer's Needle - 'revive_die' (die revival).
+Trading Token - 'discard_destroy_coin' (discard coin trade).
+Castle Cube - 'score_per_discard_color' (color discard bonus).
+Acrobat Amulet - 'mult_final_discard' (final discard mult).

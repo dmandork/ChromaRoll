@@ -243,12 +243,72 @@ def draw_game_screen(game):
             elif charm['type'] == 'empty_slot_mult':
                 current_mult = game.get_stencil_mult()
                 tooltip_text += f" (Current: x{current_mult:.1f})"
-            # ADDED: Append most-played hand for Obelisk Orb
             if charm['name'] == 'Obelisk Orb':
                 most_played = game.most_played_hand or "None"
                 tooltip_text += f" (Most Played: {most_played})"
+            # ADDED: Append Lucky Labyrinth bonus
+            if charm['name'] == 'Lucky Labyrinth':
+                permanent_bonus = charm.get('permanent_bonus', 0.0)
+                tooltip_text += f"\nPermanent Mult: +{permanent_bonus:.1f}"
+            # ADDED: Append Life Milestone modifier
+            if charm['name'] == 'Life Milestone':
+                mult_add = charm['value'] * getattr(game, 'stake_milestones', 0)
+                if mult_add > 0:
+                    tooltip_text += f"\nCurrent Mult: +{mult_add:.1f} ({game.stake_milestones} milestones)"
+            if charm['name'] == 'Stat Roller':
+                # Preview with current held rolls
+                face_sum = sum(value for _, value in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]])
+                tooltip_text += f"\nCurrent Bonus: +{face_sum} (Sum of faces)"
+            # New charms tooltips
+            if charm['type'] == 'advantage_choice':
+                tooltip_text += "\nPreview: Choose best of two rolls (roll phase)"
+            if charm['type'] == 'reroll_advantage':
+                tooltip_text += "\nPreview: Once per blind, reroll with choice"
+            if charm['type'] == 'rune_cast':
+                tooltip_text += "\nPreview: Cast random rune (once per shop)"
+            if charm['type'] == 'coin_per_lucky':
+                tooltip_text += f"\nPreview: +{charm['value']} coins per lucky trigger"
+            if charm['type'] == 'random_rune':
+                tooltip_text += "\nPreview: Random rune at blind start"
+            if charm['type'] == 'interest_bonus':
+                tooltip_text += "\nPreview: +1 coin per 10 coins at round end"
+            if charm['type'] == 'retrigger_special':
+                tooltip_text += "\nPreview: Retriggers special color effects"
+            if charm['type'] == 'mult_per_enhance':
+                enhance_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die.get('enhancements'))
+                mult_add = charm['value'] * enhance_count
+                tooltip_text += f"\nPreview: +{mult_add:.1f} ({enhance_count} enhancements)"
+            if charm['type'] == 'discard_mult':
+                discards_used = getattr(game, 'discards_used_this_round', 0)
+                mult_add = charm['value'] * discards_used
+                tooltip_text += f"\nPreview: +{mult_add:.1f} ({discards_used} discards)"
+            if charm['type'] == 'coin_per_wild':
+                wild_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die['color'] == 'Rainbow' and len(set([d['color'] for d, _ in [(dd, vv) for ii, (dd, vv) in enumerate(game.rolls) if game.held[ii] and dd['color'] != 'Rainbow']]) <= 1))
+                tooltip_text += f"\nPreview: +{charm['value'] * wild_count} coins ({wild_count} wilds)"
+            if charm['type'] == 'final_mult_conditional':
+                tooltip_text += "\nPreview: +3 mult on last hand with enhancement"
+            if charm['type'] == 'face_buy_high':
+                tooltip_text += "\nPreview: +2 to a face (3 coins, once/turn)"
+            if charm['type'] == 'coin_per_discard':
+                discards_left = getattr(game, 'discards_left', 0)
+                tooltip_text += f"\nPreview: +{charm['value'] * discards_left} coins ({discards_left} discards)"
+            if charm['type'] == 'risk_mult':
+                tooltip_text += f"\nPreview: +{charm['value']} mult (risk -1 die)"
+            if charm['type'] == 'loss_prevent':
+                tooltip_text += "\nPreview: Prevents loss once (destroys charm)"
+            if charm['type'] == 'rune_scribe':
+                tooltip_text += "\nPreview: Scribes rune on scoring 3"
+            if charm['type'] == 'revive_die':
+                tooltip_text += "\nPreview: 50% chance to revive a die"
+            if charm['type'] == 'discard_destroy_coin':
+                tooltip_text += "\nPreview: Destroy 1 die for 3 coins (first discard)"
+            if charm['type'] == 'score_per_discard_color':
+                tooltip_text += "\nPreview: +3 per discarded color die"
+            if charm['type'] == 'mult_final_discard':
+                tooltip_text += "\nPreview: +2 mult on final discard"        
             if i in game.disabled_charms:
                 tooltip_text += " (Disabled this round by Boss Effect)"
+            
             draw_tooltip(game, x, y + constants.CHARM_SIZE + constants.TOOLTIP_PADDING, tooltip_text)
     # Removed self.draw_charms() to eliminate duplicate drawing and tooltip issues
 
@@ -335,7 +395,7 @@ def draw_game_screen(game):
         bonus = die.get('score_bonus', 0)
         if bonus > 0:
             desc += f"+{bonus} Score Bonus\n"
-        print(f"Rendering hand tooltip for die {i}: desc='{desc}' at pos ({game.hand_die_rects[i].x}, {game.hand_die_rects[i].y - 20})")  # Debug: Confirm call, desc, pos (remove later)
+        #  print(f"Rendering hand tooltip for die {i}: desc='{desc}' at pos ({game.hand_die_rects[i].x}, {game.hand_die_rects[i].y - 20})")  # Debug: Confirm call, desc, pos (remove later)
         if desc:
             die_rect = game.hand_die_rects[i]
             draw_tooltip(game, die_rect.x, die_rect.y + die_rect.height + 10, desc.strip())  # Below die for visibility
@@ -350,7 +410,7 @@ def draw_game_screen(game):
         bonus = die.get('score_bonus', 0)
         if bonus > 0:
             desc += f"+{bonus} Score Bonus\n"
-        print(f"Rendering bag tooltip for die {j}: desc='{desc}' at pos ({game.bag_die_rects[j].x}, {game.bag_die_rects[j].y - 20})")  # Debug
+        #  print(f"Rendering bag tooltip for die {j}: desc='{desc}' at pos ({game.bag_die_rects[j].x}, {game.bag_die_rects[j].y - 20})")  # Debug
         if desc:
             bag_rect = game.bag_die_rects[j]
             draw_tooltip(game, bag_rect.x, bag_rect.y + bag_rect.height + 10, desc.strip())
@@ -452,6 +512,57 @@ def draw_shop_screen(game, skip_tooltips=False):
             elif charm['type'] == 'empty_slot_mult':
                 current_mult = game.get_stencil_mult()
                 tooltip_text += f" (Current: x{current_mult})"
+            # ADDED: Append Lucky Labyrinth bonus for equipped charms
+            if charm['name'] == 'Lucky Labyrinth':
+                permanent_bonus = charm.get('permanent_bonus', 0.0)
+                tooltip_text += f"\nPermanent Mult: +{permanent_bonus:.1f}"
+            # New charms tooltips
+            if charm['type'] == 'advantage_choice':
+                tooltip_text += "\nPreview: Choose best of two rolls (roll phase)"
+            if charm['type'] == 'reroll_advantage':
+                tooltip_text += "\nPreview: Once per blind, reroll with choice"
+            if charm['type'] == 'rune_cast':
+                tooltip_text += "\nPreview: Cast random rune (once per shop)"
+            if charm['type'] == 'coin_per_lucky':
+                tooltip_text += f"\nPreview: +{charm['value']} coins per lucky trigger"
+            if charm['type'] == 'random_rune':
+                tooltip_text += "\nPreview: Random rune at blind start"
+            if charm['type'] == 'interest_bonus':
+                tooltip_text += "\nPreview: +1 coin per 10 coins at round end"
+            if charm['type'] == 'retrigger_special':
+                tooltip_text += "\nPreview: Retriggers special color effects"
+            if charm['type'] == 'mult_per_enhance':
+                enhance_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die.get('enhancements'))
+                mult_add = charm['value'] * enhance_count
+                tooltip_text += f"\nPreview: +{mult_add:.1f} ({enhance_count} enhancements)"
+            if charm['type'] == 'discard_mult':
+                discards_used = getattr(game, 'discards_used_this_round', 0)
+                mult_add = charm['value'] * discards_used
+                tooltip_text += f"\nPreview: +{mult_add:.1f} ({discards_used} discards)"
+            if charm['type'] == 'coin_per_wild':
+                wild_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die['color'] == 'Rainbow' and len(set([d['color'] for d, _ in [(dd, vv) for ii, (dd, vv) in enumerate(game.rolls) if game.held[ii] and dd['color'] != 'Rainbow']]) <= 1))
+                tooltip_text += f"\nPreview: +{charm['value'] * wild_count} coins ({wild_count} wilds)"
+            if charm['type'] == 'final_mult_conditional':
+                tooltip_text += "\nPreview: +3 mult on last hand with enhancement"
+            if charm['type'] == 'face_buy_high':
+                tooltip_text += "\nPreview: +2 to a face (3 coins, once/turn)"
+            if charm['type'] == 'coin_per_discard':
+                discards_left = getattr(game, 'discards_left', 0)
+                tooltip_text += f"\nPreview: +{charm['value'] * discards_left} coins ({discards_left} discards)"
+            if charm['type'] == 'risk_mult':
+                tooltip_text += f"\nPreview: +{charm['value']} mult (risk -1 die)"
+            if charm['type'] == 'loss_prevent':
+                tooltip_text += "\nPreview: Prevents loss once (destroys charm)"
+            if charm['type'] == 'rune_scribe':
+                tooltip_text += "\nPreview: Scribes rune on scoring 3"
+            if charm['type'] == 'revive_die':
+                tooltip_text += "\nPreview: 50% chance to revive a die"
+            if charm['type'] == 'discard_destroy_coin':
+                tooltip_text += "\nPreview: Destroy 1 die for 3 coins (first discard)"
+            if charm['type'] == 'score_per_discard_color':
+                tooltip_text += "\nPreview: +3 per discarded color die"
+            if charm['type'] == 'mult_final_discard':
+                tooltip_text += "\nPreview: +2 mult on final discard"
             equipped_hover = (x, y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
     
     # Draw dragged charm in shop
@@ -495,6 +606,19 @@ def draw_shop_screen(game, skip_tooltips=False):
                 preview_mult = charm['value'] * (game.max_charms - len(game.equipped_charms))
                 tooltip_text += f" (If bought: x{preview_mult})"
             shop_hover = (x, y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
+            if charm['name'] == 'Lucky Labyrinth':
+                permanent_bonus = charm.get('permanent_bonus', 0.0)
+                tooltip_text += f"\nPermanent Mult: +{permanent_bonus:.1f}"
+            # ADDED: Append Life Milestone modifier
+            if charm['name'] == 'Life Milestone':
+                mult_add = charm['value'] * getattr(game, 'stake_milestones', 0)
+                if mult_add > 0:
+                    tooltip_text += f"\nCurrent Mult: +{mult_add:.1f} ({game.stake_milestones} milestones)"
+            if charm['name'] == 'Stat Roller':
+                # Preview with current held rolls
+                face_sum = sum(value for _, value in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]])
+                tooltip_text += f"\nCurrent Bonus: +{face_sum} (Sum of faces)"
+            draw_tooltip(game, x, y + constants.CHARM_SIZE + 10, tooltip_text)
 
     # Packs section inside panel (below shop charms, with space for future additions above/below/sides)
     pack_title = game.small_font.render("Packs", True, (constants.THEME['text']))
