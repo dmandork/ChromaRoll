@@ -523,8 +523,8 @@ def draw_shop_screen(game, skip_tooltips=False):
                 tooltip_text += "\nPreview: Once per blind, reroll with choice"
             if charm['type'] == 'rune_cast':
                 tooltip_text += "\nPreview: Cast random rune (once per shop)"
-            if charm['type'] == 'coin_per_lucky':
-                tooltip_text += f"\nPreview: +{charm['value']} coins per lucky trigger"
+            #  if charm['type'] == 'coin_per_lucky':
+            #      tooltip_text += f"\nPreview: +{charm['value']} coins per lucky trigger"
             if charm['type'] == 'random_rune':
                 tooltip_text += "\nPreview: Random rune at blind start"
             if charm['type'] == 'interest_bonus':

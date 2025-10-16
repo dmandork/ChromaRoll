@@ -117,7 +117,7 @@ CHARMS_POOL = [
     {'name': 'Advantage Amulet', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Roll two dice for one position; choose which to keep.', 'type': 'advantage_choice', 'value': 1},
     {'name': 'Fate\'s Favor', 'rarity': 'Rare', 'cost': 6, 'desc': 'Once per round, reroll a die with advantage (roll twice, choose).', 'type': 'reroll_advantage', 'value': 1},
     {'name': 'Gambler\'s Grimoire', 'rarity': 'Legendary', 'cost': 9, 'desc': 'Cast a random mystic rune effect for free once per shop.', 'type': 'rune_cast', 'value': 1},
-    {'name': 'Luck\'s Locket', 'rarity': 'Common', 'cost': 4, 'desc': '+5 coins if a lucky enhancement triggers.', 'type': 'coin_per_lucky', 'value': 5},
+    {'name': 'Luck\'s Locket', 'rarity': 'Common', 'cost': 4, 'desc': '+3 coins if a lucky enhancement triggers.', 'type': 'coin_per_lucky', 'value': 3},
     {'name': 'Rune Relic', 'rarity': 'Uncommon', 'cost': 6, 'desc': 'Enhance a die with a random rune effect at the start of each blind.', 'type': 'random_rune'},
     {'name': 'Envy Echo', 'rarity': 'Common', 'cost': 3, 'desc': '+0.5 mult for Green dice scored.', 'type': 'color_mult', 'color': 'Green', 'value': 0.5},
     {'name': 'Gluttony Glyph', 'rarity': 'Common', 'cost': 3, 'desc': '+0.5 mult for Purple dice scored.', 'type': 'color_mult', 'color': 'Purple', 'value': 0.5},

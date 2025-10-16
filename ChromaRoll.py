@@ -786,7 +786,7 @@ class ChromaRollGame:
                             break  # No need to loop further
                 break
 
-        #  score = self.calculate_score() # Old: Calculate score again
+        # score = self.calculate_score() # Old: Calculate score again
         score = final_score  # Use pre-calculated final score
         print("Computed score:", score, "(base:", base_score, "chips:", charm_chips, "modifier:", 1 + charm_mono_add)  # Add this debug to see components
         self.round_score += score
@@ -810,7 +810,7 @@ class ChromaRollGame:
             if charm['name'] == 'Lucky Labyrinth' and idx not in self.disabled_charms:
                 triggers = self.lucky_triggers
                 if triggers > 0:
-                    charm['permanent_bonus'] = charm.get('permanent_bonus', 0.0) + (charm['value'] * triggers)  # EDIT: Stack charm['value'] per trigger as permanent (e.g., +0.2 per); removed hardcoded 0.2, assuming value=0.2
+                    charm['permanent_bonus'] = charm.get('permanent_bonus', 0.0) + (charm['value'] * triggers)
                     print("Lucky Labyrinth permanent bonus applied:", charm['permanent_bonus'])  # Debug, remove later
                 break
 
@@ -842,6 +842,7 @@ class ChromaRollGame:
                     if die['color'] == charm['color']:
                         if (charm['color'] == 'Gold' and self.held[j]) or (charm['color'] == 'Silver' and not self.held[j]):
                             self.extra_coins += charm['value']
+
         # Compute dynamic Glass break chance and penalty from charms
         glass_break_chance = 0.25
         glass_break_penalty = 0
@@ -853,19 +854,16 @@ class ChromaRollGame:
         # Handle Glass break chance (only for held Glass)
         for i, (die, _) in enumerate(self.rolls):
             if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
-                # Play break sound here again (on retrigger break)
                 self.sfx_channel.play(self.break_sound)
-                # Break: Remove from full_bag and bag
                 self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
                 self.bag = [d for d in self.bag if d['id'] != die['id']]
                 self.coins -= glass_break_penalty
-                self.broken_dice.append(i)  # Add index for animation
-                self.break_effect_start = time.time()  # Start timer
+                self.broken_dice.append(i)
+                self.break_effect_start = time.time()
 
-        # Add Mime here (same as above)
+        # Add Mime here
         has_mime = any(c['type'] == 'retrigger_held' for c in self.equipped_charms)
 
-        # Retrigger if Mime (same as above)
         if has_mime:
             for i, (die, _) in enumerate(self.rolls):
                 if self.held[i]:
@@ -877,13 +875,12 @@ class ChromaRollGame:
 
             for i, (die, _) in enumerate(self.rolls):
                 if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
-                    # Play break sound here again (on retrigger break)
                     self.sfx_channel.play(self.break_sound)
                     self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
                     self.bag = [d for d in self.bag if d['id'] != die['id']]
                     self.coins -= glass_break_penalty
-                    self.broken_dice.append(i)  # Add index for animation
-                    self.break_effect_start = time.time()  # Start timer
+                    self.broken_dice.append(i)
+                    self.break_effect_start = time.time()
 
         if self.round_score >= self.get_blind_target():
             self.stake_milestones = getattr(self, 'stake_milestones', 0) + 1  # Increment on blind win
@@ -891,7 +888,7 @@ class ChromaRollGame:
         self.hands_left -= 1
         self.hands_left = max(0, self.hands_left)  # Clamp to prevent negative
         if self.round_score >= self.get_blind_target():
-            # Compute dynamic interest max from charms (existing)
+            # Compute dynamic interest max from charms
             dynamic_interest_max = INTEREST_MAX
             for charm in self.equipped_charms:
                 if charm['type'] == 'interest_max_bonus':
@@ -899,35 +896,49 @@ class ChromaRollGame:
             
             if self.green_pouch_active:
                 remains_coins = (self.hands_left * 2) + (self.discards_left * 1)
-                interest = 0  # No interest for Green Pouch, like Balatro
-                hands_dollars = '$$' * self.hands_left  # Visual for *2
-                discards_dollars = '$' * self.discards_left  # Visual for *1
-                interest_dollars = ''  # No interest
+                interest = 0
+                hands_dollars = '$$' * self.hands_left
+                discards_dollars = '$' * self.discards_left
+                interest_dollars = ''
             else:
-                remains_coins = self.hands_left + self.discards_left  # Remove 'if not DEBUG else 0' to always gain from hands/discards
-                # If you want to keep debug override (e.g., for testing no remains), uncomment and adjust:
-                # remains_coins = self.hands_left + self.discards_left if not DEBUG else 0
+                remains_coins = self.hands_left + self.discards_left
                 interest = min(self.coins, dynamic_interest_max) // INTEREST_RATE
                 hands_dollars = '$' * self.hands_left
                 discards_dollars = '$' * self.discards_left
                 interest_dollars = '$' * interest if interest >= 0 else str(interest)
             
-            # EDIT: Add Luck bonus line (visual with $$ per trigger/coin)
-            luck_coins = self.lucky_triggers  # Since +1 per trigger
-            luck_dollars = '$$' * luck_coins if luck_coins > 0 else ''
-            luck_line = f"Luck Bonus: {luck_dollars}\n" if luck_coins > 0 else ""
+            # Track Luck's Locket coins explicitly from this hand
+            luck_locket_coins = 0
+            for charm in self.equipped_charms:
+                if charm['name'] == "Luck's Locket" and self.lucky_triggers > 0:
+                    luck_locket_coins += charm['value'] * self.lucky_triggers
             
-            total_coins = remains_coins + interest + self.extra_coins + luck_coins  # EDIT: Explicitly include luck_coins (though already in self.coins; for clarity)
+            # Track base lucky coins ( +1 per trigger, already added in get_hand_type_and_score)
+            base_lucky_coins = self.lucky_triggers * 1  # Base +1 per
+            
+            # Total coins including Luck's Locket effect
+            total_coins = remains_coins + interest + self.extra_coins + luck_locket_coins + base_lucky_coins
+            
+            # Visual representations
+            luck_locket_dollars = '$$' * luck_locket_coins if luck_locket_coins > 0 else ''
+            luck_locket_line = f"Luck Bonus: {luck_locket_dollars}\n" if luck_locket_coins > 0 else ""
+            
+            base_lucky_dollars = '$' * base_lucky_coins if base_lucky_coins > 0 else ''
+            base_lucky_line = f"Lucky Coins: {base_lucky_dollars}\n" if base_lucky_coins > 0 else ""
+            
             extras_dollars = '$' * self.extra_coins if self.extra_coins > 0 else ''
-            total_dollars = '$' * abs(total_coins) if total_coins >= 0 else str(total_coins)
             extras_line = f"Extras: {extras_dollars}\n" if self.extra_coins > 0 else ""
+            total_dollars = '$' * abs(total_coins) if total_coins >= 0 else str(total_coins)
+            
             self.popup_message = (f"{self.current_blind} Blind Beaten! Score: {self.round_score}/{int(self.get_blind_target())}\n"
                                 f"Hands left: {hands_dollars}\n"
                                 f"Discards Left: {discards_dollars}\n"
                                 f"Interest: {interest_dollars}\n"
                                 f"{extras_line}"
-                                f"{luck_line}"  # EDIT: Insert Luck line before total
+                                f"{luck_locket_line}"  # Luck's Locket
+                                f"{base_lucky_line}"  # Base 'Lucky'
                                 f"Coins gained: {total_dollars}")
+            
             self.coins += total_coins
             self.coins = max(0, self.coins)  # Clamp to prevent negative coins from penalties
             self.show_popup = True
@@ -1328,8 +1339,9 @@ class ChromaRollGame:
                     pass
             elif charm['type'] == 'coin_per_lucky':
                 if not is_preview and self.lucky_triggers > 0:
-                    charm_chips += charm['value'] * self.lucky_triggers
-                    modifier_desc.append(f"{charm['name']} +{charm['value'] * self.lucky_triggers} coins ({self.lucky_triggers} lucky)")
+                    coins_added = charm['value'] * self.lucky_triggers
+                    self.coins += coins_added  # Add directly to coins
+                    modifier_desc.append(f"{charm['name']} +{coins_added} coins ({self.lucky_triggers} lucky)")
             elif charm['type'] == 'random_rune':
                 # Stub: Add random rune at blind start; no per-hand effect
                 pass

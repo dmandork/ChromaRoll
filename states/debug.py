@@ -455,7 +455,8 @@ class DebugDiceSelectForRune(State):
                 if rect.collidepoint(mouse_pos):
                     if die in self.selected_dice:
                         self.selected_dice.remove(die)
-                    elif len(self.selected_dice) < self.game.current_rune['max_dice']:
+                    elif DEBUG or len(self.selected_dice) < self.game.current_rune['max_dice']:
+                        # Allow unlimited selection in debug mode
                         self.selected_dice.append(die)
                     break
             if self.apply_rect and self.apply_rect.collidepoint(mouse_pos) and self.selected_dice:
