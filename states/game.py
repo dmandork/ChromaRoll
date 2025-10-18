@@ -2,6 +2,7 @@
 import pygame
 import time
 import math
+import random
 from states.base import State  # Import from base
 from screens import draw_game_screen, draw_popup, draw_buttons, draw_tooltip, draw_enhancement_visuals
 from constants import DEBUG, NUM_DICE_IN_HAND, THEME, DIE_SIZE, HELD_DIE_SCALE, CHARM_SIZE, SMALL_DIE_SIZE, SMALL_DIE_SPACING, BAG_PADDING
@@ -22,6 +23,7 @@ class GameState(State):
         self.hand_die_rects = []  # For 5 in-play dice
         self.bag_die_rects = []   # For bag visuals (upper right)
         self.tray_rects = []  # Store for click
+        self.initial_auto_roll_done = False  # For auto-roll in rolling phase
         game.apply_boss_face_shuffle()  # Apply on resume/load into game state
 
     def enter(self):
@@ -30,7 +32,7 @@ class GameState(State):
             self.game.is_resuming = False
             return  # Skip dice pull
         # Init or reset game vars (call new_turn only if no loaded hand/rolls)
-        print("DEBUG: GameState.enter - checking conditions")
+        print("DEBUG: GameState enter - checking conditions")
         if not self.game.hand or not self.game.rolls or not self.game.has_rolled:
             if self.game.turn_initialized and self.game.is_discard_phase:
                 print("DEBUG: Resuming discard - skipping pull")
@@ -38,6 +40,7 @@ class GameState(State):
                 self.game.new_turn()
         else:
             self.game.new_turn()  # If has hand but not rolled? Rare, but handle
+        self.game.update_advantage_flag()  # Refresh after entering state
 
     def update(self, dt):
         # Handle animations/timers (e.g., break effects, temp messages)
@@ -50,6 +53,16 @@ class GameState(State):
             elapsed = time.time() - self.game.temp_message_start
             if elapsed > self.game.temp_message_duration:
                 self.game.temp_message = None  # Fade out complete
+
+        # Trigger advantage roll after auto-roll in rolling phase (roll separate value, no overwrite)
+        if not self.game.is_discard_phase and not self.initial_auto_roll_done:
+            self.initial_auto_roll_done = True
+            # Your auto-roll logic here (e.g., self.game.roll_dice())
+            if self.game.has_advantage and self.game.advantage_value is None:
+                self.game.original_center_value = self.game.rolls[2][1]  # Save original value
+                self.game.advantage_value = random.randint(1, 6)  # Roll separate advantage value
+                self.game.use_advantage = False
+                print("Debug: Saved original center value:", self.game.original_center_value, "Rolled advantage:", self.game.advantage_value)
         # Add more updates as needed (e.g., color cycling for rainbow)
 
     def draw(self):
@@ -65,27 +78,18 @@ class GameState(State):
         for i, die_rect in enumerate(self.game.hand_die_rects or []):
             if i < len(self.game.rolls):
                 die, value = self.game.rolls[i]
-                draw_enhancement_visuals(self.game, die_rect, die)  # Add this after element draw
-                
-                # Animation: Glow border if enhanced (skip for color/wild only)
-                # if die.get('enhancements') and any(e not in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild'] for e in die['enhancements']):
-                    # glow_color = (255, 255, 0) if math.sin(current_time * 3) > 0 else (255, 215, 0)  # Pulsing yellow
-                    # pygame.draw.rect(self.game.screen, glow_color, die_rect, 2)
-        
+                draw_enhancement_visuals(self.game, die_rect, die)  # Add this after element drawing
         # For bag draw (grid loop, using self.game.bag_die_rects and self.game.bag)
         for i, small_rect in enumerate(self.game.bag_die_rects or []):
             if i < len(self.game.bag):
                 die = self.game.bag[i]
                 # Removed: draw_enhancement_visuals(self.game, small_rect, die)  # No icons in bag
-                
-                # Removed: If enhanced, subtle scale anim (skip for color/wild only)
-                # No borders or pulses in bag
 
         if self.game.show_popup:
             self.continue_rect = draw_popup(self.game)  # Overlay popup
         else:
             self.reroll_rect, self.discard_rect, self.start_roll_rect, self.score_rect, self.end_turn_rect = draw_buttons(self.game)
-        
+
         # Tooltip hover checks (after all draws)
         mouse_pos = pygame.mouse.get_pos()
         for i, die_rect in enumerate(self.game.hand_die_rects or []):
@@ -114,7 +118,7 @@ class GameState(State):
                 self.game.state_machine.change_state(PauseMenuState(self.game))
 
         if event.type == pygame.MOUSEBUTTONDOWN:
-            mouse_pos = pygame.mouse.get_pos()
+            mouse_pos = pygame.mouse.get_pos()  # Moved to the top to ensure it's always defined
             if self.game.show_popup:
                 if self.continue_rect and self.continue_rect.collidepoint(mouse_pos):
                     from states.shop import ShopState  # Lazy import
@@ -124,20 +128,38 @@ class GameState(State):
                     self.game.state_machine.change_state(ShopState(self.game))
                     return
 
-            # Dice clicks
+            # Dice clicks (always check all, including center 3rd die first)
             for i in range(NUM_DICE_IN_HAND):
                 total_dice_width = NUM_DICE_IN_HAND * (DIE_SIZE + 20) - 20
                 start_x = (self.game.width - total_dice_width) // 2
                 x = start_x + i * (DIE_SIZE + 20)
                 size = DIE_SIZE * HELD_DIE_SCALE if self.game.held[i] else DIE_SIZE
-                offset = (DIE_SIZE - DIE_SIZE * HELD_DIE_SCALE) / 2 if self.game.held[i] else 0
+                offset = (DIE_SIZE - size) / 2 if self.game.held[i] else 0
                 die_rect = pygame.Rect(x + offset, self.game.height - DIE_SIZE - 100 + offset, size, size)
                 if die_rect.collidepoint(mouse_pos):
                     if self.game.is_discard_phase:
                         self.game.toggle_discard(i)
                     else:
                         self.game.toggle_hold(i)
+                        # ADDED: Exclusion for center die (i==2)
+                        if i == 2 and self.game.held[2]:
+                            self.game.held_advantage = False  # Unhold advantage if original held
+                        print(f"Debug: Toggled die {i} - held[{i}] = {self.game.held[i]}")  # Debug for 3rd die
+                    break  # Stop after handling one die click
 
+            # Advantage choice clicks (after main dice, so original center is always checked first)
+            if not self.game.is_discard_phase and self.game.has_advantage and self.game.advantage_value is not None:
+                if self.game.advantage_die_rect and self.game.advantage_die_rect.collidepoint(mouse_pos):
+                    self.game.held_advantage = not self.game.held_advantage  # Toggle advantage
+                    if self.game.held_advantage and self.game.held[2]:
+                        self.game.held[2] = False  # Unhold original if advantage held
+                    print("Debug: Toggled advantage - held_advantage =", self.game.held_advantage, "held[2] =", self.game.held[2])
+                elif self.game.center_die_rect and self.game.center_die_rect.collidepoint(mouse_pos):
+                    self.game.held[2] = not self.game.held[2]  # Toggle original
+                    if self.game.held[2] and self.game.held_advantage:
+                        self.game.held_advantage = False  # Unhold advantage if original held
+                    print("Debug: Toggled original - held[2] =", self.game.held[2], "held_advantage =", self.game.held_advantage)
+        
             # Button clicks
             if self.reroll_rect and self.reroll_rect.collidepoint(mouse_pos):
                 self.game.reroll()
@@ -174,7 +196,7 @@ class GameState(State):
             if self.game.dragging_charm_index != -1:
                 pass  # Handled in draw
 
-            mouse_pos = event.pos
+            mouse_pos = pygame.mouse.get_pos()  # Moved inside motion for consistency
             self.game.hovered_hand_die = None
             self.game.hovered_bag_die = None
 

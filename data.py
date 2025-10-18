@@ -114,7 +114,7 @@ CHARMS_POOL = [
     {'name': 'Quadruple Threat Charm', 'rarity': 'Rare', 'cost': 7, 'desc': '+200 base score if hand contains a 4 of a Kind.', 'type': 'hand_bonus', 'hands': ['4 of a Kind'], 'value': 200},
     {'name': 'Reroll Recycler Charm', 'rarity': 'Rare', 'cost': 8, 'desc': 'Gain 1 extra reroll in the turn if you use a discard.', 'type': 'reroll_recycler'},
     {'name': 'Interest Booster Charm', 'rarity': 'Common', 'cost': 3, 'desc': 'Increases max coins for interest calculation by 20.', 'type': 'interest_max_bonus', 'value': 20},
-    {'name': 'Advantage Amulet', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Roll two dice for one position; choose which to keep.', 'type': 'advantage_choice', 'value': 1},
+    {'name': 'Advantage Amulet', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'After discard phase, roll a duplicate for the center die; choose which to hold during rolling phase.', 'type': 'advantage_choice', 'value': 1},
     {'name': 'Fate\'s Favor', 'rarity': 'Rare', 'cost': 6, 'desc': 'Once per round, reroll a die with advantage (roll twice, choose).', 'type': 'reroll_advantage', 'value': 1},
     {'name': 'Gambler\'s Grimoire', 'rarity': 'Legendary', 'cost': 9, 'desc': 'Cast a random mystic rune effect for free once per shop.', 'type': 'rune_cast', 'value': 1},
     {'name': 'Luck\'s Locket', 'rarity': 'Common', 'cost': 4, 'desc': '+3 coins if a lucky enhancement triggers.', 'type': 'coin_per_lucky', 'value': 3},
@@ -204,7 +204,7 @@ RUNE_PACKS = [
 # In data.py, update MYSTIC_RUNES to add 'max_dice' key (0 for no die, 1 default, 2/3 for multi)
 MYSTIC_RUNES = [
     {'name': 'Mystic Fool Rune', 'desc': 'Creates a copy of the last Mystic or Upgrade Rune used this run (must have room in consumable inventory).', 'max_dice': 0},
-    {'name': 'Mystic Luck Rune', 'desc': 'Enhances 1 selected die in bag to "Lucky" (25% chance for +1 coin or x1.5 mult when scored, stacking with color effects).', 'max_dice': 1},
+    {'name': 'Mystic Luck Rune', 'desc': 'Enhances 1 selected die in bag to "Lucky" (25% chance for +1 coin).', 'max_dice': 1},
     {'name': 'Mystic Oracle Rune', 'desc': 'Creates up to 2 random Upgrade Runes for hand type boosts.', 'max_dice': 0},
     {'name': 'Mystic Mult Rune', 'desc': 'Enhances 2 selected dice in bag to add +0.5x mult when scored (stacks with Glass, etc.).', 'max_dice': 2},
     {'name': 'Mystic Emperor Rune', 'desc': 'Creates up to 2 random Mystic Runes (must have room).', 'max_dice': 0},
@@ -232,7 +232,7 @@ MYSTIC_RUNES = [
 # In data.py, after MYSTIC_RUNES
 
 ENH_DESC = {
-    'Lucky': 'Lucky: 25% chance for +1 coin or x1.5 mult when scored (stacks with color effects).',
+    'Lucky': 'Lucky: 25% chance for +1 coin.',
     'Mult': 'Mult: Adds +0.5x mult when scored (stacks with Glass, etc.).',
     'Bonus': 'Bonus: Adds +10 score when scored.',
     'Wild': 'Rainbow: Acts as any color for mono/rainbow bonuses.',

@@ -692,6 +692,9 @@ def draw_blinds_screen(game):
     if game.upcoming_boss_effect is None:
         game.upcoming_boss_effect = random.choice(data.BOSS_EFFECTS)  # Fallback generate if not set
 
+    # In shop or load logic
+    game.update_advantage_flag()
+
     blind_order = ['Small', 'Big', 'Boss']
     box_width, box_height = 150, 100
     box_spacing = 50  # Spacing between blind boxes (pixels)
@@ -981,41 +984,79 @@ def draw_tutorial_screen(game):
     return left_rect, right_rect, skip_rect
 
 def draw_dice(game):
-        """Draws the current rolls on the screen."""
-        hand_rects = []
-        total_dice_width = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
-        start_x = (game.width - total_dice_width) // 2
-        current_time = time.time()  # For animation
-        for i, (die, value) in enumerate(game.rolls):
-            x = start_x + i * (constants.DIE_SIZE + 20)
-            y = game.height - constants.DIE_SIZE - 100
-            size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[i] else constants.DIE_SIZE
-            offset = (constants.DIE_SIZE - constants.DIE_SIZE * constants.HELD_DIE_SCALE) / 2 if game.held[i] else 0
-            color = die['color']
-            if color == 'Rainbow':
-                color_index = int(current_time / constants.CYCLE_SPEED) % len(constants.BASE_COLORS)
-                color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
-            else:
-                color_rgb = constants.COLORS[color]
-            # Draw die background with rounded corners
-            rect = pygame.Rect(x + offset, y + offset, size, size)
+    """Draws the current rolls on the screen."""
+    hand_rects = []
+    total_dice_width = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
+    start_x = (game.width - total_dice_width) // 2
+    current_time = time.time()  # For animation
+    for i, (die, value) in enumerate(game.rolls):
+        x = start_x + i * (constants.DIE_SIZE + 20)
+        y = game.height - constants.DIE_SIZE - 100
+        size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[i] else constants.DIE_SIZE
+        offset = (constants.DIE_SIZE - size) / 2 if game.held[i] else 0
+        color = die['color']
+        if color == 'Rainbow':
+            color_index = int(current_time / constants.CYCLE_SPEED) % len(constants.BASE_COLORS)
+            color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
+        else:
+            color_rgb = constants.COLORS[color]
+        # Draw die background with rounded corners
+        rect = pygame.Rect(x + offset, y + offset, size, size)
 
-            # New: Mini-function for dots (moves your existing loop here)
-            def _draw_dots(inner_rect):
-                for pos in data.DOT_POSITIONS.get(value, []):
-                    dot_x = inner_rect.x + pos[0] * inner_rect.width  # Updated to use inner_rect (was x + offset + pos[0] * size)
-                    dot_y = inner_rect.y + pos[1] * inner_rect.height  # Updated to use inner_rect (was y + offset + pos[1] * size)
-                    pygame.draw.circle(game.screen, (0, 0, 0), (dot_x, dot_y), constants.DOT_RADIUS)
-            # Highlight if selected for discard (red border outside black)
-            if game.discard_selected[i]:
-                outer_rect = pygame.Rect(x + offset - 3, y + offset - 3, size + 6, size + 6)
-                pygame.draw.rect(game.screen, (255, 0, 0), outer_rect, 3, border_radius=constants.DIE_BORDER_RADIUS)
-            # Draw dots
-            inner_content = lambda r: [
-                _draw_dots(r),  # Existing pips
-                draw_enhancement_visuals(game, r, die)  # Add enhancements/animations
-            ]
-            draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=inner_content)
+        # Mini-function for dots
+        def _draw_dots(inner_rect, dot_value):
+            for pos in data.DOT_POSITIONS.get(dot_value, []):
+                dot_x = inner_rect.x + pos[0] * inner_rect.width
+                dot_y = inner_rect.y + pos[1] * inner_rect.height
+                pygame.draw.circle(game.screen, (0, 0, 0), (dot_x, dot_y), constants.DOT_RADIUS)
+        # Highlight if selected for discard (red border outside black)
+        if game.discard_selected[i]:
+            outer_rect = pygame.Rect(x + offset - 3, y + offset - 3, size + 6, size + 6)
+            pygame.draw.rect(game.screen, (255, 0, 0), outer_rect, 3, border_radius=constants.DIE_BORDER_RADIUS)
+        # Draw dots
+        inner_content = lambda r: [
+            _draw_dots(r, value),
+            draw_enhancement_visuals(game, r, die)
+        ]
+        draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=inner_content)
+
+        # Set center_die_rect for index 2
+        if i == 2:
+            game.center_die_rect = rect
+
+    # Draw advantage duplicate if in rolling phase
+    if not game.is_discard_phase and game.has_advantage and game.advantage_value is not None:
+        # Duplicate above center
+        adv_y = (game.height - constants.DIE_SIZE - 100) - constants.DIE_SIZE - 10
+        adv_size = constants.DIE_SIZE  # Fixed size, no hold scale
+        adv_x = start_x + 2 * (constants.DIE_SIZE + 20)
+        adv_rect = pygame.Rect(adv_x, adv_y, adv_size, adv_size)
+        game.advantage_die_rect = adv_rect
+        
+        # Draw duplicate (same as center but with advantage_value)
+        die = game.rolls[2][0]
+        color_rgb = constants.COLORS[die['color']]
+        adv_inner_content = lambda r: [
+            _draw_dots(r, game.advantage_value),
+            draw_enhancement_visuals(game, r, die)
+        ]
+        draw_rounded_element(game.screen, adv_rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=adv_inner_content)
+        
+        # Highlight if chosen (use_advantage), not held
+        if game.use_advantage:
+            pygame.draw.rect(game.screen, (0, 255, 0), adv_rect, 2)
+        if game.held[2]:
+            pygame.draw.rect(game.screen, (0, 255, 0), game.center_die_rect, 2)  # Highlight original if held
+
+        # Set center_die_rect for index 2 (normal)
+        if 2 < len(game.rolls):
+            # Refresh center rect
+            x = start_x + 2 * (constants.DIE_SIZE + 20)
+            y = game.height - constants.DIE_SIZE - 100
+            size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[2] else constants.DIE_SIZE
+            offset = (constants.DIE_SIZE - size) / 2 if game.held[2] else 0
+            game.center_die_rect = pygame.Rect(x + offset, y + offset, size, size)
+
         return hand_rects, game.rolls  # Return rects and rolls
 
 # In screens.py, update draw_bag_visual to use inner_content with lambda for enhancements (no need for draw_dots_or_icon if small dies have no pips; add if needed)

@@ -5,11 +5,12 @@ import pygame  # For graphics and input handling
 import time  # For animation delays
 import copy
 import sys
+import os
 sys.path.insert(0, '.')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # Ensure root directory is always included
 import data
 import screens
 import savegame
-import os
 from constants import *
 from utils import draw_rounded_element, resource_path, create_dice_bag, wrap_text, get_easing
 
@@ -209,6 +210,18 @@ class ChromaRollGame:
         self.used_reroll_advantage = False  # For Fate's Favor
         self.rune_cast_used = False       # For Gambler's Grimoire
 
+        self.held_advantage = False  # Separate hold for advantage die
+        self.has_advantage = False
+        self.advantage_value = None
+        self.use_advantage = False
+        self.center_die_rect = None
+        self.advantage_die_rect = None
+        self.initial_auto_roll_done = False  # For auto-roll in rolling phase
+        self.original_center_value = None  # Save original 3rd die value for revert
+
+        self.round_locket_coins = 0
+        self.round_base_lucky_coins = 0
+
         self._init_defaults()  # Call after one-time setups
 
     def _init_defaults(self):
@@ -309,7 +322,10 @@ class ChromaRollGame:
         self.rerolls_left_initial = 3
         self.hand_play_counts = {ht: 0 for ht in data.HAND_TYPES}  # Track counts per hand type
 
-    
+    def update_advantage_flag(self):
+        self.has_advantage = any(charm['type'] == 'advantage_choice' for charm in self.equipped_charms)
+        if DEBUG:
+            print("Debug: Advantage flag updated to", self.has_advantage)
 
 
     def toggle_mute(self):
@@ -492,6 +508,8 @@ class ChromaRollGame:
         self.discard_used_this_round = False  # Reset per hand
         self.is_discard_phase = True  # Reset to discard phase
         self.has_rolled = False  # No initial roll yet
+        self.round_locket_coins = 0
+        self.round_base_lucky_coins = 0
         self.update_hand_text()  # Update initial hand text
         # In new_turn():
         if not game.turn_initialized:
@@ -561,7 +579,7 @@ class ChromaRollGame:
                     for i in range(len(self.held)):
                         if self.held[i] and random.random() < 0.20:
                             self.held[i] = False  # Force reroll
-                
+            
             # Animate cycling for non-held dice
             # Play roll sound here (at start of reroll)
             self.sfx_channel.play(self.roll_sound)
@@ -571,6 +589,9 @@ class ChromaRollGame:
                         die_temp = self.rolls[i][0]  # Temp var for the die
                         faces = self.boss_shuffled_faces.get(die_temp['id'], die_temp['faces']) if self.current_blind == 'Boss' and self.current_boss_effect and self.current_boss_effect['name'] == 'Face Shuffle' else die_temp['faces']
                         self.rolls[i] = (die_temp, random.choice(faces))
+                # ADDED: Animate advantage if not held
+                if self.has_advantage and not self.held_advantage:
+                    self.advantage_value = random.randint(1, 6)
                 self.screen.fill(THEME['background'])  # Clear screen
                 screens.draw_game_screen(self)
                 pygame.display.flip()  # Update screen during animation
@@ -582,7 +603,12 @@ class ChromaRollGame:
                     die = self.rolls[i][0]
                     faces = self.boss_shuffled_faces.get(die['id'], die['faces']) if self.current_blind == 'Boss' and self.current_boss_effect and self.current_boss_effect['name'] == 'Face Shuffle' else die['faces']
                     self.rolls[i] = (die, random.choice(faces))
-            
+
+            # ADDED: Roll advantage if not held_advantage (independent)
+            if self.has_advantage and not self.held_advantage:
+                self.advantage_value = random.randint(1, 6)
+                print("Debug: Rerolled advantage value:", self.advantage_value)
+
             if not DEBUG:
                 self.rerolls_left -= 1
             self.update_hand_text()  # Update after reroll
@@ -676,7 +702,7 @@ class ChromaRollGame:
                     discards_dollars = '$' * self.discards_left  # Visual for *1
                     interest_dollars = ''  # No interest
                 else:
-                    remains_coins = self.hands_left + self.discards_left if not DEBUG else 0
+                    remains_coins = self.hands_left + self.discards_left
                     interest = min(self.coins, dynamic_interest_max) // INTEREST_RATE
                     hands_dollars = '$' * self.hands_left
                     discards_dollars = '$' * self.discards_left
@@ -693,12 +719,13 @@ class ChromaRollGame:
                                     f"{extras_line}"
                                     f"Coins gained: {total_dollars}")
                 self.coins += total_coins
+                self.coins = max(0, self.coins)  # Clamp to prevent negative coins from penalties
                 self.show_popup = True
             elif self.hands_left > 0:
                 self.new_turn()  # Next hand in round
             else:
-                # Game over
-                self.game_state = 'game_over'
+                # Game over - transition to state
+                self.state_machine.change_state(GameOverState(self))
 
     def discard(self):
         """Discards selected dice and draws new ones from bag, replacing in same positions with value 1."""
@@ -814,6 +841,7 @@ class ChromaRollGame:
                     print("Lucky Labyrinth permanent bonus applied:", charm['permanent_bonus'])  # Debug, remove later
                 break
 
+        # Accumulate sound for lucky triggers but don't add coins yet
         for _ in range(self.lucky_triggers):
             self.sfx_channel.play(self.coin_sound)  # Play per coin
 
@@ -827,21 +855,24 @@ class ChromaRollGame:
             else:
                 self.avoid_streak = 0
 
-        # Accumulate extra coins from Gold/Silver
+        # Accumulate extra coins from Gold/Silver but don't add to self.coins yet
+        gold_silver_coins = 0
         for i, (die, _) in enumerate(self.rolls):
             if die['color'] == 'Gold' and self.held[i]:
                 self.sfx_channel.play(self.coin_sound)  # Play per coin gain
-                self.extra_coins += 1
+                gold_silver_coins += 1
             elif die['color'] == 'Silver' and not self.held[i]:
                 self.sfx_channel.play(self.coin_sound)  # Play per coin gain
-                self.extra_coins += 1
+                gold_silver_coins += 1
         # Add extra coin bonuses from charms
+        charm_extra_coins = 0
         for charm in self.equipped_charms:
             if charm['type'] == 'extra_coin_bonus':
                 for j, (die, _) in enumerate(self.rolls):
                     if die['color'] == charm['color']:
                         if (charm['color'] == 'Gold' and self.held[j]) or (charm['color'] == 'Silver' and not self.held[j]):
-                            self.extra_coins += charm['value']
+                            charm_extra_coins += charm['value']
+        self.extra_coins += gold_silver_coins + charm_extra_coins  # Accumulate in extra_coins for now
 
         # Compute dynamic Glass break chance and penalty from charms
         glass_break_chance = 0.25
@@ -857,7 +888,7 @@ class ChromaRollGame:
                 self.sfx_channel.play(self.break_sound)
                 self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
                 self.bag = [d for d in self.bag if d['id'] != die['id']]
-                self.coins -= glass_break_penalty
+                self.coins -= glass_break_penalty  # Penalty immediate, as it's a loss
                 self.broken_dice.append(i)
                 self.break_effect_start = time.time()
 
@@ -878,12 +909,9 @@ class ChromaRollGame:
                     self.sfx_channel.play(self.break_sound)
                     self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
                     self.bag = [d for d in self.bag if d['id'] != die['id']]
-                    self.coins -= glass_break_penalty
+                    self.coins -= glass_break_penalty  # Penalty immediate
                     self.broken_dice.append(i)
                     self.break_effect_start = time.time()
-
-        if self.round_score >= self.get_blind_target():
-            self.stake_milestones = getattr(self, 'stake_milestones', 0) + 1  # Increment on blind win
 
         self.hands_left -= 1
         self.hands_left = max(0, self.hands_left)  # Clamp to prevent negative
@@ -907,24 +935,26 @@ class ChromaRollGame:
                 discards_dollars = '$' * self.discards_left
                 interest_dollars = '$' * interest if interest >= 0 else str(interest)
             
-            # Track Luck's Locket coins explicitly from this hand
-            luck_locket_coins = 0
+            # Accumulate Luck's Locket coins for this hand but don't add to self.coins yet
+            luck_locket_coins_this_hand = 0
             for charm in self.equipped_charms:
                 if charm['name'] == "Luck's Locket" and self.lucky_triggers > 0:
-                    luck_locket_coins += charm['value'] * self.lucky_triggers
+                    luck_locket_coins_this_hand += charm['value'] * self.lucky_triggers
+            self.round_locket_coins += luck_locket_coins_this_hand
+
+            # Accumulate base lucky coins for this hand but don't add to self.coins yet
+            base_lucky_coins_this_hand = self.lucky_triggers * 1
+            self.round_base_lucky_coins += base_lucky_coins_this_hand
+
+            # Total coins including accumulated Luck's Locket and base lucky
+            total_coins = remains_coins + interest + self.extra_coins + self.round_locket_coins + self.round_base_lucky_coins
             
-            # Track base lucky coins ( +1 per trigger, already added in get_hand_type_and_score)
-            base_lucky_coins = self.lucky_triggers * 1  # Base +1 per
+            # Visual representations (standardized to '$' * coins)
+            luck_locket_dollars = '$' * self.round_locket_coins if self.round_locket_coins > 0 else ''
+            luck_locket_line = f"Luck Bonus: {luck_locket_dollars}\n" if self.round_locket_coins > 0 else ""
             
-            # Total coins including Luck's Locket effect
-            total_coins = remains_coins + interest + self.extra_coins + luck_locket_coins + base_lucky_coins
-            
-            # Visual representations
-            luck_locket_dollars = '$$' * luck_locket_coins if luck_locket_coins > 0 else ''
-            luck_locket_line = f"Luck Bonus: {luck_locket_dollars}\n" if luck_locket_coins > 0 else ""
-            
-            base_lucky_dollars = '$' * base_lucky_coins if base_lucky_coins > 0 else ''
-            base_lucky_line = f"Lucky Coins: {base_lucky_dollars}\n" if base_lucky_coins > 0 else ""
+            base_lucky_dollars = '$' * self.round_base_lucky_coins if self.round_base_lucky_coins > 0 else ''
+            base_lucky_line = f"Lucky Coins: {base_lucky_dollars}\n" if self.round_base_lucky_coins > 0 else ""
             
             extras_dollars = '$' * self.extra_coins if self.extra_coins > 0 else ''
             extras_line = f"Extras: {extras_dollars}\n" if self.extra_coins > 0 else ""
@@ -935,11 +965,11 @@ class ChromaRollGame:
                                 f"Discards Left: {discards_dollars}\n"
                                 f"Interest: {interest_dollars}\n"
                                 f"{extras_line}"
-                                f"{luck_locket_line}"  # Luck's Locket
-                                f"{base_lucky_line}"  # Base 'Lucky'
+                                f"{luck_locket_line}"  # Luck's Locket accumulated
+                                f"{base_lucky_line}"  # Base 'Lucky' accumulated
                                 f"Coins gained: {total_dollars}")
             
-            self.coins += total_coins
+            self.coins += total_coins  # Add all coins at the end
             self.coins = max(0, self.coins)  # Clamp to prevent negative coins from penalties
             self.show_popup = True
         elif self.hands_left > 0:
@@ -971,6 +1001,19 @@ class ChromaRollGame:
         held_rolls = [(die, value) for i, (die, value) in enumerate(self.rolls) if self.held[i]]
         if not held_rolls:
             return "Nothing", 0, "None", 0, 0, 0.0
+
+        # If advantage held, add it as an extra entry with advantage_value (independent of original)
+        if self.has_advantage and self.held_advantage and not is_preview:
+            center_die = self.rolls[2][0]  # Use original die for color/enhancements
+            held_rolls.append((center_die, self.advantage_value))  # Add advantage as extra held die
+            print("Debug: Added advantage die to held_rolls with value", self.advantage_value)
+        
+        # Use copy for held_rolls
+        # held_rolls = [(die, value) for i, (die, value) in enumerate(rolls_copy) if self.held[i]]
+
+        print("Debug: Before hand type - held_rolls =", [(die['id'], value) for die, value in held_rolls])  # ID and value
+        print("Debug: rolls[2] =", self.rolls[2])  # Check if replaced
+
         values = [value for die, value in held_rolls]
         colors_list = [die['color'] for die, value in held_rolls]
         sorted_values = sorted(values)
@@ -1178,7 +1221,7 @@ class ChromaRollGame:
                 rune_mult_add += 0.5
             if 'Lucky' in enh and not is_preview and random.random() < 0.33:
                 self.lucky_triggers += 1
-                self.coins += 1  # +1 coin
+                
             if 'Steel' in enh:
                 rune_mult_add += 0.5
             if 'Fragile' in enh:
@@ -1340,7 +1383,6 @@ class ChromaRollGame:
             elif charm['type'] == 'coin_per_lucky':
                 if not is_preview and self.lucky_triggers > 0:
                     coins_added = charm['value'] * self.lucky_triggers
-                    self.coins += coins_added  # Add directly to coins
                     modifier_desc.append(f"{charm['name']} +{coins_added} coins ({self.lucky_triggers} lucky)")
             elif charm['type'] == 'random_rune':
                 # Stub: Add random rune at blind start; no per-hand effect
@@ -1545,6 +1587,10 @@ class ChromaRollGame:
             button_rects.append((button_rect, opt))
             button_y += BUTTON_HEIGHT + button_spacing
         return button_rects
+
+    def check_equipped_charms(self):
+        self.has_advantage = any(charm['type'] == 'advantage_choice' for charm in self.equipped_charms)
+        # Call this after equipping or loading charms
 
     def draw_dagger_icon(self, rect):
         """Draws a simple dagger icon inside the given rect."""

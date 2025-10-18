@@ -1,11 +1,11 @@
-Triple Threat, Envy Echo/Gluttony Glyph/Pride Prism/Sloth Sigil/Greedy Gambler, Face Forgery/Queen's Quill/Kind Keeper/Kind King, 
-Flower Pot Prism/Glass Globe, Obelisk Orb, Wee Widget, Triboulet Token, Joker Die, Ice Shard, Hiker Hex, Square Sphere, 
-Bull Bead, Flash Face, Lucky Labyrinth, Erosion Edge, Life Milestone, Stat Roller
+Triple Threat, Envy Echo/Gluttony Glyph/Pride Prism/Sloth Sigil/Greedy Gambler, Face Forgery/Queen's Quill/Kind Keeper/Kind King, (DONE)
+Flower Pot Prism/Glass Globe, Obelisk Orb, Wee Widget, Triboulet Token, Joker Die, Ice Shard, Hiker Hex, Square Sphere, (DONE)
+Bull Bead, Flash Face, Lucky Labyrinth, Erosion Edge, Life Milestone, Stat Roller (DONE)
 
-Advantage Amulet - 'advantage_choice' (strategic roll choice).
+Advantage Amulet - 'advantage_choice' (strategic roll choice). 
 Fate's Favor - 'reroll_advantage' (blind-specific advantage).
 Gambler's Grimoire - 'rune_cast' (random rune effect).
-Luck's Locket - 'coin_per_lucky' (lucky synergy).
+Luck's Locket - 'coin_per_lucky' (lucky synergy). (DONE)
 Rune Relic - 'random_rune' (blind-start rune).
 Interest Idol - 'interest_bonus' (coin scaling).
 Synergy Scroll - 'retrigger_special' (special color retrigger).
