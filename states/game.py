@@ -7,6 +7,7 @@ from states.base import State  # Import from base
 from screens import draw_game_screen, draw_popup, draw_buttons, draw_tooltip, draw_enhancement_visuals
 from constants import DEBUG, NUM_DICE_IN_HAND, THEME, DIE_SIZE, HELD_DIE_SCALE, CHARM_SIZE, SMALL_DIE_SIZE, SMALL_DIE_SPACING, BAG_PADDING
 from data import ENH_DESC
+from states.shop import ShopState  # Add if not present
 import savegame
 
 class GameState(State):
@@ -41,6 +42,18 @@ class GameState(State):
         else:
             self.game.new_turn()  # If has hand but not rolled? Rare, but handle
         self.game.update_advantage_flag()  # Refresh after entering state
+        
+        # ADD: Force held reset after new_turn/roll
+        self.game.held = [False] * NUM_DICE_IN_HAND
+        print(f"Debug: Forced held reset in enter - held = {self.game.held}")
+        
+        # Robust reset for Fate's Favor: Always on new blind entry (after shop/return)
+        self.game.used_fates_favor_this_blind = False
+        self.game.fates_advantage_index = -1
+        self.game.fates_advantage_value = None
+        self.game.held_fates_advantage = False
+        self.game.selecting_fates_die = False
+        print("Debug: Reset Fate's Favor for new blind")
 
     def update(self, dt):
         # Handle animations/timers (e.g., break effects, temp messages)
@@ -61,7 +74,7 @@ class GameState(State):
             if self.game.has_advantage and self.game.advantage_value is None:
                 self.game.original_center_value = self.game.rolls[2][1]  # Save original value
                 self.game.advantage_value = random.randint(1, 6)  # Roll separate advantage value
-                self.game.use_advantage = False
+                self.game.held_advantage = False
                 print("Debug: Saved original center value:", self.game.original_center_value, "Rolled advantage:", self.game.advantage_value)
         # Add more updates as needed (e.g., color cycling for rainbow)
 
@@ -137,15 +150,28 @@ class GameState(State):
                 offset = (DIE_SIZE - size) / 2 if self.game.held[i] else 0
                 die_rect = pygame.Rect(x + offset, self.game.height - DIE_SIZE - 100 + offset, size, size)
                 if die_rect.collidepoint(mouse_pos):
-                    if self.game.is_discard_phase:
-                        self.game.toggle_discard(i)
+                    if self.game.selecting_fates_die:
+                        # Activate Fate's Favor advantage on this die
+                        self.game.fates_advantage_index = i
+                        self.game.fates_advantage_value = random.randint(1, 6)
+                        self.game.held_fates_advantage = False  # Start unheld
+                        self.game.used_fates_favor_this_blind = True
+                        self.game.selecting_fates_die = False
+                        if self.game.held[i]:
+                            self.game.held[i] = False  # Mutual exclusion
+                        self.game.update_hand_text()
+                        print(f"Debug: Fate's Favor activated on die {i}, value: {self.game.fates_advantage_value}")
+                        break
                     else:
-                        self.game.toggle_hold(i)
-                        # ADDED: Exclusion for center die (i==2)
-                        if i == 2 and self.game.held[2]:
-                            self.game.held_advantage = False  # Unhold advantage if original held
-                        print(f"Debug: Toggled die {i} - held[{i}] = {self.game.held[i]}")  # Debug for 3rd die
-                    break  # Stop after handling one die click
+                        if self.game.is_discard_phase:
+                            self.game.toggle_discard(i)
+                        else:
+                            self.game.toggle_hold(i)
+                            # ADDED: Exclusion for center die (i==2)
+                            if i == 2 and self.game.held[2]:
+                                self.game.held_advantage = False  # Unhold advantage if original held
+                            print(f"Debug: Toggled die {i} - held[{i}] = {self.game.held[i]}")  # Debug for 3rd die
+                        break  # Stop after handling one die click
 
             # Advantage choice clicks (after main dice, so original center is always checked first)
             if not self.game.is_discard_phase and self.game.has_advantage and self.game.advantage_value is not None:
@@ -154,12 +180,25 @@ class GameState(State):
                     if self.game.held_advantage and self.game.held[2]:
                         self.game.held[2] = False  # Unhold original if advantage held
                     print("Debug: Toggled advantage - held_advantage =", self.game.held_advantage, "held[2] =", self.game.held[2])
+                    self.game.update_hand_text()  # Refresh preview score
                 elif self.game.center_die_rect and self.game.center_die_rect.collidepoint(mouse_pos):
                     self.game.held[2] = not self.game.held[2]  # Toggle original
                     if self.game.held[2] and self.game.held_advantage:
                         self.game.held_advantage = False  # Unhold advantage if original held
                     print("Debug: Toggled original - held[2] =", self.game.held[2], "held_advantage =", self.game.held_advantage)
-        
+                    self.game.update_hand_text()  # Refresh preview score
+
+            # Fate's Favor advantage toggle
+            if not self.game.is_discard_phase and self.game.fates_advantage_index != -1 and self.game.fates_advantage_value is not None:
+                fates_rect = getattr(self.game, 'fates_advantage_die_rect', None)  # Safe access
+                if fates_rect is not None and fates_rect.collidepoint(mouse_pos):
+                    self.game.held_fates_advantage = not self.game.held_fates_advantage
+                    if self.game.held_fates_advantage and self.game.held[self.game.fates_advantage_index]:
+                        self.game.held[self.game.fates_advantage_index] = False
+                    self.game.update_hand_text()
+                    print(f"Debug: Toggled Fate's advantage - held_fates_advantage = {self.game.held_fates_advantage}, held[{self.game.fates_advantage_index}] = {self.game.held[self.game.fates_advantage_index]}")
+                # No optional original here—handled in toggle_hold below
+            
             # Button clicks
             if self.reroll_rect and self.reroll_rect.collidepoint(mouse_pos):
                 self.game.reroll()
@@ -178,11 +217,18 @@ class GameState(State):
                 y = 10
                 rect = pygame.Rect(x, y, CHARM_SIZE, CHARM_SIZE)
                 if rect.collidepoint(mouse_pos):
-                    self.game.dragging_charm_index = i
-                    self.game.dragging_shop = False
-                    self.game.drag_offset_x = mouse_pos[0] - x
-                    self.game.drag_offset_y = mouse_pos[1] - y
-                    break
+                    charm = self.game.equipped_charms[i]  # Define charm inside rect check
+                    if charm['name'] == "Fate's Favor" and i not in self.game.disabled_charms and not self.game.used_fates_favor_this_blind and not self.game.is_discard_phase:
+                        self.game.selecting_fates_die = True
+                        print("Debug: Entered Fate's Favor selection mode")
+                        break  # No drag if activating
+                    else:
+                        # Existing drag code
+                        self.game.dragging_charm_index = i
+                        self.game.dragging_shop = False
+                        self.game.drag_offset_x = mouse_pos[0] - x
+                        self.game.drag_offset_y = mouse_pos[1] - y
+                        break  # Break after drag start
 
             for i, tray_rect in enumerate(self.tray_rects):
                 if tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
@@ -206,14 +252,12 @@ class GameState(State):
             for i, die_rect in enumerate(self.game.hand_die_rects):
                 if die_rect.collidepoint(mouse_pos):
                     self.game.hovered_hand_die = i
-                    #  print(f"Hover detected on hand die {i} at {die_rect}")  # Debug: Confirm rect and trigger
                     break
 
             # Hover on bag dice
             for j, bag_rect in enumerate(self.game.bag_die_rects):
                 if bag_rect.collidepoint(mouse_pos):
                     self.game.hovered_bag_die = j
-                    #  print(f"Hover detected on bag die {j} at {bag_rect}")  # Debug
                     break
 
         if event.type == pygame.MOUSEBUTTONUP:
@@ -239,10 +283,8 @@ class GameState(State):
                     self.game.disabled_charms.remove(target_index)
                     self.game.disabled_charms.append(self.game.dragging_charm_index)
 
-    # In class GameState
     def update_die_rects(self):
         # Hand dice rects (from your draw_dice logic)
-        #  print("Updating die rects")  # Temp debug—remove later
         self.game.hand_die_rects = []
         for i in range(NUM_DICE_IN_HAND):
             total_dice_width = NUM_DICE_IN_HAND * (DIE_SIZE + 20) - 20
@@ -253,7 +295,19 @@ class GameState(State):
             rect = pygame.Rect(x + offset, self.game.height - DIE_SIZE - 100 + offset, size, size)
             self.game.hand_die_rects.append(rect)
 
-        # Bag dice rects (from your draw_game_screen bag loop)
+        # ADD: Set Fate's advantage rect if active (for clicking)
+        if self.game.fates_advantage_index != -1 and self.game.fates_advantage_value is not None:
+            i = self.game.fates_advantage_index
+            total_dice_width = NUM_DICE_IN_HAND * (DIE_SIZE + 20) - 20
+            start_x = (self.game.width - total_dice_width) // 2
+            x = start_x + i * (DIE_SIZE + 20)
+            adv_y = (self.game.height - DIE_SIZE - 100) - DIE_SIZE - 10
+            adv_size = DIE_SIZE * HELD_DIE_SCALE if self.game.held_fates_advantage else DIE_SIZE
+            adv_offset = (DIE_SIZE - adv_size) / 2 if self.game.held_fates_advantage else 0
+            self.game.fates_advantage_die_rect = pygame.Rect(x + adv_offset, adv_y + adv_offset, adv_size, adv_size)
+            print(f"Debug: Set fates_advantage_die_rect = {self.game.fates_advantage_die_rect}")  # Confirm set
+
+        # Bag dice rects (existing)
         self.game.bag_die_rects = []
         columns = 5
         rows = math.ceil(len(self.game.bag) / columns) if self.game.bag else 1

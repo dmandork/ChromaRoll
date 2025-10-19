@@ -85,7 +85,23 @@ def save_game(game):
         
         # Unlocks (new, deepcopy for dict)
         'unlocks': copy.deepcopy(game.unlocks),
-        'hand_multipliers': copy.deepcopy(game.hand_multipliers)
+        'hand_multipliers': copy.deepcopy(game.hand_multipliers),
+
+        # Advantage-specific (added here)
+        'has_advantage': game.has_advantage if hasattr(game, 'has_advantage') else False,
+        'advantage_value': game.advantage_value if hasattr(game, 'advantage_value') else None,
+        'held_advantage': game.held_advantage if hasattr(game, 'held_advantage') else False,
+        'original_center_value': game.original_center_value if hasattr(game, 'original_center_value') else None,
+
+        # for Fate's Favor
+        'used_fates_favor_this_blind': game.used_fates_favor_this_blind,
+        'fates_advantage_index': game.fates_advantage_index,
+        'fates_advantage_value': game.fates_advantage_value,
+        'held_fates_advantage': game.held_fates_advantage,
+        'selecting_fates_die': game.selecting_fates_die,
+
+        # New for Gambler's Grimoire
+        'used_rune_cast_this_shop': game.used_rune_cast_this_shop,
     }
     try:
         with open('save.json', 'w') as f:
@@ -195,6 +211,24 @@ def load_game(game):
 
         # Unlocks (new)
         game.unlocks = copy.deepcopy(save_data.get('unlocks', {}))
+
+        # Advantage-specific (added here)
+        game.has_advantage = save_data.get('has_advantage', False)
+        game.advantage_value = save_data.get('advantage_value', None)
+        game.held_advantage = save_data.get('held_advantage', False)
+        game.original_center_value = save_data.get('original_center_value', None)
+
+        # for Fate's Favor
+        game.used_fates_favor_this_blind = save_data.get('used_fates_favor_this_blind', False)
+        game.fates_advantage_index = save_data.get('fates_advantage_index', -1)
+        game.fates_advantage_value = save_data.get('fates_advantage_value', None)
+        game.held_fates_advantage = save_data.get('held_fates_advantage', False)
+        game.selecting_fates_die = save_data.get('selecting_fates_die', False)
+
+        # New for Gambler's Grimoire
+        game.equipped_charms = copy.deepcopy(save_data.get('equipped_charms', []))
+        game.disabled_charms = save_data.get('disabled_charms', [])
+        print(f"Debug: Loaded equipped_charms = {[c['name'] for c in game.equipped_charms]}, disabled = {game.disabled_charms}")  # ADD: Check load
 
         # In load_game, remove/replace the existing if-block with:
         game.apply_boss_face_shuffle()

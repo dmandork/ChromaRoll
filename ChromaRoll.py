@@ -219,6 +219,16 @@ class ChromaRollGame:
         self.initial_auto_roll_done = False  # For auto-roll in rolling phase
         self.original_center_value = None  # Save original 3rd die value for revert
 
+        # New for Fate's Favor
+        self.used_fates_favor_this_blind = False
+        self.fates_advantage_index = -1  # -1 means no advantage active
+        self.fates_advantage_value = None
+        self.held_fates_advantage = False
+        self.selecting_fates_die = False  # Flag for die selection mode after charm click
+
+        # New for Gambler's Grimoire
+        self.used_rune_cast_this_shop = False
+
         self.round_locket_coins = 0
         self.round_base_lucky_coins = 0
 
@@ -580,6 +590,14 @@ class ChromaRollGame:
                         if self.held[i] and random.random() < 0.20:
                             self.held[i] = False  # Force reroll
             
+            # ADD: Clear Fate's Favor state on reroll (duplicate goes away, charm unusable this hand)
+            if self.fates_advantage_index != -1:
+                self.fates_advantage_index = -1
+                self.fates_advantage_value = None
+                self.held_fates_advantage = False
+                self.selecting_fates_die = False  # Safety
+                print("Debug: Cleared Fate's Favor on reroll")
+
             # Animate cycling for non-held dice
             # Play roll sound here (at start of reroll)
             self.sfx_channel.play(self.roll_sound)
@@ -714,7 +732,7 @@ class ChromaRollGame:
                 extras_line = f"Extras: {extras_dollars}\n" if self.extra_coins > 0 else ""
                 self.popup_message = (f"{self.current_blind} Blind Beaten! Score: {self.round_score}/{int(self.get_blind_target())}\n"
                                     f"Hands left: {hands_dollars}\n"
-                                    f"Discards Left: {discards_dollars}\n"
+                                    f"Discards left: {discards_dollars}\n"
                                     f"Interest: {interest_dollars}\n"
                                     f"{extras_line}"
                                     f"Coins gained: {total_dollars}")
@@ -959,6 +977,14 @@ class ChromaRollGame:
             extras_dollars = '$' * self.extra_coins if self.extra_coins > 0 else ''
             extras_line = f"Extras: {extras_dollars}\n" if self.extra_coins > 0 else ""
             total_dollars = '$' * abs(total_coins) if total_coins >= 0 else str(total_coins)
+
+            # ADD: Clear Fate's Favor after scoring (advantage goes away for next hand)
+            if self.fates_advantage_index != -1:
+                self.fates_advantage_index = -1
+                self.fates_advantage_value = None
+                self.held_fates_advantage = False
+                self.selecting_fates_die = False  # Safety
+                print("Debug: Cleared Fate's Favor after scoring")
             
             self.popup_message = (f"{self.current_blind} Blind Beaten! Score: {self.round_score}/{int(self.get_blind_target())}\n"
                                 f"Hands left: {hands_dollars}\n"
@@ -990,8 +1016,26 @@ class ChromaRollGame:
         # Then normal toggle
         if self.show_popup:
             return  # Block actions during popup
+        print(f"Debug: toggle_hold {index} - before flip: held[{index}] = {self.held[index]}, held_fates_advantage = {self.held_fates_advantage}")  # Debug swap
         self.held[index] = not self.held[index]
+        print(f"Debug: toggle_hold {index} - after flip: held[{index}] = {self.held[index]}")
+        
+        # Existing amulet exclusion
+        if index == 2 and self.held[index] and self.has_advantage and self.held_advantage:
+            self.held_advantage = False
+            print("Debug: Unheld amulet advantage due to holding original - held_advantage =", self.held_advantage)
+        
+        # For Fate's Favor: Flip original and unhold advantage if held
+        if index == self.fates_advantage_index:
+            if self.held[index] and self.held_fates_advantage:
+                self.held_fates_advantage = False
+                print(f"Debug: Unheld Fate's advantage due to holding original - held_fates_advantage = {self.held_fates_advantage}")
+            elif not self.held[index] and self.held_fates_advantage:
+                self.held_fates_advantage = False  # Optional: Unhold advantage if unholding original
+                print(f"Debug: Unheld Fate's advantage due to unholding original - held_fates_advantage = {self.held_fates_advantage}")
+        
         self.update_hand_text()
+        print(f"Debug: toggle_hold {index} - after update_hand_text: held[{index}] = {self.held[index]}, held_fates_advantage = {self.held_fates_advantage}")  # Check no revert
 
     def get_hand_type_and_score(self, is_preview=True):
         """Determines the hand type, base score, modifier, and final score.
@@ -1003,10 +1047,16 @@ class ChromaRollGame:
             return "Nothing", 0, "None", 0, 0, 0.0
 
         # If advantage held, add it as an extra entry with advantage_value (independent of original)
-        if self.has_advantage and self.held_advantage and not is_preview:
-            center_die = self.rolls[2][0]  # Use original die for color/enhancements
-            held_rolls.append((center_die, self.advantage_value))  # Add advantage as extra held die
+        if self.has_advantage and self.held_advantage:
+            center_die = self.rolls[2][0]
+            held_rolls.append((center_die, self.advantage_value))
             print("Debug: Added advantage die to held_rolls with value", self.advantage_value)
+
+        # New for Fate's Favor
+        if self.fates_advantage_index != -1 and self.held_fates_advantage:
+            selected_die = self.rolls[self.fates_advantage_index][0]
+            held_rolls.append((selected_die, self.fates_advantage_value))
+            print("Debug: Added Fate's advantage die to held_rolls with value", self.fates_advantage_value)
         
         # Use copy for held_rolls
         # held_rolls = [(die, value) for i, (die, value) in enumerate(rolls_copy) if self.held[i]]
@@ -1532,10 +1582,12 @@ class ChromaRollGame:
                 self.current_hand_text = "Current Hand: Nothing (0 base) = 0 total"
                 self.current_modifier_text = "Modifiers: None"
             else:
-                hand_type, base_score, modifier_desc, final_score, charm_chips, charm_mono_add = self.get_hand_type_and_score()
+                # Single call with preview=True to avoid side effects
+                hand_type, base_score, modifier_desc, final_score, charm_chips, charm_mono_add = self.get_hand_type_and_score(is_preview=True)
                 self.current_hand_text = f"Current Hand: {hand_type} ({base_score} base + {charm_chips} charms) = {final_score} total"
+                self.current_modifier_text = f"Modifiers: {modifier_desc}"
 
-                # Build modifier parts  <-- Now indented under else
+                # Build modifier parts (existing logic, but after single call)
                 modifier_parts = []
                 if modifier_desc:
                     modifier_parts.append(modifier_desc)
@@ -1547,21 +1599,12 @@ class ChromaRollGame:
 
                 # Check if dagger charm is equipped and not disabled
                 has_active_dagger = any(charm['type'] == 'sacrifice_mult' and idx not in self.disabled_charms for idx, charm in enumerate(self.equipped_charms))
-                dagger_text = f"Dagger x{self.score_mult:.1f}"
                 if self.score_mult > 1.0:
+                    dagger_text = f"Dagger x{self.score_mult:.1f}"
                     if has_active_dagger:
                         modifier_parts.append(dagger_text)
                     else:
                         modifier_parts.append(dagger_text + " (disabled)")
-
-                
-
-                # Call get_hand_type_and_score to get the updated hand info, including modifiers
-                hand_type, base_score, modifier_desc, final_score, charm_chips, charm_mono_add = self.get_hand_type_and_score()
-
-                # Update the hand text using the returned values
-                self.current_hand_text = f"{hand_type} ({base_score} base + {charm_chips} charms) = {final_score} total"
-                self.modifiers_text = f"Modifiers: {modifier_desc}"  # Assuming you have a separate text for modifiers
 
                 # Add pack boost if >1.0
                 hand_boost = self.hand_multipliers.get(hand_type, 1.0)
@@ -1795,6 +1838,24 @@ class ChromaRollGame:
         # Filter pool to exclude owned (as before)
         available_pool = [c for c in data.CHARMS_POOL if c['name'] not in [e['name'] for e in self.equipped_charms]]
         
+        # ADD: Gambler's Grimoire - add free random rune if not used this shop
+        active_charms = [c for idx, c in enumerate(self.equipped_charms) if idx not in self.disabled_charms]
+        print(f"Debug: generate_shop - active_charms = {[c['name'] for c in active_charms]}, used_rune_cast_this_shop = {self.used_rune_cast_this_shop}")  # Check equipped
+        
+        if any(c['type'] == 'rune_cast' for c in active_charms) and not self.used_rune_cast_this_shop:
+            if hasattr(data, 'MYSTIC_RUNES') and data.MYSTIC_RUNES:  # Check if list exists and not empty
+                random_rune = random.choice(data.MYSTIC_RUNES)  # Random from your list
+                random_rune = random_rune.copy()  # Avoid modifying original
+                random_rune['cost'] = 0  # Free
+                random_rune['free_grimoire'] = True  # Flag for UI
+                self.shop_charms.append(random_rune)  # Add to shop_charms
+                self.used_rune_cast_this_shop = True
+                print(f"Debug: Added free random rune '{random_rune['name']}' from Gambler's Grimoire")
+            else:
+                print("Debug: No MYSTIC_RUNES data - skipping free rune")  # If list empty/missing
+        else:
+            print("Debug: Skipping Grimoire - no active rune_cast or already used")
+
         # Compute weights per charm: base rarity * stake modifier
         charm_weights = []
         for charm in available_pool:

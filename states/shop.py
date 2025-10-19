@@ -4,6 +4,7 @@ import random  # If used for shop generation
 import time
 import copy
 import os
+import savegame  # For saving on exit to pause
 from constants import *  # For THEME, BUTTON_WIDTH, SHOP_REROLL_COST, etc.
 from utils import draw_rounded_element, resource_path, wrap_text  # For UI/buttons
 from screens import draw_shop_screen, draw_custom_button, draw_tooltip  # For main shop drawing/buttons
@@ -33,6 +34,12 @@ class ShopState(State):
             self.game.generate_shop()
         self.debug_panel_open = False  # Reset panel
         self.scroll_y = 0  # Reset scroll
+        if self.game.is_resuming:  # ADD: Load if resuming into shop
+            savegame.load_game(self.game)
+            self.game.is_resuming = False
+        # ADD: Reset for Gambler's Grimoire on new shop
+        self.game.used_rune_cast_this_shop = False
+        print("Debug: Reset Gambler's Grimoire for new shop")
 
     def update(self, dt):
         pass  # Expand for animations if needed
@@ -67,7 +74,9 @@ class ShopState(State):
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 from states.pause import PauseMenuState  # Lazy import
-                self.game.previous_state = self.game.state_machine.current_state
+                print("ESC in ShopState - Pausing")  # Debug
+                savegame.save_game(self.game)  # Save
+                self.game.previous_state = self  # ADD: Set to current ShopState instance
                 self.game.state_machine.change_state(PauseMenuState(self.game))
             elif DEBUG and self.debug_panel_open:
                 # Keyboard scrolling
