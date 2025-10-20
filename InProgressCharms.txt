@@ -2,8 +2,8 @@ Triple Threat, Envy Echo/Gluttony Glyph/Pride Prism/Sloth Sigil/Greedy Gambler, 
 Flower Pot Prism/Glass Globe, Obelisk Orb, Wee Widget, Triboulet Token, Joker Die, Ice Shard, Hiker Hex, Square Sphere, (DONE)
 Bull Bead, Flash Face, Lucky Labyrinth, Erosion Edge, Life Milestone, Stat Roller (DONE)
 
-Advantage Amulet - 'advantage_choice' (strategic roll choice). 
-Fate's Favor - 'reroll_advantage' (blind-specific advantage).
+Advantage Amulet - 'advantage_choice' (strategic roll choice). (DONE)
+Fate's Favor - 'reroll_advantage' (blind-specific advantage). (DONE)
 Gambler's Grimoire - 'rune_cast' (random rune effect).
 Luck's Locket - 'coin_per_lucky' (lucky synergy). (DONE)
 Rune Relic - 'random_rune' (blind-start rune).

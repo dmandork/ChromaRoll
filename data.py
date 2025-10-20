@@ -121,7 +121,7 @@ CHARMS_POOL = [
     {'name': 'Rune Relic', 'rarity': 'Uncommon', 'cost': 6, 'desc': 'Enhance a die with a random rune effect at the start of each blind.', 'type': 'random_rune'},
     {'name': 'Envy Echo', 'rarity': 'Common', 'cost': 3, 'desc': '+0.5 mult for Green dice scored.', 'type': 'color_mult', 'color': 'Green', 'value': 0.5},
     {'name': 'Gluttony Glyph', 'rarity': 'Common', 'cost': 3, 'desc': '+0.5 mult for Purple dice scored.', 'type': 'color_mult', 'color': 'Purple', 'value': 0.5},
-    {'name': 'Pride Prism', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+0.5 mult for Yellow dice scored.', 'type': 'color_mult', 'color': 'Yellow', 'value': 0.5},
+    {'name': 'Yellow Prism', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+0.5 mult for Yellow dice scored.', 'type': 'color_mult', 'color': 'Yellow', 'value': 0.5},
     {'name': 'Sloth Sigil', 'rarity': 'Rare', 'cost': 5, 'desc': '+0.5 mult for Blue dice scored if no rerolls used.', 'type': 'color_mult_conditional', 'color': 'Blue', 'value': 0.5},
     {'name': 'Face Forgery', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Treat 2s as wild for kinds if scored.', 'type': 'face_wild', 'face': 2},
     {'name': 'Queen\'s Quill', 'rarity': 'Rare', 'cost': 6, 'desc': 'Queens (5s) give +0.5 mult per one in hand.', 'type': 'mult_per_face', 'faces': [5], 'value': 1.5},  # Changed type to mult_per_face, faces=[5], value=1.5 (since mult_per_face uses value-1)
@@ -138,7 +138,7 @@ CHARMS_POOL = [
     {'name': 'Triple Threat', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+0.5 mult for Three of a Kind.', 'type': 'mult_bonus', 'hands': ['3 of a Kind'], 'value': 1.5},
     {'name': 'Disadvantage Dice', 'rarity': 'Common', 'cost': 3, 'desc': '-1 to one die face, but +0.5 mult overall.', 'type': 'risk_mult', 'value': 0.5},
     {'name': 'Stat Roller', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Adds the sum of all dice faces in the hand to the base score (e.g., 6,6,6,3,1 = +22).', 'type': 'score_bonus', 'value': 'stat_sum'},
-    {'name': 'Critical Hit', 'rarity': 'Legendary', 'cost': 9, 'desc': 'If all dice 6, +3 mult and +50 coins.', 'type': 'crit_bonus', 'value': 3},
+    {'name': 'Critical Hit', 'rarity': 'Legendary', 'cost': 9, 'desc': 'If all dice 6, +6 mult and +50 coins.', 'type': 'crit_bonus', 'value': 6},
     {'name': 'Saving Throw', 'rarity': 'Common', 'cost': 4, 'desc': 'Avoid break on Glass dice with a successful "save" (roll >3).', 'type': 'break_save'},
     {'name': 'Homebrew Hazard', 'rarity': 'Rare', 'cost': 7, 'desc': 'Random encounter: 1/6 chance for bonus charm, else lose a discard.', 'type': 'random_event'},
     {'name': 'Greedy Gambler', 'rarity': 'Common', 'cost': 3, 'desc': '+0.5 mult for Red dice scored.', 'type': 'color_mult', 'color': 'Red', 'value': 0.5},

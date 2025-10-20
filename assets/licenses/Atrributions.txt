@@ -12,5 +12,57 @@ Vectors and icons by Kittiphat Rueangphaophan (HeartHopper)[](https://dribbble.c
 
 Vectors and icons by <a href="https://github.com/ionic-team/ionicons?ref=svgrepo.com" target="_blank">Ionicons</a> in MIT License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
 
+Vectors and icons by <a href="https://icooon-mono.com/?ref=svgrepo.com" target="_blank">Icooon Mono</a> in PD License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://github.com/Iconscout/unicons?ref=svgrepo.com" target="_blank">Iconscout</a> in Apache License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://www.figma.com/community/file/1166831539721848736?ref=svgrepo.com" target="_blank">Solar Icons</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://dazzleui.gumroad.com/l/dazzleiconsfree?ref=svgrepo.com" target="_blank">Dazzle Ui</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://github.com/instructure/instructure-ui?ref=svgrepo.com" target="_blank">Instructure Ui</a> in MIT License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://www.behance.net/perdanakun?ref=svgrepo.com" target="_blank">Perdana Kurniawan Arta</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://github.com/Donnnno/Arcticons?ref=svgrepo.com" target="_blank">Donnnno</a> in GPL License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://dribbble.com/dariusdan?ref=svgrepo.com" target="_blank">Darius Dan</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://github.com/joypixels/emojione?ref=svgrepo.com" target="_blank">Joypixels</a> in MIT License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://popsy.gumroad.com/l/notion-icons-free?ref=svgrepo.com" target="_blank">Popsy</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://github.com/hfg-gmuend/openmoji/blob/master/LICENSE.txt?ref=svgrepo.com" target="_blank">Openmoji.org</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://www.wishforge.games/?ref=svgrepo.com" target="_blank">Wishforge.games</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://dribbble.com/shannonethomas?ref=svgrepo.com" target="_blank">Shannon E. Thomas</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://github.com/nagoshiashumari/Rpg-Awesome?ref=svgrepo.com" target="_blank">Nagoshiashumari</a> in GPL License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://github.com/Vectopus/Atlas-icons-font?ref=svgrepo.com" target="_blank">Vectopus</a> in MIT License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://www.figma.com/@leonid?ref=svgrepo.com" target="_blank">Leonid Tsvetkov</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://www.figma.com/@maryakveo?ref=svgrepo.com" target="_blank">Mary Akveo</a> in PD License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://github.com/vmware/clarity-assets?ref=svgrepo.com" target="_blank">Vmware</a> in MIT License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://game-icons.net/?ref=svgrepo.com" target="_blank">Game Icons.net</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://github.com/FortAwesome/Font-Awesome?ref=svgrepo.com" target="_blank">Fortawesome</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://dribbble.com/Chanut-is-Industries?ref=svgrepo.com" target="_blank">Chanut Is Industries</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://github.com/neuicons/neu?ref=svgrepo.com" target="_blank">Neuicons</a> in MIT License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://github.com/moneytree/mt-web-icons?ref=svgrepo.com" target="_blank">Moneytree</a> in PD License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+Vectors and icons by <a href="https://casinoshunter.com/?ref=svgrepo.com" target="_blank">Mike Hunter</a> in CC Attribution License via <a href="https://www.svgrepo.com/" target="_blank">SVG Repo</a>
+
+<div>Icons made from <a href="https://www.onlinewebfonts.com/icon">svg icons</a>is licensed by CC BY 4.0</div>
+
+
+
 
 
