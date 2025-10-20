@@ -1908,19 +1908,24 @@ class ChromaRollGame:
         
         # ADD: Gambler's Grimoire - add free random rune if not used this shop
         active_charms = [c for idx, c in enumerate(self.equipped_charms) if idx not in self.disabled_charms]
-        print(f"Debug: generate_shop - active_charms = {[c['name'] for c in active_charms]}, used_rune_cast_this_shop = {self.used_rune_cast_this_shop}")  # Check equipped
-        
+        print(f"Debug: generate_shop - active_charms = {[c['name'] for c in active_charms]}, used_rune_cast_this_shop = {self.used_rune_cast_this_shop}")
+
         if any(c['type'] == 'rune_cast' for c in active_charms) and not self.used_rune_cast_this_shop:
-            if hasattr(data, 'MYSTIC_RUNES') and data.MYSTIC_RUNES:  # Check if list exists and not empty
-                random_rune = random.choice(data.MYSTIC_RUNES)  # Random from your list
-                random_rune = random_rune.copy()  # Avoid modifying original
-                random_rune['cost'] = 0  # Free
-                random_rune['free_grimoire'] = True  # Flag for UI
-                self.shop_charms.append(random_rune)  # Add to shop_charms
+            if hasattr(data, 'MYSTIC_RUNES') and data.MYSTIC_RUNES:
+                random_rune = random.choice(data.MYSTIC_RUNES).copy()
+                random_rune['cost'] = 0
+                random_rune['free_grimoire'] = True
+                self.shop_charms.append(random_rune)
                 self.used_rune_cast_this_shop = True
                 print(f"Debug: Added free random rune '{random_rune['name']}' from Gambler's Grimoire")
+                
+                # Store for bottom draw and remove from shop_charms to avoid top draw
+                self.grimoire_rune = random_rune
+                self.shop_charms.remove(random_rune)
+                print("Debug: Stored grimoire_rune for bottom draw = ", self.grimoire_rune['name'])
+                print("Debug: Removed grimoire_rune from shop_charms - now = ", [c['name'] for c in self.shop_charms])
             else:
-                print("Debug: No MYSTIC_RUNES data - skipping free rune")  # If list empty/missing
+                print("Debug: No MYSTIC_RUNES data - skipping free rune")
         else:
             print("Debug: Skipping Grimoire - no active rune_cast or already used")
 
