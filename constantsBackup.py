@@ -3,6 +3,11 @@ import data
 
 # Debug flag: Set to True to force specific colors for testing (overrides random draw) and enable unlimited rerolls
 DEBUG = True
+# Debug toggles (enable/disable specific features)
+DEBUG_INFINITE_COINS = True
+DEBUG_UNLIMITED_REROLLS = True
+DEBUG_FORCE_BAG_COLORS = False  # Turn off for rune tests
+DEBUG_MENU_IN_SHOP = True  # Show debug button in shop
 DEBUG_COLORS = ['Red', 'Blue', 'Green', 'Purple', 'Yellow']  # Example: All different colors for rainbow testing
 # DEBUG_COLORS = ['Glass', 'Glass', 'Glass', 'Glass', 'Glass']  # Example: All Glass colors for break testing
 # DEBUG_COLORS = ['Gold', 'Gold', 'Gold', 'Silver', 'Silver']  # Example: All Gold and Silver colors for extra coin testing
@@ -55,6 +60,16 @@ THEME = {
     'border': (0, 0, 0),  # Black borders (keep or change to (50, 50, 50) for softer gray)
     'text': (220, 220, 220),  # Off-white text for readability on dark bg
     'highlight': (200, 160, 0),  # Warm gold for holds/coins (brighter than your (255, 215, 0) for retro shine)
+    'yes_button': (0, 150, 0),  # Green for yes/confirm
+    'no_button': (150, 0, 0),  # Red for no/cancel
+    'disabled': (100, 100, 100),  # Gray for disabled elements
+    'tooltip_bg': (50, 50, 50),  # Dark gray for tooltip background
+    'tooltip_border': (200, 200, 200),  # Light gray for tooltip border
+    'tooltip_text': (255, 255, 255),  # White for tooltip text
+    'debug_panel_bg': (30, 30, 30),  # Dark gray for debug panel
+    'debug_text': (0, 255, 0),  # Bright green for debug text
+    'debug_button_bg': (50, 50, 50),  # Dark gray for debug button
+    'debug_button_hover': (0, 200, 0),  # Bright green for debug button hover
     'font_main_path': 'assets/fonts/VT323-Regular.ttf',  # Pixel for main
     'font_main_size': 36,
     'font_small_path': 'assets/fonts/VT323-Regular.ttf',  # Vintage for small
@@ -85,6 +100,8 @@ DOT_RADIUS = 10  # Size of dots on dice
 BUTTON_WIDTH, BUTTON_HEIGHT = 150, 50  # Button size
 SMALL_DIE_SIZE = 20  # Size for bag visual squares
 SMALL_DIE_SPACING = 5  # Spacing for bag visual
+TRAY_SLOT_SIZE = 50  # Small size, smaller than DIE_SIZE (100) or SMALL_DIE_SIZE (15 if too tiny; adjust)
+TRAY_SLOT_SPACING = 5  # Small spacing between slots
 ANIMATION_FRAMES = 20  # Number of frames for roll animation
 ANIMATION_DELAY = 0.025  # Delay between animation frames
 DIE_BORDER_RADIUS = 20  # Radius for rounded corners on dice
@@ -115,6 +132,7 @@ TOOLTIP_MAX_WIDTH = 300  # Max width for tooltip before wrapping
 PACK_BOOST = 0.5  # Multiplier boost per pack use
 # Add this constant near the top, after other constants like HAND_TYPES
 
+MAX_EQUIPPED = 5  # Max charms equipped at once
 BAG_COLOR = (139, 69, 19)  # Brown for bag
 BAG_BORDER_RADIUS = 15  # Rounded corners for bag
 BAG_PADDING = 10  # Padding around dice grid in bag

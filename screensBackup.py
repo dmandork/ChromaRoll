@@ -6,6 +6,7 @@ import math
 from utils import *  # For draw_rounded_element, get_easing, etc.
 import constants  # For THEME, SPLASH_*, etc.
 import data  # For DICE_DESCRIPTIONS, etc. if needed in drawing
+from data import ENH_DESC  # For enhancement descriptions in tooltips
 
 def draw_splash_screen(game):
     mouse_pos = pygame.mouse.get_pos()  # For hover
@@ -224,6 +225,7 @@ def draw_game_screen(game):
             game.broken_dice = []
             game.break_effect_start = 0
     draw_text(game)
+
     draw_bag_visual(game)
     # Add equipped charms drawing loop here (with grayscale for disabled)
     for i, charm in enumerate(game.equipped_charms):
@@ -231,20 +233,107 @@ def draw_game_screen(game):
         y = 10  # Top for game screen
         rect = pygame.Rect(x, y, constants.CHARM_SIZE, constants.CHARM_SIZE)
         draw_charm_die(game, rect, charm, index=i)  # Draw directly with frame, icon, and grayscale if disabled
-        # Add tooltip on hover
+        # Optional tooltip on hover - UPDATED HERE
         if rect.collidepoint(mouse_pos):
             tooltip_text = charm['name'] + ": " + charm['desc']
             if charm['type'] == 'sacrifice_mult':
-                tooltip_text += f" (Current mult: x{game.score_mult})"
+                tooltip_text += f" (Current mult: x{game.score_mult:.1f})"
                 if game.score_mult < 10.0:
                     tooltip_text += " (max x10)"
             elif charm['type'] == 'empty_slot_mult':
                 current_mult = game.get_stencil_mult()
-                tooltip_text += f" (Current: x{current_mult})"
+                tooltip_text += f" (Current: x{current_mult:.1f})"
+            if charm['name'] == 'Obelisk Orb':
+                most_played = game.most_played_hand or "None"
+                tooltip_text += f" (Most Played: {most_played})"
+            # ADDED: Append Lucky Labyrinth bonus
+            if charm['name'] == 'Lucky Labyrinth':
+                permanent_bonus = charm.get('permanent_bonus', 0.0)
+                tooltip_text += f"\nPermanent Mult: +{permanent_bonus:.1f}"
+            # ADDED: Append Life Milestone modifier
+            if charm['name'] == 'Life Milestone':
+                mult_add = charm['value'] * getattr(game, 'stake_milestones', 0)
+                if mult_add > 0:
+                    tooltip_text += f"\nCurrent Mult: +{mult_add:.1f} ({game.stake_milestones} milestones)"
+            if charm['name'] == 'Stat Roller':
+                # Preview with current held rolls
+                face_sum = sum(value for _, value in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]])
+                tooltip_text += f"\nCurrent Bonus: +{face_sum} (Sum of faces)"
+            # New charms tooltips
+            if charm['type'] == 'advantage_choice':
+                tooltip_text += "\nPreview: Choose best of two rolls (roll phase)"
+            if charm['type'] == 'reroll_advantage':
+                tooltip_text += "\nPreview: Once per blind, reroll with choice"
+            if charm['type'] == 'rune_cast':
+                tooltip_text += "\nPreview: Cast random rune (once per shop)"
+            if charm['type'] == 'coin_per_lucky':
+                tooltip_text += f"\nPreview: +{charm['value']} coins per lucky trigger"
+            if charm['type'] == 'random_rune':
+                tooltip_text += "\nPreview: Random rune at blind start"
+            if charm['type'] == 'interest_bonus':
+                tooltip_text += "\nPreview: +1 coin per 10 coins at round end"
+            if charm['type'] == 'retrigger_special':
+                tooltip_text += "\nPreview: Retriggers special color effects"
+            if charm['type'] == 'mult_per_enhance':
+                enhance_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die.get('enhancements'))
+                mult_add = charm['value'] * enhance_count
+                tooltip_text += f"\nPreview: +{mult_add:.1f} ({enhance_count} enhancements)"
+            if charm['type'] == 'discard_mult':
+                discards_used = getattr(game, 'discards_used_this_round', 0)
+                mult_add = charm['value'] * discards_used
+                tooltip_text += f"\nPreview: +{mult_add:.1f} ({discards_used} discards)"
+            if charm['type'] == 'coin_per_wild':
+                wild_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die['color'] == 'Rainbow' and len(set([d['color'] for d, _ in [(dd, vv) for ii, (dd, vv) in enumerate(game.rolls) if game.held[ii] and dd['color'] != 'Rainbow']]) <= 1))
+                tooltip_text += f"\nPreview: +{charm['value'] * wild_count} coins ({wild_count} wilds)"
+            if charm['type'] == 'final_mult_conditional':
+                tooltip_text += "\nPreview: +3 mult on last hand with enhancement"
+            if charm['type'] == 'face_buy_high':
+                tooltip_text += "\nPreview: +2 to a face (3 coins, once/turn)"
+            if charm['type'] == 'coin_per_discard':
+                discards_left = getattr(game, 'discards_left', 0)
+                tooltip_text += f"\nPreview: +{charm['value'] * discards_left} coins ({discards_left} discards)"
+            if charm['type'] == 'risk_mult':
+                tooltip_text += f"\nPreview: +{charm['value']} mult (risk -1 die)"
+            if charm['type'] == 'loss_prevent':
+                tooltip_text += "\nPreview: Prevents loss once (destroys charm)"
+            if charm['type'] == 'rune_scribe':
+                tooltip_text += "\nPreview: Scribes rune on scoring 3"
+            if charm['type'] == 'revive_die':
+                tooltip_text += "\nPreview: 50% chance to revive a die"
+            if charm['type'] == 'discard_destroy_coin':
+                tooltip_text += "\nPreview: Destroy 1 die for 3 coins (first discard)"
+            if charm['type'] == 'score_per_discard_color':
+                tooltip_text += "\nPreview: +3 per discarded color die"
+            if charm['type'] == 'mult_final_discard':
+                tooltip_text += "\nPreview: +2 mult on final discard"        
             if i in game.disabled_charms:
                 tooltip_text += " (Disabled this round by Boss Effect)"
+            
             draw_tooltip(game, x, y + constants.CHARM_SIZE + constants.TOOLTIP_PADDING, tooltip_text)
     # Removed self.draw_charms() to eliminate duplicate drawing and tooltip issues
+
+    # Calculate bag_rect dynamically
+    columns = 5
+    rows = math.ceil(len(game.bag) / columns) if game.bag else 1
+    bag_width = columns * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING) - constants.SMALL_DIE_SPACING + constants.BAG_PADDING * 2
+    bag_height = rows * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING) - constants.SMALL_DIE_SPACING + constants.BAG_PADDING * 2
+    bag_x = game.width - bag_width - 20
+    bag_y = 50
+    bag_rect = pygame.Rect(bag_x, bag_y, bag_width, bag_height)
+
+    # New: Tray to the left of bag
+    tray_width = 2 * constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING
+    tray_x = max(bag_rect.left - tray_width - 10, 10)  # Left of bag, clamp to screen left
+    tray_y = bag_rect.y  # Align top
+    for i in range(2):
+        slot_rect = pygame.Rect(tray_x + i * (constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING), tray_y, constants.TRAY_SLOT_SIZE, constants.TRAY_SLOT_SIZE)
+        pygame.draw.rect(game.screen, (150, 150, 150), slot_rect, border_radius=5)
+        if game.rune_tray[i]:
+            text = game.tiny_font.render(f"#{game.rune_tray[i].get('id', i+1)}", True, constants.THEME['text'])
+            game.screen.blit(text, (slot_rect.centerx - text.get_width()//2, slot_rect.centery - text.get_height()//2))
+        else:
+            pygame.draw.rect(game.screen, (255, 0, 0), slot_rect, width=2)  # Temp red debug to confirm visibility (remove after)
+
     draw_buttons(game)
     draw_ui_panel(game)
     if game.temp_message and time.time() - game.temp_message_start < game.temp_message_duration:
@@ -295,6 +384,38 @@ def draw_game_screen(game):
     if game.show_popup:
         draw_popup(game)
 
+    # Render tooltips based on hovered state
+    if game.hovered_hand_die is not None:
+        i = game.hovered_hand_die
+        die, _ = game.rolls[i]  # Get die dict
+        desc = ''
+        if 'enhancements' in die and die['enhancements']:
+            for enh in die['enhancements']:
+                desc += f"{enh}: {ENH_DESC.get(enh, 'Unknown effect')}\n"
+        bonus = die.get('score_bonus', 0)
+        if bonus > 0:
+            desc += f"+{bonus} Score Bonus\n"
+        #  print(f"Rendering hand tooltip for die {i}: desc='{desc}' at pos ({game.hand_die_rects[i].x}, {game.hand_die_rects[i].y - 20})")  # Debug: Confirm call, desc, pos (remove later)
+        if desc:
+            die_rect = game.hand_die_rects[i]
+            draw_tooltip(game, die_rect.x, die_rect.y + die_rect.height + 10, desc.strip())  # Below die for visibility
+
+    if game.hovered_bag_die is not None:
+        j = game.hovered_bag_die
+        die = game.bag[j]
+        desc = ''
+        if 'enhancements' in die and die['enhancements']:
+            for enh in die['enhancements']:
+                desc += f"{enh}: {ENH_DESC.get(enh, 'Unknown effect')}\n"
+        bonus = die.get('score_bonus', 0)
+        if bonus > 0:
+            desc += f"+{bonus} Score Bonus\n"
+        #  print(f"Rendering bag tooltip for die {j}: desc='{desc}' at pos ({game.bag_die_rects[j].x}, {game.bag_die_rects[j].y - 20})")  # Debug
+        if desc:
+            bag_rect = game.bag_die_rects[j]
+            draw_tooltip(game, bag_rect.x, bag_rect.y + bag_rect.height + 10, desc.strip())
+
+
 def draw_shop_screen(game, skip_tooltips=False):
     """Draws the shop screen with equipped charms (sell), shop charms (buy), and Prism Packs."""
     mouse_pos = pygame.mouse.get_pos()
@@ -317,6 +438,31 @@ def draw_shop_screen(game, skip_tooltips=False):
     reroll_y = coins_y - 10  # Align vertically with coins (slight offset if needed)
     reroll_rect = pygame.Rect(reroll_x, reroll_y, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
     draw_custom_button(game, reroll_rect, "Reroll (5)", is_hover=reroll_rect.collidepoint(mouse_pos))
+
+    # Calculate bag_rect dynamically (keep for consistency, even if not used for tray)
+    columns = 5
+    rows = math.ceil(len(game.bag) / columns) if game.bag else 1
+    bag_width = columns * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING) - constants.SMALL_DIE_SPACING + constants.BAG_PADDING * 2
+    bag_height = rows * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING) - constants.SMALL_DIE_SPACING + constants.BAG_PADDING * 2
+    bag_x = game.width - bag_width - 20
+    bag_y = 50
+    bag_rect = pygame.Rect(bag_x, bag_y, bag_width, bag_height)
+
+    # New: Tray underneath continue (use multipliers_button_rect as proxy; adjust if actual continue differs)
+    multipliers_button_rect = pygame.Rect(game.width - constants.MULTIPLIERS_BUTTON_SIZE - 10, game.height - constants.MULTIPLIERS_BUTTON_SIZE - 100, constants.MULTIPLIERS_BUTTON_SIZE, constants.MULTIPLIERS_BUTTON_SIZE)  # From your code
+    continue_rect = multipliers_button_rect  # Proxy; replace with actual continue_rect if defined
+    tray_width = 2 * constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING
+    tray_x = continue_rect.centerx - tray_width // 2  # Center under
+    tray_y = continue_rect.bottom + 10  # Below
+    tray_y = min(tray_y, game.height - constants.TRAY_SLOT_SIZE - 10)  # Clamp to bottom
+    for i in range(2):
+        slot_rect = pygame.Rect(tray_x + i * (constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING), tray_y, constants.TRAY_SLOT_SIZE, constants.TRAY_SLOT_SIZE)
+        pygame.draw.rect(game.screen, (150, 150, 150), slot_rect, border_radius=5)
+        if game.rune_tray[i]:
+            text = game.tiny_font.render(f"#{game.rune_tray[i].get('id', i+1)}", True, constants.THEME['text'])
+            game.screen.blit(text, (slot_rect.centerx - text.get_width()//2, slot_rect.centery - text.get_height()//2))
+        else:
+            pygame.draw.rect(game.screen, (255, 0, 0), slot_rect, width=2)  # Temp red debug (remove after)
 
     # Define large panel for purchasables (shop charms and packs, expanded for future additions)
     panel_width = int(game.width * 0.9)  # 90% width for more space
@@ -366,6 +512,57 @@ def draw_shop_screen(game, skip_tooltips=False):
             elif charm['type'] == 'empty_slot_mult':
                 current_mult = game.get_stencil_mult()
                 tooltip_text += f" (Current: x{current_mult})"
+            # ADDED: Append Lucky Labyrinth bonus for equipped charms
+            if charm['name'] == 'Lucky Labyrinth':
+                permanent_bonus = charm.get('permanent_bonus', 0.0)
+                tooltip_text += f"\nPermanent Mult: +{permanent_bonus:.1f}"
+            # New charms tooltips
+            if charm['type'] == 'advantage_choice':
+                tooltip_text += "\nPreview: Choose best of two rolls (roll phase)"
+            if charm['type'] == 'reroll_advantage':
+                tooltip_text += "\nPreview: Once per blind, reroll with choice"
+            if charm['type'] == 'rune_cast':
+                tooltip_text += "\nPreview: Cast random rune (once per shop)"
+            #  if charm['type'] == 'coin_per_lucky':
+            #      tooltip_text += f"\nPreview: +{charm['value']} coins per lucky trigger"
+            if charm['type'] == 'random_rune':
+                tooltip_text += "\nPreview: Random rune at blind start"
+            if charm['type'] == 'interest_bonus':
+                tooltip_text += "\nPreview: +1 coin per 10 coins at round end"
+            if charm['type'] == 'retrigger_special':
+                tooltip_text += "\nPreview: Retriggers special color effects"
+            if charm['type'] == 'mult_per_enhance':
+                enhance_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die.get('enhancements'))
+                mult_add = charm['value'] * enhance_count
+                tooltip_text += f"\nPreview: +{mult_add:.1f} ({enhance_count} enhancements)"
+            if charm['type'] == 'discard_mult':
+                discards_used = getattr(game, 'discards_used_this_round', 0)
+                mult_add = charm['value'] * discards_used
+                tooltip_text += f"\nPreview: +{mult_add:.1f} ({discards_used} discards)"
+            if charm['type'] == 'coin_per_wild':
+                wild_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die['color'] == 'Rainbow' and len(set([d['color'] for d, _ in [(dd, vv) for ii, (dd, vv) in enumerate(game.rolls) if game.held[ii] and dd['color'] != 'Rainbow']]) <= 1))
+                tooltip_text += f"\nPreview: +{charm['value'] * wild_count} coins ({wild_count} wilds)"
+            if charm['type'] == 'final_mult_conditional':
+                tooltip_text += "\nPreview: +3 mult on last hand with enhancement"
+            if charm['type'] == 'face_buy_high':
+                tooltip_text += "\nPreview: +2 to a face (3 coins, once/turn)"
+            if charm['type'] == 'coin_per_discard':
+                discards_left = getattr(game, 'discards_left', 0)
+                tooltip_text += f"\nPreview: +{charm['value'] * discards_left} coins ({discards_left} discards)"
+            if charm['type'] == 'risk_mult':
+                tooltip_text += f"\nPreview: +{charm['value']} mult (risk -1 die)"
+            if charm['type'] == 'loss_prevent':
+                tooltip_text += "\nPreview: Prevents loss once (destroys charm)"
+            if charm['type'] == 'rune_scribe':
+                tooltip_text += "\nPreview: Scribes rune on scoring 3"
+            if charm['type'] == 'revive_die':
+                tooltip_text += "\nPreview: 50% chance to revive a die"
+            if charm['type'] == 'discard_destroy_coin':
+                tooltip_text += "\nPreview: Destroy 1 die for 3 coins (first discard)"
+            if charm['type'] == 'score_per_discard_color':
+                tooltip_text += "\nPreview: +3 per discarded color die"
+            if charm['type'] == 'mult_final_discard':
+                tooltip_text += "\nPreview: +2 mult on final discard"
             equipped_hover = (x, y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
     
     # Draw dragged charm in shop
@@ -409,36 +606,82 @@ def draw_shop_screen(game, skip_tooltips=False):
                 preview_mult = charm['value'] * (game.max_charms - len(game.equipped_charms))
                 tooltip_text += f" (If bought: x{preview_mult})"
             shop_hover = (x, y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
+            if charm['name'] == 'Lucky Labyrinth':
+                permanent_bonus = charm.get('permanent_bonus', 0.0)
+                tooltip_text += f"\nPermanent Mult: +{permanent_bonus:.1f}"
+            # ADDED: Append Life Milestone modifier
+            if charm['name'] == 'Life Milestone':
+                mult_add = charm['value'] * getattr(game, 'stake_milestones', 0)
+                if mult_add > 0:
+                    tooltip_text += f"\nCurrent Mult: +{mult_add:.1f} ({game.stake_milestones} milestones)"
+            if charm['name'] == 'Stat Roller':
+                # Preview with current held rolls
+                face_sum = sum(value for _, value in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]])
+                tooltip_text += f"\nCurrent Bonus: +{face_sum} (Sum of faces)"
+            draw_tooltip(game, x, y + constants.CHARM_SIZE + 10, tooltip_text)
 
-    # Packs section inside panel (below shop charms, with space for future additions above/below/sides)
-    pack_title = game.small_font.render("Packs", True, (constants.THEME['text']))
-    game.screen.blit(pack_title, (panel_x + inner_padding, shop_charms_y + constants.CHARM_BOX_HEIGHT + 20))  # Below shop charms
+        # Packs section inside panel (below shop charms, with space for future additions above/below/sides)
+        pack_title = game.small_font.render("Packs", True, (constants.THEME['text']))
+        game.screen.blit(pack_title, (panel_x + inner_padding, shop_charms_y + constants.CHARM_BOX_HEIGHT + 20))  # Below shop charms
 
-    pack_y = shop_charms_y + constants.CHARM_BOX_HEIGHT + 50  # Space below charms
-    pack_rects = []
-    pack_costs = [3, 5, 7, 3, 5, 9]
-    pack_choices_num = [2, 3, 5, 3, 4, 3]
-    pack_names = ["Basic Prism (1 of 2)", "Standard Prism (1 of 3)", "Premium Prism (1 of 5)", "Dice Pack (1 of 3)", "Dice Pack (1 of 4)", "Special Dice Pack (1 of 3)"]
-    pack_x_start = panel_x + inner_padding  # Left-aligned (restore original start)
-    pack_x = pack_x_start
-    for pack_idx in game.available_packs:
-        x = pack_x
-        y = pack_y
-        pack_rect = pygame.Rect(x, y, 80, 80)  # Restore local size=80 (larger, less cramped)
-        # Draw icon centered (updated methods handle)
-        if pack_idx in [0,1,2]:
-            draw_prism_pack_icon(game, pack_idx, pack_rect.x, pack_rect.y + 10)
-        else:
-            cycle = constants.BASE_COLORS if pack_idx in [3,4] else constants.SPECIAL_COLORS
-            draw_pack_icon(game, pack_rect, pack_choices_num[pack_idx], cycle)
-        if not skip_tooltips and pack_rect.collidepoint(mouse_pos):
-            tooltip_text = f"{pack_names[pack_idx]}\nCost: {pack_costs[pack_idx]}"
-            tooltip_y = pack_rect.y + 80 + 5  # Lowered
-            if tooltip_y + 50 > game.height:
-                tooltip_y = pack_rect.y - 60
-            draw_tooltip(game, pack_rect.x, tooltip_y, tooltip_text)
-        pack_rects.append((pack_rect, pack_idx))
-        pack_x += 80 + 10  # Restore tighter spacing (adjust to 20 if still cramped)
+        pack_y = shop_charms_y + constants.CHARM_BOX_HEIGHT + 50  # Space below charms
+        pack_rects = []
+        pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9]  # Append rune pack costs
+        pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5]  # Append rune pack choices
+        pack_names = [
+            "Basic Prism (1 of 2)", "Standard Prism (1 of 3)", "Premium Prism (1 of 5)",
+            "Dice Pack (1 of 3)", "Dice Pack (1 of 4)", "Special Dice Pack (1 of 3)",
+            "Basic Rune Pack (1 of 3)", "Mega Rune Pack (1 of 5)", "Super Rune Pack (2 of 5)"
+        ]  # Append rune pack names
+        pack_x_start = panel_x + inner_padding  # Left-aligned
+        pack_x = pack_x_start
+        for pack_idx in game.available_packs:
+            x = pack_x
+            y = pack_y
+            pack_rect = pygame.Rect(x, y, 80, 80)  # Your size
+            # Draw icon centered (your existing logic)
+            if pack_idx in [0,1,2]:
+                draw_prism_pack_icon(game, pack_idx, pack_rect.x, pack_rect.y + 10)
+            elif pack_idx in [3,4,5]:
+                cycle = constants.BASE_COLORS if pack_idx in [3,4] else constants.SPECIAL_COLORS
+                draw_pack_icon(game, pack_rect, pack_choices_num[pack_idx], cycle)
+            elif pack_idx in [6,7,8]:  # Rune packs
+                pygame.draw.rect(game.screen, constants.BAG_COLOR, pack_rect, border_radius=constants.BAG_BORDER_RADIUS)
+                text = game.small_font.render(f"Rune Pack ${pack_costs[pack_idx]}", True, constants.THEME['text'])
+                game.screen.blit(text, (pack_rect.centerx - text.get_width()//2, pack_rect.centery))
+            if not skip_tooltips and pack_rect.collidepoint(mouse_pos):
+                tooltip_text = f"{pack_names[pack_idx]}\nCost: {pack_costs[pack_idx]}"
+                tooltip_y = pack_rect.y + 80 + 5
+                if tooltip_y + 50 > game.height:
+                    tooltip_y = pack_rect.y - 60
+                draw_tooltip(game, pack_rect.x, tooltip_y, tooltip_text)
+            pack_rects.append((pack_rect, pack_idx))
+            pack_x += 80 + 10  # Your spacing
+
+        # ADD: Draw free Grimoire rune next to packs (using stored var)
+        grimoire_rune = getattr(game, 'grimoire_rune', None)  # Use stored var from gen
+        if grimoire_rune:
+            rune_x = pack_x_start + len(game.available_packs) * (80 + 10)  # Dynamic after last pack
+            rune_y = pack_y
+            # Clamp inside panel if overflow
+            if rune_x + constants.CHARM_BOX_WIDTH > panel_x + panel_width - inner_padding:
+                rune_x = panel_x + panel_width - constants.CHARM_BOX_WIDTH - inner_padding  # Right-align inside panel
+                print("Debug: Overflow - right-aligned rune_x to", rune_x)
+            # print(f"Debug: Drawing grimoire_rune at x={rune_x}, y={rune_y}, panel = {panel_rect}, visible = {rune_x >= panel_x and rune_x + constants.CHARM_BOX_WIDTH <= panel_x + panel_width and rune_y >= panel_y and rune_y + constants.CHARM_BOX_HEIGHT <= panel_y + panel_height}")
+            rune_rect = pygame.Rect(rune_x, rune_y, constants.CHARM_BOX_WIDTH, constants.CHARM_BOX_HEIGHT)
+            icon_rect = pygame.Rect(rune_rect.x + (constants.CHARM_BOX_WIDTH - constants.CHARM_DIE_SIZE) // 2, rune_rect.y + 10, constants.CHARM_DIE_SIZE, constants.CHARM_DIE_SIZE)
+            draw_charm_die(game, icon_rect, grimoire_rune)
+            free_label = game.tiny_font.render("Free", True, (constants.THEME['text']))
+            game.screen.blit(free_label, (rune_rect.x + 5, rune_rect.y + constants.CHARM_BOX_HEIGHT - 30))
+            buy_rect = pygame.Rect(rune_rect.x + constants.CHARM_BOX_WIDTH - 60, rune_rect.y + constants.CHARM_BOX_HEIGHT - 30, 50, 20)
+            pygame.draw.rect(game.screen, (0, 150, 0), buy_rect)
+            buy_text = game.tiny_font.render("Buy", True, (constants.THEME['text']))
+            game.screen.blit(buy_text, (buy_rect.x + 10, buy_rect.y + 3))
+            buy_rects.append(buy_rect)  # For buy handling
+            pack_rects.append((rune_rect, -1))  # Special index for buy
+            if not skip_tooltips and rune_rect.collidepoint(mouse_pos):
+                tooltip_text = grimoire_rune['name'] + ": " + grimoire_rune['desc'] + " (Free!)"
+                draw_tooltip(game, rune_rect.x, rune_rect.y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
 
     # Draw tooltips after all elements
     if not skip_tooltips and equipped_hover:
@@ -473,6 +716,9 @@ def draw_blinds_screen(game):
     game.screen.blit(title_text, (game.width // 2 - title_text.get_width() // 2, game.height // 10))
     if game.upcoming_boss_effect is None:
         game.upcoming_boss_effect = random.choice(data.BOSS_EFFECTS)  # Fallback generate if not set
+
+    # In shop or load logic
+    game.update_advantage_flag()
 
     blind_order = ['Small', 'Big', 'Boss']
     box_width, box_height = 150, 100
@@ -763,37 +1009,124 @@ def draw_tutorial_screen(game):
     return left_rect, right_rect, skip_rect
 
 def draw_dice(game):
-        """Draws the current rolls on the screen."""
-        total_dice_width = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
-        start_x = (game.width - total_dice_width) // 2
-        current_time = time.time()  # For animation
-        for i, (die, value) in enumerate(game.rolls):
-            x = start_x + i * (constants.DIE_SIZE + 20)
+    """Draws the current rolls on the screen."""
+    hand_rects = []
+    total_dice_width = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
+    start_x = (game.width - total_dice_width) // 2
+    current_time = time.time()  # For animation
+    for i, (die, value) in enumerate(game.rolls):
+        x = start_x + i * (constants.DIE_SIZE + 20)
+        y = game.height - constants.DIE_SIZE - 100
+        size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[i] else constants.DIE_SIZE
+        offset = (constants.DIE_SIZE - size) / 2 if game.held[i] else 0
+        color = die['color']
+        if color == 'Rainbow':
+            color_index = int(current_time / constants.CYCLE_SPEED) % len(constants.BASE_COLORS)
+            color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
+        else:
+            color_rgb = constants.COLORS[color]
+        # Draw die background with rounded corners
+        rect = pygame.Rect(x + offset, y + offset, size, size)
+
+        # Mini-function for dots
+        def _draw_dots(inner_rect, dot_value):
+            for pos in data.DOT_POSITIONS.get(dot_value, []):
+                dot_x = inner_rect.x + pos[0] * inner_rect.width
+                dot_y = inner_rect.y + pos[1] * inner_rect.height
+                pygame.draw.circle(game.screen, (0, 0, 0), (dot_x, dot_y), constants.DOT_RADIUS)
+        # Highlight if selected for discard (red border outside black)
+        if game.discard_selected[i]:
+            outer_rect = pygame.Rect(x + offset - 3, y + offset - 3, size + 6, size + 6)
+            pygame.draw.rect(game.screen, (255, 0, 0), outer_rect, 3, border_radius=constants.DIE_BORDER_RADIUS)
+        # Draw dots
+        inner_content = lambda r: [
+            _draw_dots(r, value),
+            draw_enhancement_visuals(game, r, die)
+        ]
+        draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=inner_content)
+
+        # New: Green border if in selecting mode for Fate's Favor
+        if game.selecting_fates_die:
+            pygame.draw.rect(game.screen, (0, 255, 0), rect, 2)  # Green selector on all dice
+
+        # Optional: Held highlight (add if not already present)
+        if game.held[i]:
+            pygame.draw.rect(game.screen, (0, 255, 0), rect, 2)
+
+        # Set center_die_rect for index 2
+        if i == 2:
+            game.center_die_rect = rect
+
+    # Draw advantage duplicate if in rolling phase (amulet)
+    if not game.is_discard_phase and game.has_advantage and game.advantage_value is not None:
+        # Duplicate above center
+        adv_y = (game.height - constants.DIE_SIZE - 100) - constants.DIE_SIZE - 10
+        adv_x = start_x + 2 * (constants.DIE_SIZE + 20)
+        adv_size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held_advantage else constants.DIE_SIZE
+        adv_offset = (constants.DIE_SIZE - adv_size) / 2 if game.held_advantage else 0
+        adv_rect = pygame.Rect(adv_x + adv_offset, adv_y + adv_offset, adv_size, adv_size)
+        game.advantage_die_rect = adv_rect
+        
+        # Draw duplicate (same as center but with advantage_value)
+        die = game.rolls[2][0]
+        color = die['color']
+        if color == 'Rainbow':
+            color_index = int(current_time / constants.CYCLE_SPEED) % len(constants.BASE_COLORS)
+            color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
+        else:
+            color_rgb = constants.COLORS[color]
+        adv_inner_content = lambda r: [
+            _draw_dots(r, game.advantage_value),
+            draw_enhancement_visuals(game, r, die)
+        ]
+        draw_rounded_element(game.screen, adv_rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=adv_inner_content)
+        
+        # Highlight if held
+        if game.held_advantage:
+            pygame.draw.rect(game.screen, (0, 255, 0), adv_rect, 2)
+        if game.held[2]:
+            pygame.draw.rect(game.screen, (0, 255, 0), game.center_die_rect, 2)  # Highlight original if held
+
+        # Refresh center rect (if held state changed size)
+        if 2 < len(game.rolls):
+            x = start_x + 2 * (constants.DIE_SIZE + 20)
             y = game.height - constants.DIE_SIZE - 100
-            size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[i] else constants.DIE_SIZE
-            offset = (constants.DIE_SIZE - constants.DIE_SIZE * constants.HELD_DIE_SCALE) / 2 if game.held[i] else 0
-            color = die['color']
-            if color == 'Rainbow':
-                color_index = int(current_time / constants.CYCLE_SPEED) % len(constants.BASE_COLORS)
-                color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
-            else:
-                color_rgb = constants.COLORS[color]
-            # Draw die background with rounded corners
-            rect = pygame.Rect(x + offset, y + offset, size, size)
+            size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[2] else constants.DIE_SIZE
+            offset = (constants.DIE_SIZE - size) / 2 if game.held[2] else 0
+            game.center_die_rect = pygame.Rect(x + offset, y + offset, size, size)
 
-            # New: Mini-function for dots (moves your existing loop here)
-            def _draw_dots(inner_rect):
-                for pos in data.DOT_POSITIONS.get(value, []):
-                    dot_x = inner_rect.x + pos[0] * inner_rect.width  # Updated to use inner_rect (was x + offset + pos[0] * size)
-                    dot_y = inner_rect.y + pos[1] * inner_rect.height  # Updated to use inner_rect (was y + offset + pos[1] * size)
-                    pygame.draw.circle(game.screen, (0, 0, 0), (dot_x, dot_y), constants.DOT_RADIUS)
-            # Highlight if selected for discard (red border outside black)
-            if game.discard_selected[i]:
-                outer_rect = pygame.Rect(x + offset - 3, y + offset - 3, size + 6, size + 6)
-                pygame.draw.rect(game.screen, (255, 0, 0), outer_rect, 3, border_radius=constants.DIE_BORDER_RADIUS)
-            # Draw dots
-            draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=_draw_dots)
+    # New for Fate's Favor: Draw duplicate above selected die
+    if not game.is_discard_phase and game.fates_advantage_index != -1 and game.fates_advantage_value is not None:
+        i = game.fates_advantage_index
+        x = start_x + i * (constants.DIE_SIZE + 20)
+        adv_y = (game.height - constants.DIE_SIZE - 100) - constants.DIE_SIZE - 10
+        adv_size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held_fates_advantage else constants.DIE_SIZE
+        adv_offset = (constants.DIE_SIZE - adv_size) / 2 if game.held_fates_advantage else 0
+        adv_rect = pygame.Rect(x + adv_offset, adv_y + adv_offset, adv_size, adv_size)
+        game.fates_advantage_die_rect = adv_rect  # For clicking
+        
+        die = game.rolls[i][0]
+        color = die['color']
+        if color == 'Rainbow':
+            color_index = int(current_time / constants.CYCLE_SPEED) % len(constants.BASE_COLORS)
+            color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
+        else:
+            color_rgb = constants.COLORS[color]
+        adv_inner_content = lambda r: [
+            _draw_dots(r, game.fates_advantage_value),
+            draw_enhancement_visuals(game, r, die)
+        ]
+        draw_rounded_element(game.screen, adv_rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=adv_inner_content)
+        
+        if game.held_fates_advantage:
+            pygame.draw.rect(game.screen, (0, 255, 0), adv_rect, 2)
+        if game.held[i]:
+            # Highlight original (existing logic in loop)
+            pass
 
+        return hand_rects, game.rolls  # Ensure return is at end
+
+# In screens.py, update draw_bag_visual to use inner_content with lambda for enhancements (no need for draw_dots_or_icon if small dies have no pips; add if needed)
 def draw_bag_visual(game):
     """Draws a brown bag with rounded corners and black border, with dice inside."""
     num_dice = len(game.bag)
@@ -813,19 +1146,18 @@ def draw_bag_visual(game):
     bag_color = game.get_bag_color()
     # Draw upside-down triangle at bottom of Z-order
     triangle_points = [
-        (bag_x + bag_width // 2, bag_y + 10),  # bottom tip
-        (bag_x + bag_width // 2 - 15, bag_y - 10),  # top left
-        (bag_x + bag_width // 2 + 15, bag_y - 10)   # top right
+        (bag_x + bag_width // 2, bag_y + 10), # bottom tip
+        (bag_x + bag_width // 2 - 15, bag_y - 10), # top left
+        (bag_x + bag_width // 2 + 15, bag_y - 10) # top right
     ]
     pygame.draw.polygon(game.screen, bag_color, triangle_points)
     pygame.draw.polygon(game.screen, (0, 0, 0), triangle_points, 2)
     draw_rounded_element(game.screen, bag_rect, bag_color, border_color=(0, 0, 0), border_width=2, radius=constants.BAG_BORDER_RADIUS, inner_content=None)
-
     sorted_bag = sorted(game.bag, key=lambda d: list(constants.COLORS.keys()).index(d['color']))
     start_x = bag_x + constants.BAG_PADDING
     start_y = bag_y + constants.BAG_PADDING
     index = 0
-    current_time = time.time()  # For animation
+    current_time = time.time() # For animation
     for row in range(rows):
         y = start_y + row * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING)
         for col in range(columns):
@@ -839,10 +1171,103 @@ def draw_bag_visual(game):
                     color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
                 else:
                     color_rgb = constants.COLORS[color]
-                draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=1, radius=constants.SMALL_DIE_BORDER_RADIUS, inner_content=None)
+                inner_content = lambda r: draw_bag_enhancement_visuals(game, r, die)  # Add this; no pips for small dies
+                draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=1, radius=constants.SMALL_DIE_BORDER_RADIUS, inner_content=inner_content)
                 index += 1
             else:
                 break
+
+# In screens.py, add this function to handle enhancements visuals for hand dice (full animations)
+# Call it inside draw_rounded_element's inner_content lambda, after drawing base dots/icon: draw_enhancement_visuals(game, r, die)
+# You'll need to import time and random at top if not already: import time, import random
+
+def draw_enhancement_visuals(game, die_rect, die):
+    enhs = die.get('enhancements', [])
+    if not enhs:
+        return
+    icon_size = 15
+    start_x = die_rect.x + 5
+    start_y = die_rect.y + die_rect.height - icon_size - 5  # Bottom row
+    for idx, enh in enumerate(enhs):
+        # Skip color-specific and Wild—no indicators needed; they render as normal dice
+        if enh in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild']:
+            continue  # No visual, just apply color change
+        x = start_x + idx * (icon_size + 5)
+        color = (255, 255, 255)  # White default
+        if enh == 'Lucky':
+            color = (255, 215, 0)  # Gold
+            pygame.draw.polygon(game.screen, color, [(x+7, start_y), (x, start_y+icon_size//2), (x+icon_size, start_y+icon_size//2)])  # Triangle star
+        elif enh == 'Mult':
+            text = game.tiny_font.render("x", True, (0, 255, 0))  # Green x
+            game.screen.blit(text, (x, start_y))
+        elif enh == 'Bonus':
+            pygame.draw.circle(game.screen, (0, 255, 0), (x+7, start_y+7), 5)  # Green dot
+        elif enh == 'Steel':
+            pygame.draw.rect(game.screen, (169, 169, 169), pygame.Rect(x, start_y, icon_size, icon_size), 2)  # Gray border
+        elif enh == 'Fragile':
+            pygame.draw.line(game.screen, (255, 0, 0), (x, start_y), (x+icon_size, start_y+icon_size), 2)  # Red crack
+        elif enh == 'Fate':
+            text = game.tiny_font.render("E", True, (255, 0, 255))  # Magenta E for edition
+            game.screen.blit(text, (x, start_y))
+        elif enh == 'Strength':
+            pygame.draw.polygon(game.screen, (0, 0, 255), [(x+7, start_y), (x, start_y+icon_size), (x+icon_size, start_y+icon_size)])  # Blue arrow
+        elif enh == 'Sacrifice':
+            pygame.draw.circle(game.screen, (255, 0, 0), (x+7, start_y+7), 7, 2)  # Red circle (destroyed)
+        elif enh == 'Transmute':
+            text = game.tiny_font.render("T", True, (128, 0, 128))  # Purple T
+            game.screen.blit(text, (x, start_y))
+        elif enh in ['Gold', 'Silver']:
+            color = constants.COLORS[enh]
+            pygame.draw.rect(game.screen, color, pygame.Rect(x, start_y, icon_size, icon_size))
+        elif enh == 'Stone':
+            pygame.draw.rect(game.screen, (128, 128, 128), pygame.Rect(x, start_y, icon_size, icon_size))  # Gray block
+        # Add more if new enh (e.g., 'Judgement' no visual needed)
+
+    # Color swaps (Red/Blue/etc.): Already handled by base die color, no extra visual needed
+    # Non-die effects (Wealth, Balance, Judgement, Sacrifice, Transmute): Handled in apply, no ongoing visual
+
+# For bag: Simpler static version (call in draw_bag_visual after each small die draw)
+def draw_bag_enhancement_visuals(game, die_rect, die):
+    enhs = die.get('enhancements', [])
+    if not enhs:
+        return
+    icon_size = 15
+    start_x = die_rect.x + 5
+    start_y = die_rect.y + die_rect.height - icon_size - 5  # Bottom row
+    for idx, enh in enumerate(enhs):
+        # Skip color-specific and Wild—no indicators needed; they render as normal dice
+        if enh in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild']:
+            continue  # No visual, just apply color change
+        x = start_x + idx * (icon_size + 5)
+        color = (255, 255, 255)  # White default
+        if enh == 'Lucky':
+            color = (255, 215, 0)  # Gold
+            pygame.draw.polygon(game.screen, color, [(x+7, start_y), (x, start_y+icon_size//2), (x+icon_size, start_y+icon_size//2)])  # Triangle star
+        elif enh == 'Mult':
+            text = game.tiny_font.render("x", True, (0, 255, 0))  # Green x
+            game.screen.blit(text, (x, start_y))
+        elif enh == 'Bonus':
+            pygame.draw.circle(game.screen, (0, 255, 0), (x+7, start_y+7), 5)  # Green dot
+        elif enh == 'Steel':
+            pygame.draw.rect(game.screen, (169, 169, 169), pygame.Rect(x, start_y, icon_size, icon_size), 2)  # Gray border
+        elif enh == 'Fragile':
+            pygame.draw.line(game.screen, (255, 0, 0), (x, start_y), (x+icon_size, start_y+icon_size), 2)  # Red crack
+        elif enh == 'Fate':
+            text = game.tiny_font.render("E", True, (255, 0, 255))  # Magenta E for edition
+            game.screen.blit(text, (x, start_y))
+        elif enh == 'Strength':
+            pygame.draw.polygon(game.screen, (0, 0, 255), [(x+7, start_y), (x, start_y+icon_size), (x+icon_size, start_y+icon_size)])  # Blue arrow
+        elif enh == 'Sacrifice':
+            pygame.draw.circle(game.screen, (255, 0, 0), (x+7, start_y+7), 7, 2)  # Red circle (destroyed)
+        elif enh == 'Transmute':
+            text = game.tiny_font.render("T", True, (128, 0, 128))  # Purple T
+            game.screen.blit(text, (x, start_y))
+        elif enh in ['Gold', 'Silver']:
+            color = constants.COLORS[enh]
+            pygame.draw.rect(game.screen, color, pygame.Rect(x, start_y, icon_size, icon_size))
+        elif enh == 'Stone':
+            pygame.draw.rect(game.screen, (128, 128, 128), pygame.Rect(x, start_y, icon_size, icon_size))  # Gray block
+        # Add more if new enh (e.g., 'Judgement' no visual needed)
 
 def draw_ui_panel(game):
     """Draws the UI panel with hands, discards, rolls left."""
@@ -903,6 +1328,7 @@ def draw_text(game):
 
 def draw_charm_die(game, rect, charm, index=None):
     """Draws a charm as a die with icon inside. Grays out if disabled using built-in Pygame transform."""
+
     # Determine if disabled
     is_disabled = index is not None and index in game.disabled_charms
     
@@ -917,6 +1343,17 @@ def draw_charm_die(game, rect, charm, index=None):
     
     # Inner icon rect (padded and scaled)
     def _draw_inner_charm(inner_rect):
+        # NEW: Guard for missing 'type' (e.g., partial runes like Grimoire)
+        if 'type' not in charm:
+            # Simple placeholder: Draw the first letter of the name centered
+            if 'name' in charm:
+                abbr = charm['name'][0].upper()
+            else:
+                abbr = '?'  # Fallback if no name
+            text_surf = game.tiny_font.render(abbr, True, constants.THEME['text'])
+            text_rect = text_surf.get_rect(center=inner_rect.center)
+            game.screen.blit(text_surf, text_rect)
+            return  # Skip all type-specific drawing to avoid KeyError
         inner_size = int(constants.CHARM_SIZE * constants.INNER_ICON_SCALE)  # e.g., 80 for 100 size
         inner_sub_rect = inner_rect.inflate(-constants.INNER_ICON_PADDING * 2, -constants.INNER_ICON_PADDING * 2)  # Changed name
         inner_sub_rect.size = (inner_size, inner_size)  # Changed name
@@ -1026,6 +1463,12 @@ def draw_charm_die(game, rect, charm, index=None):
             elif charm['type'] == 'sacrifice_mult':
                 game.draw_dagger_icon(rect)  # Assuming this draws on the full rect; scale if needed
             # Add any other fallback drawings for charms not in the icon paths (scale similarly if complex)
+            elif charm['type'] == 'rune':
+                # Draw a rune symbol, e.g., a simple glyph or magic swirl
+                # Example: Draw a circle with lines (customize based on your rune effects)
+                pygame.draw.circle(game.screen, (200, 200, 255), inner_rect.center, 10)  # Magic glow
+                # Or render a rune icon if you have assets
+                # For now, fallback to the abbr drawing above if needed
             else:
                 # Fallback for unmapped charms: text with name to debug
                 text = game.tiny_font.render(charm['name'][:10], True, (0, 0, 0))
@@ -1053,6 +1496,8 @@ def draw_tooltip(game, x, y, text):
         desc_surface = game.small_font.render(line, True, (constants.THEME['text']))
         game.screen.blit(desc_surface, (x + constants.TOOLTIP_PADDING, y + constants.TOOLTIP_PADDING + i * line_height))
 
+    
+
 def draw_pause_menu(game):
     """Draws the pause popup with options: Main Menu, Quit, Return."""
     # Dim background
@@ -1060,6 +1505,7 @@ def draw_pause_menu(game):
     overlay.fill((0, 0, 0))
     overlay.set_alpha(128)  # Semi-transparent black
     game.screen.blit(overlay, (0, 0))
+    
 
     # Centered popup rect (reuse POPUP sizes)
     popup_x = (game.width - constants.POPUP_WIDTH) // 2
@@ -1079,6 +1525,25 @@ def draw_pause_menu(game):
         text = game.font.render(opt, True, (constants.THEME['text']))
         game.screen.blit(text, (rect.x + (constants.BUTTON_WIDTH - text.get_width()) // 2, rect.y + 10))
 
+    # Mute button (position INSIDE the popup, e.g., bottom-right corner of popup)
+    game.mute_button_rect = pygame.Rect(popup_x + constants.POPUP_WIDTH - 60, popup_y + constants.POPUP_HEIGHT - 60, 40, 40)  # Adjusted: Inside popup with padding
+    icon = game.speaker_on_icon if not game.mute else game.speaker_off_icon  # Toggles based on state
+    if icon:
+        game.screen.blit(icon, game.mute_button_rect.topleft)
+    else:
+        # Text fallback (single button that changes label)
+        pygame.draw.rect(game.screen, constants.THEME['button_bg'], game.mute_button_rect)
+        label = "Mute" if not game.mute else "Unmute"  # Toggles text
+        text = game.tiny_font.render(label, True, constants.THEME['text'])
+        game.screen.blit(text, (game.mute_button_rect.centerx - text.get_width() // 2, game.mute_button_rect.centery - text.get_height() // 2))
+
+    # Optional: Hover effect (subtle glow)
+    if game.mute_button_rect.collidepoint(pygame.mouse.get_pos()):
+        pygame.draw.rect(game.screen, constants.THEME['button_hover'], game.mute_button_rect, border_radius=5, width=2)  # Border glow
+
+    # Return the rects for handle_event
+    return button_rects, game.mute_button_rect
+
 def draw_popup(game):
     """Draws the beaten blind popup with a single Continue button and $ animation."""
     popup_rect = pygame.Rect(game.width // 2 - constants.POPUP_WIDTH // 2, 200, constants.POPUP_WIDTH, constants.POPUP_HEIGHT)
@@ -1090,6 +1555,12 @@ def draw_popup(game):
     for i, line in enumerate(lines):
         text = game.tiny_font.render(line, True, (constants.THEME['text']))
         game.screen.blit(text, (popup_rect.x + (constants.POPUP_WIDTH - text.get_width()) // 2, popup_rect.y + 20 + i * 30))
+
+    # Add Lucky bonus coins line if applicable
+    if game.lucky_triggers > 0:
+        lucky_line = f"Lucky Coins: {'$' * game.lucky_triggers}"
+        lucky_text = game.tiny_font.render(lucky_line, True, (constants.THEME['text']))
+        game.screen.blit(lucky_text, (popup_rect.x + (constants.POPUP_WIDTH - lucky_text.get_width()) // 2, popup_rect.y + 20 + len(lines) * 30))
 
     # Draw single Continue button
     continue_rect = pygame.Rect(popup_rect.x + (constants.POPUP_WIDTH - constants.BUTTON_WIDTH) // 2, popup_rect.y + constants.POPUP_HEIGHT - 70, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
@@ -1240,8 +1711,8 @@ def draw_confirm_sell_popup(game):
     popup_width = 300  # Adjust if your popup size is different
     popup_height = 150  # Adjust as needed
     popup_rect = pygame.Rect(game.width // 2 - popup_width // 2, game.height // 2 - popup_height // 2, popup_width, popup_height)
-    pygame.draw.rect(game.screen, (100, 100, 100), popup_rect)  # Gray background
-    pygame.draw.rect(game.screen, (255, 255, 255), popup_rect, 3)  # White border
+    pygame.draw.rect(game.screen, constants.THEME['panel_bg'], popup_rect)  # Gray background
+    pygame.draw.rect(game.screen, constants.THEME['tooltip_border'], popup_rect, 3)  # White border
 
     # Message with wrapping and centering
     message = "Are you sure you want to sell this charm?"
@@ -1258,12 +1729,12 @@ def draw_confirm_sell_popup(game):
 
     # Yes/No buttons (unchanged)
     yes_rect = pygame.Rect(popup_rect.x + 50, popup_rect.y + popup_height - 60, 100, 40)
-    pygame.draw.rect(game.screen, (0, 150, 0), yes_rect)
+    pygame.draw.rect(game.screen, constants.THEME['yes_button'], yes_rect)
     yes_text = game.small_font.render("Yes", True, constants.THEME['text'])
     game.screen.blit(yes_text, (yes_rect.x + (100 - yes_text.get_width()) // 2, yes_rect.y + 10))
 
     no_rect = pygame.Rect(popup_rect.x + popup_width - 150, popup_rect.y + popup_height - 60, 100, 40)
-    pygame.draw.rect(game.screen, (150, 0, 0), no_rect)
+    pygame.draw.rect(game.screen, constants.THEME['no_button'], no_rect)
     no_text = game.small_font.render("No", True, constants.THEME['text'])
     game.screen.blit(no_text, (no_rect.x + (100 - no_text.get_width()) // 2, no_rect.y + 10))
 
@@ -1309,10 +1780,11 @@ def draw_dice_select_screen(game):
             color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
         else:
             color_rgb = constants.COLORS[color]
-        pygame.draw.rect(game.screen, color_rgb, die_rect, border_radius=constants.DIE_BORDER_RADIUS)
-        pygame.draw.rect(game.screen, (0, 0, 0), die_rect, 2, border_radius=constants.DIE_BORDER_RADIUS)
-        # Single pip
-        pygame.draw.circle(game.screen, (0, 0, 0), die_rect.center, constants.DOT_RADIUS)
+        inner_content = lambda r: [
+            pygame.draw.circle(game.screen, (0, 0, 0), r.center, constants.DOT_RADIUS),  # Single pip
+            draw_enhancement_visuals(game, r, {'color': color, 'enhancements': []})  # Stub die for preview
+        ]
+        draw_rounded_element(game.screen, die_rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=inner_content)
         choice_rects.append((choice_rect, color))
     mouse_pos = pygame.mouse.get_pos()
     for rect, color in choice_rects:

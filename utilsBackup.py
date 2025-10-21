@@ -39,7 +39,8 @@ def create_dice_bag():
             die = {
                 'id': f"{color}{i}",
                 'color': color,
-                'faces': constants.DICE_FACES[:]  # Copy list for future modifications
+                'faces': constants.DICE_FACES[:],  # Copy list for future modifications
+                'enhancements': []  # New: Empty list for each die
             }
             bag.append(die)
     return bag

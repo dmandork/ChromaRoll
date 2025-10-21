@@ -620,68 +620,68 @@ def draw_shop_screen(game, skip_tooltips=False):
                 tooltip_text += f"\nCurrent Bonus: +{face_sum} (Sum of faces)"
             draw_tooltip(game, x, y + constants.CHARM_SIZE + 10, tooltip_text)
 
-            # Packs section inside panel (below shop charms, with space for future additions above/below/sides)
-            pack_title = game.small_font.render("Packs", True, (constants.THEME['text']))
-            game.screen.blit(pack_title, (panel_x + inner_padding, shop_charms_y + constants.CHARM_BOX_HEIGHT + 20))  # Below shop charms
+        # Packs section inside panel (below shop charms, with space for future additions above/below/sides)
+        pack_title = game.small_font.render("Packs", True, (constants.THEME['text']))
+        game.screen.blit(pack_title, (panel_x + inner_padding, shop_charms_y + constants.CHARM_BOX_HEIGHT + 20))  # Below shop charms
 
-            pack_y = shop_charms_y + constants.CHARM_BOX_HEIGHT + 50  # Space below charms
-            pack_rects = []
-            pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9]  # Append rune pack costs
-            pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5]  # Append rune pack choices
-            pack_names = [
-                "Basic Prism (1 of 2)", "Standard Prism (1 of 3)", "Premium Prism (1 of 5)",
-                "Dice Pack (1 of 3)", "Dice Pack (1 of 4)", "Special Dice Pack (1 of 3)",
-                "Basic Rune Pack (1 of 3)", "Mega Rune Pack (1 of 5)", "Super Rune Pack (2 of 5)"
-            ]  # Append rune pack names
-            pack_x_start = panel_x + inner_padding  # Left-aligned
-            pack_x = pack_x_start
-            for pack_idx in game.available_packs:
-                x = pack_x
-                y = pack_y
-                pack_rect = pygame.Rect(x, y, 80, 80)  # Your size
-                # Draw icon centered (your existing logic)
-                if pack_idx in [0,1,2]:
-                    draw_prism_pack_icon(game, pack_idx, pack_rect.x, pack_rect.y + 10)
-                elif pack_idx in [3,4,5]:
-                    cycle = constants.BASE_COLORS if pack_idx in [3,4] else constants.SPECIAL_COLORS
-                    draw_pack_icon(game, pack_rect, pack_choices_num[pack_idx], cycle)
-                elif pack_idx in [6,7,8]:  # Rune packs
-                    pygame.draw.rect(game.screen, constants.BAG_COLOR, pack_rect, border_radius=constants.BAG_BORDER_RADIUS)
-                    text = game.small_font.render(f"Rune Pack ${pack_costs[pack_idx]}", True, constants.THEME['text'])
-                    game.screen.blit(text, (pack_rect.centerx - text.get_width()//2, pack_rect.centery))
-                if not skip_tooltips and pack_rect.collidepoint(mouse_pos):
-                    tooltip_text = f"{pack_names[pack_idx]}\nCost: {pack_costs[pack_idx]}"
-                    tooltip_y = pack_rect.y + 80 + 5
-                    if tooltip_y + 50 > game.height:
-                        tooltip_y = pack_rect.y - 60
-                    draw_tooltip(game, pack_rect.x, tooltip_y, tooltip_text)
-                pack_rects.append((pack_rect, pack_idx))
-                pack_x += 80 + 10  # Your spacing
+        pack_y = shop_charms_y + constants.CHARM_BOX_HEIGHT + 50  # Space below charms
+        pack_rects = []
+        pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9]  # Append rune pack costs
+        pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5]  # Append rune pack choices
+        pack_names = [
+            "Basic Prism (1 of 2)", "Standard Prism (1 of 3)", "Premium Prism (1 of 5)",
+            "Dice Pack (1 of 3)", "Dice Pack (1 of 4)", "Special Dice Pack (1 of 3)",
+            "Basic Rune Pack (1 of 3)", "Mega Rune Pack (1 of 5)", "Super Rune Pack (2 of 5)"
+        ]  # Append rune pack names
+        pack_x_start = panel_x + inner_padding  # Left-aligned
+        pack_x = pack_x_start
+        for pack_idx in game.available_packs:
+            x = pack_x
+            y = pack_y
+            pack_rect = pygame.Rect(x, y, 80, 80)  # Your size
+            # Draw icon centered (your existing logic)
+            if pack_idx in [0,1,2]:
+                draw_prism_pack_icon(game, pack_idx, pack_rect.x, pack_rect.y + 10)
+            elif pack_idx in [3,4,5]:
+                cycle = constants.BASE_COLORS if pack_idx in [3,4] else constants.SPECIAL_COLORS
+                draw_pack_icon(game, pack_rect, pack_choices_num[pack_idx], cycle)
+            elif pack_idx in [6,7,8]:  # Rune packs
+                pygame.draw.rect(game.screen, constants.BAG_COLOR, pack_rect, border_radius=constants.BAG_BORDER_RADIUS)
+                text = game.small_font.render(f"Rune Pack ${pack_costs[pack_idx]}", True, constants.THEME['text'])
+                game.screen.blit(text, (pack_rect.centerx - text.get_width()//2, pack_rect.centery))
+            if not skip_tooltips and pack_rect.collidepoint(mouse_pos):
+                tooltip_text = f"{pack_names[pack_idx]}\nCost: {pack_costs[pack_idx]}"
+                tooltip_y = pack_rect.y + 80 + 5
+                if tooltip_y + 50 > game.height:
+                    tooltip_y = pack_rect.y - 60
+                draw_tooltip(game, pack_rect.x, tooltip_y, tooltip_text)
+            pack_rects.append((pack_rect, pack_idx))
+            pack_x += 80 + 10  # Your spacing
 
-            # ADD: Draw free Grimoire rune next to packs (using stored var)
-            grimoire_rune = getattr(game, 'grimoire_rune', None)  # Use stored var from gen
-            if grimoire_rune:
-                rune_x = pack_x_start + len(game.available_packs) * (80 + 10)  # Dynamic after last pack
-                rune_y = pack_y
-                # Clamp inside panel if overflow
-                if rune_x + constants.CHARM_BOX_WIDTH > panel_x + panel_width - inner_padding:
-                    rune_x = panel_x + panel_width - constants.CHARM_BOX_WIDTH - inner_padding  # Right-align inside panel
-                    print("Debug: Overflow - right-aligned rune_x to", rune_x)
-                print(f"Debug: Drawing grimoire_rune at x={rune_x}, y={rune_y}, panel = {panel_rect}, visible = {rune_x >= panel_x and rune_x + constants.CHARM_BOX_WIDTH <= panel_x + panel_width and rune_y >= panel_y and rune_y + constants.CHARM_BOX_HEIGHT <= panel_y + panel_height}")
-                rune_rect = pygame.Rect(rune_x, rune_y, constants.CHARM_BOX_WIDTH, constants.CHARM_BOX_HEIGHT)
-                icon_rect = pygame.Rect(rune_rect.x + (constants.CHARM_BOX_WIDTH - constants.CHARM_DIE_SIZE) // 2, rune_rect.y + 10, constants.CHARM_DIE_SIZE, constants.CHARM_DIE_SIZE)
-                draw_charm_die(game, icon_rect, grimoire_rune)
-                free_label = game.tiny_font.render("Free", True, (constants.THEME['text']))
-                game.screen.blit(free_label, (rune_rect.x + 5, rune_rect.y + constants.CHARM_BOX_HEIGHT - 30))
-                buy_rect = pygame.Rect(rune_rect.x + constants.CHARM_BOX_WIDTH - 60, rune_rect.y + constants.CHARM_BOX_HEIGHT - 30, 50, 20)
-                pygame.draw.rect(game.screen, (0, 150, 0), buy_rect)
-                buy_text = game.tiny_font.render("Buy", True, (constants.THEME['text']))
-                game.screen.blit(buy_text, (buy_rect.x + 10, buy_rect.y + 3))
-                buy_rects.append(buy_rect)  # For buy handling
-                pack_rects.append((rune_rect, -1))  # Special index for buy
-                if not skip_tooltips and rune_rect.collidepoint(mouse_pos):
-                    tooltip_text = grimoire_rune['name'] + ": " + grimoire_rune['desc'] + " (Free!)"
-                    draw_tooltip(game, rune_rect.x, rune_rect.y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
+        # ADD: Draw free Grimoire rune next to packs (using stored var)
+        grimoire_rune = getattr(game, 'grimoire_rune', None)  # Use stored var from gen
+        if grimoire_rune:
+            rune_x = pack_x_start + len(game.available_packs) * (80 + 10)  # Dynamic after last pack
+            rune_y = pack_y
+            # Clamp inside panel if overflow
+            if rune_x + constants.CHARM_BOX_WIDTH > panel_x + panel_width - inner_padding:
+                rune_x = panel_x + panel_width - constants.CHARM_BOX_WIDTH - inner_padding  # Right-align inside panel
+                print("Debug: Overflow - right-aligned rune_x to", rune_x)
+            # print(f"Debug: Drawing grimoire_rune at x={rune_x}, y={rune_y}, panel = {panel_rect}, visible = {rune_x >= panel_x and rune_x + constants.CHARM_BOX_WIDTH <= panel_x + panel_width and rune_y >= panel_y and rune_y + constants.CHARM_BOX_HEIGHT <= panel_y + panel_height}")
+            rune_rect = pygame.Rect(rune_x, rune_y, constants.CHARM_BOX_WIDTH, constants.CHARM_BOX_HEIGHT)
+            icon_rect = pygame.Rect(rune_rect.x + (constants.CHARM_BOX_WIDTH - constants.CHARM_DIE_SIZE) // 2, rune_rect.y + 10, constants.CHARM_DIE_SIZE, constants.CHARM_DIE_SIZE)
+            draw_charm_die(game, icon_rect, grimoire_rune)
+            free_label = game.tiny_font.render("Free", True, (constants.THEME['text']))
+            game.screen.blit(free_label, (rune_rect.x + 5, rune_rect.y + constants.CHARM_BOX_HEIGHT - 30))
+            buy_rect = pygame.Rect(rune_rect.x + constants.CHARM_BOX_WIDTH - 60, rune_rect.y + constants.CHARM_BOX_HEIGHT - 30, 50, 20)
+            pygame.draw.rect(game.screen, (0, 150, 0), buy_rect)
+            buy_text = game.tiny_font.render("Buy", True, (constants.THEME['text']))
+            game.screen.blit(buy_text, (buy_rect.x + 10, buy_rect.y + 3))
+            buy_rects.append(buy_rect)  # For buy handling
+            pack_rects.append((rune_rect, -1))  # Special index for buy
+            if not skip_tooltips and rune_rect.collidepoint(mouse_pos):
+                tooltip_text = grimoire_rune['name'] + ": " + grimoire_rune['desc'] + " (Free!)"
+                draw_tooltip(game, rune_rect.x, rune_rect.y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
 
     # Draw tooltips after all elements
     if not skip_tooltips and equipped_hover:
@@ -1328,6 +1328,7 @@ def draw_text(game):
 
 def draw_charm_die(game, rect, charm, index=None):
     """Draws a charm as a die with icon inside. Grays out if disabled using built-in Pygame transform."""
+
     # Determine if disabled
     is_disabled = index is not None and index in game.disabled_charms
     
@@ -1342,6 +1343,17 @@ def draw_charm_die(game, rect, charm, index=None):
     
     # Inner icon rect (padded and scaled)
     def _draw_inner_charm(inner_rect):
+        # NEW: Guard for missing 'type' (e.g., partial runes like Grimoire)
+        if 'type' not in charm:
+            # Simple placeholder: Draw the first letter of the name centered
+            if 'name' in charm:
+                abbr = charm['name'][0].upper()
+            else:
+                abbr = '?'  # Fallback if no name
+            text_surf = game.tiny_font.render(abbr, True, constants.THEME['text'])
+            text_rect = text_surf.get_rect(center=inner_rect.center)
+            game.screen.blit(text_surf, text_rect)
+            return  # Skip all type-specific drawing to avoid KeyError
         inner_size = int(constants.CHARM_SIZE * constants.INNER_ICON_SCALE)  # e.g., 80 for 100 size
         inner_sub_rect = inner_rect.inflate(-constants.INNER_ICON_PADDING * 2, -constants.INNER_ICON_PADDING * 2)  # Changed name
         inner_sub_rect.size = (inner_size, inner_size)  # Changed name
@@ -1451,6 +1463,12 @@ def draw_charm_die(game, rect, charm, index=None):
             elif charm['type'] == 'sacrifice_mult':
                 game.draw_dagger_icon(rect)  # Assuming this draws on the full rect; scale if needed
             # Add any other fallback drawings for charms not in the icon paths (scale similarly if complex)
+            elif charm['type'] == 'rune':
+                # Draw a rune symbol, e.g., a simple glyph or magic swirl
+                # Example: Draw a circle with lines (customize based on your rune effects)
+                pygame.draw.circle(game.screen, (200, 200, 255), inner_rect.center, 10)  # Magic glow
+                # Or render a rune icon if you have assets
+                # For now, fallback to the abbr drawing above if needed
             else:
                 # Fallback for unmapped charms: text with name to debug
                 text = game.tiny_font.render(charm['name'][:10], True, (0, 0, 0))

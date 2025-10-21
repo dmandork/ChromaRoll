@@ -23,6 +23,7 @@ from states.game_over import GameOverState
 
 
 
+
 # Rarity base weights (0-1 scale)
 RARITY_WEIGHTS = {
     'Common': 0.6,
@@ -775,7 +776,13 @@ class ChromaRollGame:
 
             self.hands_left -= 1
             if self.round_score >= self.get_blind_target():
-                # Compute dynamic interest max from charms (existing)
+                # NEW: Check for stake 8 boss win before popup
+                if self.current_blind == 'Boss' and self.current_stake == 8:
+                    # Stake 8 boss beaten: Transition to end prompt (skip popup for now)
+                    from states.end_prompt import EndPromptState  # type: ignore  # Lazy import to avoid circular load
+                    end_prompt = EndPromptState(self)
+                    self.state_machine.change_state(end_prompt)
+                    return  # Exit early to avoid further logic
                 dynamic_interest_max = INTEREST_MAX
                 for charm in self.equipped_charms:
                     if charm['type'] == 'interest_max_bonus':
@@ -1054,6 +1061,24 @@ class ChromaRollGame:
                 self.selecting_fates_die = False  # Safety
                 print("Debug: Cleared Fate's Favor after scoring")
             
+            # NEW: Set flag for final boss win and award coins/clear accumulators
+            final_boss_win = (self.current_blind == 'Boss' and self.current_stake == 8)
+            self.coins += total_coins  # Add all coins at the end
+            self.coins = max(0, self.coins)  # Clamp to prevent negative coins from penalties
+            self.extra_coins = 0
+            self.round_locket_coins = 0
+            self.round_base_lucky_coins = 0
+            self.lucky_triggers = 0
+            self.blind_won = True  # Set win flag if not already
+            
+            if final_boss_win:
+                # Skip popup, direct to prompt
+                from states.end_prompt import EndPromptState  # type: ignore
+                end_prompt = EndPromptState(self)
+                self.state_machine.change_state(end_prompt)
+                return  # Exit early
+            
+            # Normal win: Show popup
             self.popup_message = (f"{self.current_blind} Blind Beaten! Score: {self.round_score}/{int(self.get_blind_target())}\n"
                                 f"Hands left: {hands_dollars}\n"
                                 f"Discards Left: {discards_dollars}\n"
@@ -1062,9 +1087,6 @@ class ChromaRollGame:
                                 f"{luck_locket_line}"  # Luck's Locket accumulated
                                 f"{base_lucky_line}"  # Base 'Lucky' accumulated
                                 f"Coins gained: {total_dollars}")
-            
-            self.coins += total_coins  # Add all coins at the end
-            self.coins = max(0, self.coins)  # Clamp to prevent negative coins from penalties
             self.show_popup = True
         elif self.hands_left > 0:
             self.new_turn()  # Next hand in round

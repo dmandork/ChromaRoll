@@ -1,9 +1,19 @@
+# savegame.py
 import json
 import os
 import copy
 import data  # For restoring pouch by name
 import constants
-from statemachine import ShopState, BlindsState, GameState  # For state restoration
+# At the top of savegame.py, ensure these imports are present (add any missing ones):
+from states.splash import SplashState
+from states.prompt import PromptState
+from states.init import InitState
+from states.shop import ShopState
+from states.game import GameState
+from states.blinds import BlindsState
+from states.game_over import GameOverState
+# If you have a pause state (commented in your code), add:
+from states.pause import PauseMenuState
 
 def save_game(game):
     """Saves the game state to JSON."""
@@ -11,6 +21,8 @@ def save_game(game):
     current_state_name = type(game.state_machine.current_state).__name__ if hasattr(game, 'state_machine') and game.state_machine.current_state else None
     previous_state_name = type(game.previous_state).__name__ if game.previous_state and not isinstance(game.previous_state, str) else game.previous_state
     save_data = {
+        'turn_initialized': game.turn_initialized,
+        'version': 1,  # Add versioning for future-proofing (increment on breaking changes)
         'coins': game.coins,
         'extra_coins': game.extra_coins,
         'bag': copy.deepcopy(game.bag),  # Deep copy for dicts/lists
@@ -46,6 +58,10 @@ def save_game(game):
         'shop_reroll_cost': game.shop_reroll_cost,
         'current_state': current_state_name,
         'previous_state': previous_state_name,  # New: Save previous for pause cases
+        'mute': game.mute,  # Save mute state
+        'rune_tray': copy.deepcopy(game.rune_tray),
+        'confirmed_hands_this_round': game.confirmed_hands_this_round,
+        'hands_played_this_round': getattr(game, 'hands_played_this_round', 0),  # Keep for compatibility
         # Dagger/Score Multipliers
         'score_mult': getattr(game, 'score_mult', 1.0),  # Safe default if not present
         'dagger_mult': getattr(game, 'dagger_mult', 0.0),
@@ -69,17 +85,58 @@ def save_game(game):
         
         # Unlocks (new, deepcopy for dict)
         'unlocks': copy.deepcopy(game.unlocks),
-        'hand_multipliers': copy.deepcopy(game.hand_multipliers)
+        'hand_multipliers': copy.deepcopy(game.hand_multipliers),
+
+        # Advantage-specific (added here)
+        'has_advantage': game.has_advantage if hasattr(game, 'has_advantage') else False,
+        'advantage_value': game.advantage_value if hasattr(game, 'advantage_value') else None,
+        'held_advantage': game.held_advantage if hasattr(game, 'held_advantage') else False,
+        'original_center_value': game.original_center_value if hasattr(game, 'original_center_value') else None,
+
+        # for Fate's Favor
+        'used_fates_favor_this_blind': game.used_fates_favor_this_blind,
+        'fates_advantage_index': game.fates_advantage_index,
+        'fates_advantage_value': game.fates_advantage_value,
+        'held_fates_advantage': game.held_fates_advantage,
+        'selecting_fates_die': game.selecting_fates_die,
+
+        # New for Gambler's Grimoire
+        'used_rune_cast_this_shop': game.used_rune_cast_this_shop,
     }
-    with open('save.json', 'w') as f:
-        json.dump(save_data, f, default=lambda o: o.__dict__ if hasattr(o, '__dict__') else o)
+    try:
+        with open('save.json', 'w') as f:
+            json.dump(save_data, f, default=lambda o: o.__dict__ if hasattr(o, '__dict__') else o)
+    except IOError as e:
+        print(f"Error saving game: {e}")  # Basic logging; could set game.temp_message instead
+
+# Then, inside load_game (or just before it), add this dict:
+STATE_MAP = {
+    'SplashState': SplashState,
+    'PromptState': PromptState,
+    'InitState': InitState,
+    'ShopState': ShopState,
+    'GameState': GameState,
+    'BlindsState': BlindsState,
+    'GameOverState': GameOverState,
+    'PauseMenuState': PauseMenuState,
+}
 
 def load_game(game):
     """Loads the game state from JSON."""
     try:
         with open('save.json', 'r') as f:
             save_data = json.load(f)
+        
+        # Check version (for future migrations)
+        version = save_data.get('version', 0)  # Default 0 for old saves
+        if version > 1:
+            print("Warning: Save from newer version—may not load fully.")  # Or raise/return None
+            # Future: Add migration logic here (e.g., if version==2, add new fields)
+        elif version < 1:
+            print("Old save detected—attempting load with defaults.")
+        
         # All setters moved here (from the old if block)
+        game.turn_initialized = save_data.get('turn_initialized', False)
         game.coins = save_data.get('coins', 0)
         game.extra_coins = save_data.get('extra_coins', 0)
         game.bag = copy.deepcopy(save_data.get('bag', []))
@@ -96,6 +153,8 @@ def load_game(game):
                 game.max_charms = 5 + game.current_pouch.get('bonus', {}).get('charm_slots', 0)
                 game.green_pouch_active = 'Green' in game.current_pouch['name']
                 # Add other static pouch effects here (e.g., if any flags beyond green)
+            else:
+                print(f"Warning: Pouch '{pouch_name}' not found in data.POUCHES—using defaults.")
         game.green_pouch_active = save_data.get('green_pouch_active', False)
         game.hands_left = save_data.get('hands_left', constants.MAX_HANDS)
         game.rerolls_left = save_data.get('rerolls_left', constants.MAX_REROLLS)
@@ -119,13 +178,18 @@ def load_game(game):
         game.shop_charms = copy.deepcopy(save_data.get('shop_charms', []))
         game.available_packs = save_data.get('available_packs', [])
         game.shop_reroll_cost = save_data.get('shop_reroll_cost', 5)
+        game.mute = save_data.get('mute', False)
+        game.toggle_mute()  # Applies volumes immediately (ensures SFX are set correctly on load)
         game.hand_multipliers = copy.deepcopy(save_data.get('hand_multipliers', {}))
+        game.confirmed_hands_this_round = save_data.get('confirmed_hands_this_round', 0)
+        game.hands_played_this_round = save_data.get('hands_played_this_round', 0)  # Keep for compatibility
+        game.rune_tray = copy.deepcopy(save_data.get('rune_tray', [None, None]))
         for ht in data.HAND_TYPES:
             if ht not in game.hand_multipliers:
                 game.hand_multipliers[ht] = 1.0
         # Dagger/Score Multipliers
         game.score_mult = save_data.get('score_mult', 1.0)
-        game.dagger_mult = save_data.get('dagger_mult', 0.0)  # Remove the hasattr check; always set
+        game.dagger_mult = save_data.get('dagger_mult', 0.0)  # Single set; removed duplicate below
 
         # Pack/Shop Continuity
         game.pack_choices = copy.deepcopy(save_data.get('pack_choices', []))
@@ -138,8 +202,7 @@ def load_game(game):
 
         # If adding modified constants
         game.effective_interest_max = save_data.get('effective_interest_max', constants.INTEREST_MAX)
-        if hasattr(game, 'dagger_mult'):
-            game.dagger_mult = save_data.get('dagger_mult', 0)
+        # Removed duplicate dagger_mult set here
 
         # Tutorial Progress (new)
         game.tutorial_step = save_data.get('tutorial_step', 0)
@@ -149,11 +212,26 @@ def load_game(game):
         # Unlocks (new)
         game.unlocks = copy.deepcopy(save_data.get('unlocks', {}))
 
-        # Reapply boss shuffled faces to dice
-        if game.boss_shuffled_faces:
-            for die in game.full_bag + game.bag + game.hand + [r[0] for r in game.rolls]:
-                if die['id'] in game.boss_shuffled_faces:
-                    die['faces'] = copy.deepcopy(game.boss_shuffled_faces[die['id']])
+        # Advantage-specific (added here)
+        game.has_advantage = save_data.get('has_advantage', False)
+        game.advantage_value = save_data.get('advantage_value', None)
+        game.held_advantage = save_data.get('held_advantage', False)
+        game.original_center_value = save_data.get('original_center_value', None)
+
+        # for Fate's Favor
+        game.used_fates_favor_this_blind = save_data.get('used_fates_favor_this_blind', False)
+        game.fates_advantage_index = save_data.get('fates_advantage_index', -1)
+        game.fates_advantage_value = save_data.get('fates_advantage_value', None)
+        game.held_fates_advantage = save_data.get('held_fates_advantage', False)
+        game.selecting_fates_die = save_data.get('selecting_fates_die', False)
+
+        # New for Gambler's Grimoire
+        game.equipped_charms = copy.deepcopy(save_data.get('equipped_charms', []))
+        game.disabled_charms = save_data.get('disabled_charms', [])
+        print(f"Debug: Loaded equipped_charms = {[c['name'] for c in game.equipped_charms]}, disabled = {game.disabled_charms}")  # ADD: Check load
+
+        # In load_game, remove/replace the existing if-block with:
+        game.apply_boss_face_shuffle()
 
         # Recompute hand/modifier texts based on loaded state
         game.update_hand_text()
@@ -162,17 +240,23 @@ def load_game(game):
         saved_state = save_data.get('current_state')
         saved_previous = save_data.get('previous_state')
         resume_state = saved_previous if saved_state == 'PauseMenuState' else saved_state
-        if resume_state == 'ShopState':
-            game.state_machine.change_state(ShopState(game))
-        elif resume_state == 'GameState':
-            game.state_machine.change_state(GameState(game))
-        elif resume_state == 'BlindsState':
-            game.state_machine.change_state(BlindsState(game))
-        else:
-            game.state_machine.change_state(BlindsState(game))  # Fallback
+        state_class = STATE_MAP.get(resume_state, BlindsState)  # Fallback to BlindsState
+
+        # Set is_resuming if loading into GameState
+        if resume_state == 'GameState':
+            game.is_resuming = True
+
+        game.state_machine.change_state(state_class(game))
         return save_data  # Return the dict for PromptState
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None  # No save or invalid file
+    except FileNotFoundError:
+        return None  # No save
+    except json.JSONDecodeError as e:
+        print(f"Corrupt save file: {e}. Deleting and starting fresh.")  # Or set game.temp_message = "Corrupt save—starting new."
+        delete_save()
+        return None  # Invalid file
+    except Exception as e:  # Catch-all for unexpected (e.g., key errors in data)
+        print(f"Unexpected load error: {e}")
+        return None
 
 def delete_save():
     """Deletes the save file."""

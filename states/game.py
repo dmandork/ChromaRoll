@@ -134,8 +134,17 @@ class GameState(State):
             mouse_pos = pygame.mouse.get_pos()  # Moved to the top to ensure it's always defined
             if self.game.show_popup:
                 if self.continue_rect and self.continue_rect.collidepoint(mouse_pos):
+                    self.game.show_popup = False  # Existing dismiss
+                    
+                    # NEW: Safeguard - if final boss win and not endless, redirect to prompt before shop
+                    if self.game.current_blind == 'Boss' and self.game.current_stake == 8 and not self.game.is_endless:
+                        from states.end_prompt import EndPromptState  # type: ignore
+                        end_prompt = EndPromptState(self.game)
+                        self.game.state_machine.change_state(end_prompt)
+                        return  # Stop - no shop transition
+                    
+                    # Existing post-popup advancement (now only for non-final wins)
                     from states.shop import ShopState  # Lazy import
-                    self.game.show_popup = False
                     self.game.advance_blind()
                     self.game.generate_shop()
                     self.game.state_machine.change_state(ShopState(self.game))

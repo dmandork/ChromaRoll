@@ -85,92 +85,171 @@ DOT_POSITIONS = {
 
 CHARMS_POOL = [
     {'name': 'Basic Charm', 'rarity': 'Common', 'cost': 2, 'desc': '+10 to all final scores.', 'type': 'flat_bonus', 'value': 10},
-
-    {'name': 'Red Greed Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Red die scored.', 'type': 
-     'per_color_bonus', 'color': 'Red', 'value': 5},
-
-    {'name': 'Blue Lust Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Blue die scored.', 'type': 
-     'per_color_bonus', 'color': 'Blue', 'value': 5},
-
-    {'name': 'Green Wrath Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Green die scored.', 'type': 
-     'per_color_bonus', 'color': 'Green', 'value': 5},
-
-    {'name': 'Purple Glutton Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Purple die scored.', 'type': 
-     'per_color_bonus', 'color': 'Purple', 'value': 5},
-
-    {'name': 'Yellow Jolly Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Yellow die scored.', 'type': 
-     'per_color_bonus', 'color': 'Yellow', 'value': 5},
-
-    {'name': 'Zany Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+40 score if hand contains a 3 of a Kind.', 'type': 
-     'hand_bonus', 'hands': ['3 of a Kind'], 'value': 40},
-
-    {'name': 'Mad Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+30 score if hand contains a 2 Pair.', 'type': 'hand_bonus', 
-     'hands': ['2 Pair'], 'value': 30},
-
-    {'name': 'Crazy Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+35 score if hand contains a Small or Large Straight.', 
-     'type': 'hand_bonus', 'hands': ['Small Straight', 'Large Straight'], 'value': 35},
-
-    {'name': 'Droll Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.5x to monochrome multipliers.', 'type': 
-     'mono_mult_bonus', 'value': 0.5},
-
-    {'name': 'Sly Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+50 base score if hand contains a Pair.', 'type': 
-     'hand_bonus', 'hands': ['Pair'], 'value': 50},
-
-    {'name': 'Wily Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+100 base score if hand contains a 3 of a Kind.', 'type': 
-     'hand_bonus', 'hands': ['3 of a Kind'], 'value': 100},
-
-    {'name': 'Clever Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+80 base score if hand contains a 2 Pair.', 'type': 
-     'hand_bonus', 'hands': ['2 Pair'], 'value': 80},
-
-    {'name': 'Devious Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': 
-     '+100 base score if hand contains a Small or Large Straight.', 'type': 'hand_bonus', 'hands': 
-     ['Small Straight', 'Large Straight'], 'value': 100},
-
-    {'name': 'Half Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+20 score if hand uses 3 or fewer dice.', 'type': 
-     'few_dice_bonus', 'max_dice': 3, 'value': 20},
-
-    {'name': 'Stencil Charm', 'rarity': 'Legendary', 'cost': 7, 'desc': '+0.5x multiplier per empty charm slot.', 'type': 'empty_slot_mult', 'value': 0.5},
-
-    {'name': 'Four Fingers Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': 
-     'Small Straights can be made with 3 dice; Large with 4.', 'type': 'short_straight'},
-
-    {'name': 'Mime Charm', 'rarity': 'Rare', 'cost': 6, 'desc': 
-     'Retrigger effects of held dice (e.g., double Gold coins, Glass mult/break chance).', 'type': 'retrigger_held'},
-
-    {'name': 'Debt Charm', 'rarity': 'Common', 'cost': 2, 'desc': 'Allows going into negative coins for shop buys (up to -5).', 
-     'type': 'negative_coins', 'limit': -5},
-
-    {'name': 'Dagger Charm', 'rarity': 'Legendary', 'cost': 10, 'desc': 
-     'When blind starts, sacrifice a charm to the right and add 0.1x its cost to your score multiplier permanently. (Max 5x)', 'type': 'sacrifice_mult'},
-
-    {'name': 'Golden Touch Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': 
-     '+2 coins per Gold die held in score (stacks with base effect).', 'type': 'extra_coin_bonus', 'color': 'Gold', 'value': 2},
-
-    {'name': 'Silver Lining Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': 
-     '+2 coins per Silver die not held in score (stacks with base effect).', 'type': 'extra_coin_bonus', 'color': 'Silver', 'value': 2},
-
-    {'name': 'Fragile Fortune Charm', 'rarity': 'Rare', 'cost': 6, 'desc': 
-     'Reduces Glass die break chance to 10%, but if it breaks, lose 5 coins.', 'type': 'glass_mod', 'break_chance': 0.10, 
-     'break_penalty': 5},
-
-    {'name': 'Even Stevens Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per even-valued die scored.', 'type': 
-             'per_value_bonus', 'parity': 'even', 'value': 5},
-
-    {'name': 'Oddball Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per odd-valued die scored.', 'type': 
-     'per_value_bonus', 'parity': 'odd', 'value': 5},
-
-    {'name': 'Rainbow Prism Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.5x to rainbow multipliers.', 'type': 
-     'rainbow_mult_bonus', 'value': 0.5},
-
-    {'name': 'Full House Party Charm', 'rarity': 'Rare', 'cost': 6, 'desc': '+150 base score if hand contains a Full House.', 
-     'type': 'hand_bonus', 'hands': ['Full House'], 'value': 150},
-
-    {'name': 'Quadruple Threat Charm', 'rarity': 'Rare', 'cost': 7, 'desc': '+200 base score if hand contains a 4 of a Kind.', 
-     'type': 'hand_bonus', 'hands': ['4 of a Kind'], 'value': 200},
-
-    {'name': 'Reroll Recycler Charm', 'rarity': 'Rare', 'cost': 8, 'desc': 
-     'Gain 1 extra reroll in the turn if you use a discard.', 'type': 'reroll_recycler'},
-
-    {'name': 'Interest Booster Charm', 'rarity': 'Common', 'cost': 3, 'desc': 
-     'Increases max coins for interest calculation by 20.', 'type': 'interest_max_bonus', 'value': 20},
+    {'name': 'Red Greed Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Red die scored.', 'type': 'per_color_bonus', 'color': 'Red', 'value': 5},
+    {'name': 'Blue Lust Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Blue die scored.', 'type': 'per_color_bonus', 'color': 'Blue', 'value': 5},
+    {'name': 'Green Wrath Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Green die scored.', 'type': 'per_color_bonus', 'color': 'Green', 'value': 5},
+    {'name': 'Purple Glutton Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Purple die scored.', 'type': 'per_color_bonus', 'color': 'Purple', 'value': 5},
+    {'name': 'Yellow Jolly Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Yellow die scored.', 'type': 'per_color_bonus', 'color': 'Yellow', 'value': 5},
+    {'name': 'Zany Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+40 score if hand contains a 3 of a Kind.', 'type': 'hand_bonus', 'hands': ['3 of a Kind'], 'value': 40},
+    {'name': 'Mad Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+30 score if hand contains a 2 Pair.', 'type': 'hand_bonus', 'hands': ['2 Pair'], 'value': 30},
+    {'name': 'Crazy Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+35 score if hand contains a Small or Large Straight.', 'type': 'hand_bonus', 'hands': ['Small Straight', 'Large Straight'], 'value': 35},
+    {'name': 'Droll Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.5 mult to monochrome bonuses.', 'type': 'mono_mult_bonus', 'value': 0.5},
+    {'name': 'Sly Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+50 base score if hand contains a Pair.', 'type': 'hand_bonus', 'hands': ['Pair'], 'value': 50},
+    {'name': 'Wily Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+100 base score if hand contains a 3 of a Kind.', 'type': 'hand_bonus', 'hands': ['3 of a Kind'], 'value': 100},
+    {'name': 'Clever Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+80 base score if hand contains a 2 Pair.', 'type': 'hand_bonus', 'hands': ['2 Pair'], 'value': 80},
+    {'name': 'Devious Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+100 base score if hand contains a Small or Large Straight.', 'type': 'hand_bonus', 'hands': ['Small Straight', 'Large Straight'], 'value': 100},
+    {'name': 'Half Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+20 score if hand uses 3 or fewer dice.', 'type': 'few_dice_bonus', 'max_dice': 3, 'value': 20},
+    {'name': 'Stencil Charm', 'rarity': 'Legendary', 'cost': 7, 'desc': '+0.5 mult per empty charm slot.', 'type': 'empty_slot_mult', 'value': 0.5},
+    {'name': 'Four Fingers Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Small Straights can be made with 3 dice; Large with 4.', 'type': 'short_straight'},
+    {'name': 'Mime Charm', 'rarity': 'Rare', 'cost': 6, 'desc': 'Retrigger effects of held dice (e.g., double Gold coins, Glass mult/break chance).', 'type': 'retrigger_held'},
+    {'name': 'Debt Charm', 'rarity': 'Common', 'cost': 2, 'desc': 'Allows going into negative coins for shop buys (up to -5).', 'type': 'negative_coins', 'limit': -5},
+    {'name': 'Dagger Charm', 'rarity': 'Legendary', 'cost': 10, 'desc': 'When blind starts, sacrifice a charm to the right and add 0.1 mult per its cost permanently. (Max +5 mult)', 'type': 'sacrifice_mult'},
+    {'name': 'Golden Touch Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+2 coins per Gold die held in score (stacks with base effect).', 'type': 'extra_coin_bonus', 'color': 'Gold', 'value': 2},
+    {'name': 'Silver Lining Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+2 coins per Silver die not held in score (stacks with base effect).', 'type': 'extra_coin_bonus', 'color': 'Silver', 'value': 2},
+    {'name': 'Fragile Fortune Charm', 'rarity': 'Rare', 'cost': 6, 'desc': 'Reduces Glass die break chance to 10%, but if it breaks, lose 5 coins.', 'type': 'glass_mod', 'break_chance': 0.10, 'break_penalty': 5},
+    {'name': 'Even Stevens Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per even-valued die scored.', 'type': 'per_value_bonus', 'parity': 'even', 'value': 5},
+    {'name': 'Oddball Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per odd-valued die scored.', 'type': 'per_value_bonus', 'parity': 'odd', 'value': 5},
+    {'name': 'Rainbow Prism Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.5 mult to rainbow bonuses.', 'type': 'rainbow_mult_bonus', 'value': 0.5},
+    {'name': 'Full House Party Charm', 'rarity': 'Rare', 'cost': 6, 'desc': '+150 base score if hand contains a Full House.', 'type': 'hand_bonus', 'hands': ['Full House'], 'value': 150},
+    {'name': 'Quadruple Threat Charm', 'rarity': 'Rare', 'cost': 7, 'desc': '+200 base score if hand contains a 4 of a Kind.', 'type': 'hand_bonus', 'hands': ['4 of a Kind'], 'value': 200},
+    {'name': 'Reroll Recycler Charm', 'rarity': 'Rare', 'cost': 8, 'desc': 'Gain 1 extra reroll in the turn if you use a discard.', 'type': 'reroll_recycler'},
+    {'name': 'Interest Booster Charm', 'rarity': 'Common', 'cost': 3, 'desc': 'Increases max coins for interest calculation by 20.', 'type': 'interest_max_bonus', 'value': 20},
+    {'name': 'Advantage Amulet', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'After discard phase, roll a duplicate for the center die; choose which to hold during rolling phase.', 'type': 'advantage_choice', 'value': 1},
+    {'name': 'Fate\'s Favor', 'rarity': 'Rare', 'cost': 6, 'desc': 'Once per round, reroll a die with advantage (roll twice, choose).', 'type': 'reroll_advantage', 'value': 1},
+    {'name': 'Gambler\'s Grimoire', 'rarity': 'Legendary', 'cost': 9, 'desc': 'Cast a random mystic rune effect for free once per shop.', 'type': 'rune_cast', 'value': 1},
+    {'name': 'Luck\'s Locket', 'rarity': 'Common', 'cost': 4, 'desc': '+3 coins if a lucky enhancement triggers.', 'type': 'coin_per_lucky', 'value': 3},
+    {'name': 'Rune Relic', 'rarity': 'Uncommon', 'cost': 6, 'desc': 'Enhance a die with a random rune effect at the start of each blind.', 'type': 'random_rune'},
+    {'name': 'Envy Echo', 'rarity': 'Common', 'cost': 3, 'desc': '+0.5 mult for Green dice scored.', 'type': 'color_mult', 'color': 'Green', 'value': 0.5},
+    {'name': 'Gluttony Glyph', 'rarity': 'Common', 'cost': 3, 'desc': '+0.5 mult for Purple dice scored.', 'type': 'color_mult', 'color': 'Purple', 'value': 0.5},
+    {'name': 'Yellow Prism', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+0.5 mult for Yellow dice scored.', 'type': 'color_mult', 'color': 'Yellow', 'value': 0.5},
+    {'name': 'Sloth Sigil', 'rarity': 'Rare', 'cost': 5, 'desc': '+0.5 mult for Blue dice scored if no rerolls used.', 'type': 'color_mult_conditional', 'color': 'Blue', 'value': 0.5},
+    {'name': 'Face Forgery', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Treat 2s as wild for kinds if scored.', 'type': 'face_wild', 'face': 2},
+    {'name': 'Queen\'s Quill', 'rarity': 'Rare', 'cost': 6, 'desc': 'Queens (5s) give +0.5 mult per one in hand.', 'type': 'mult_per_face', 'faces': [5], 'value': 1.5},  # Changed type to mult_per_face, faces=[5], value=1.5 (since mult_per_face uses value-1)
+    {'name': 'Ace\'s Aura', 'rarity': 'Legendary', 'cost': 8, 'desc': 'Aces (1s) retrigger scoring once.', 'type': 'face_retrigger', 'face': 1},
+    {'name': 'Interest Idol', 'rarity': 'Common', 'cost': 4, 'desc': '+1 coin per 10 coins held at round end.', 'type': 'interest_bonus', 'value': 1},
+    {'name': 'Synergy Scroll', 'rarity': 'Rare', 'cost': 7, 'desc': 'Retrigger enhancements on special colors.', 'type': 'retrigger_special'},
+    {'name': 'Enhance Elixir', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.25 mult per enhancement on scored dice.', 'type': 'mult_per_enhance', 'value': 0.25},
+    {'name': 'Discard Drake', 'rarity': 'Rare', 'cost': 6, 'desc': '+1 mult per discard used this round.', 'type': 'discard_mult', 'value': 1},
+    {'name': 'Wild Warden', 'rarity': 'Common', 'cost': 3, 'desc': 'Rainbow dice gain +1 coin when wilding a mono.', 'type': 'coin_per_wild', 'value': 1},
+    {'name': 'Kind Keeper', 'rarity': 'Rare', 'cost': 5, 'desc': '4s count as wild for three/four of a kinds.', 'type': 'kind_wild', 'face': 4},
+    {'name': 'Final Forge', 'rarity': 'Legendary', 'cost': 10, 'desc': '+3 mult on last hand if it includes an enhancement.', 'type': 'final_mult_conditional', 'value': 3},
+    {'name': 'Buy Boon', 'rarity': 'Common', 'cost': 3, 'desc': 'Pay 3 coins to +2 a die face once per turn.', 'type': 'face_buy_high', 'value': 2},
+    {'name': 'Echo Ember', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+2 coins per unused discard.', 'type': 'coin_per_discard', 'value': 2},
+    {'name': 'Triple Threat', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+0.5 mult for Three of a Kind.', 'type': 'mult_bonus', 'hands': ['3 of a Kind'], 'value': 1.5},
+    {'name': 'Disadvantage Dice', 'rarity': 'Common', 'cost': 3, 'desc': '-1 to one die face, but +0.5 mult overall.', 'type': 'risk_mult', 'value': 0.5},
+    {'name': 'Stat Roller', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Adds the sum of all dice faces in the hand to the base score (e.g., 6,6,6,3,1 = +22).', 'type': 'score_bonus', 'value': 'stat_sum'},
+    {'name': 'Critical Hit', 'rarity': 'Legendary', 'cost': 9, 'desc': 'If all dice 6, +6 mult and +50 coins.', 'type': 'crit_bonus', 'value': 6},
+    {'name': 'Saving Throw', 'rarity': 'Common', 'cost': 4, 'desc': 'Avoid break on Glass dice with a successful "save" (roll >3).', 'type': 'break_save'},
+    {'name': 'Homebrew Hazard', 'rarity': 'Rare', 'cost': 7, 'desc': 'Random encounter: 1/6 chance for bonus charm, else lose a discard.', 'type': 'random_event'},
+    {'name': 'Greedy Gambler', 'rarity': 'Common', 'cost': 3, 'desc': '+0.5 mult for Red dice scored.', 'type': 'color_mult', 'color': 'Red', 'value': 0.5},
+    {'name': 'Retrigger Rune', 'rarity': 'Legendary', 'cost': 10, 'desc': 'Retrigger scoring on kinds.', 'type': 'retrigger', 'hands': 'kinds'},
+    {'name': 'Economy Echo', 'rarity': 'Common', 'cost': 4, 'desc': '+1 coin per unused reroll (echo interest).', 'type': 'coin_gen', 'value': 1},
+    {'name': 'Break Buffer', 'rarity': 'Rare', 'cost': 6, 'desc': 'Glass dice break only on 1.', 'type': 'break_reduce'},
+    {'name': 'Wild Whirl', 'rarity': 'Common', 'cost': 3, 'desc': 'Rainbow dice count double for monos.', 'type': 'rainbow_double'},
+    {'name': 'Discard Dynamo', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.5 mult per discard used.', 'type': 'discard_mult', 'value': 0.5},
+    {'name': 'Rune Recycler', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Reuse one rune per shop.', 'type': 'rune_reuse'},
+    {'name': 'Kind King', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Kings (6s) count as wild for kinds.', 'type': 'kind_wild', 'face': 6},
+    {'name': 'Final Flourish', 'rarity': 'Legendary', 'cost': 10, 'desc': '+2 mult on last hand of round.', 'type': 'final_mult', 'value': 2},
+    {'name': 'Dragon\'s Dice', 'rarity': 'Rare', 'cost': 7, 'desc': 'If all reds, +1 mult but risk burn (10% break on all dice).', 'type': 'color_risk_mult', 'color': 'Red', 'value': 1},
+    {'name': 'Bardic Blade', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.5 mult per color in rainbow hand.', 'type': 'rainbow_mult', 'value': 0.5},
+    {'name': 'Druid\'s Dream', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+coins equal to greens in hand (nature bond).', 'type': 'coin_per_color', 'color': 'Green'},
+    {'name': 'Sorcerer\'s Surge', 'rarity': 'Legendary', 'cost': 10, 'desc': 'Random +mult (1-3) on kinds, but 1/6 chance for backlash (-mult).', 'type': 'surge_random', 'range': [1,3]},
+    {'name': 'Familiar\'s Foresight', 'rarity': 'Rare', 'cost': 6, 'desc': 'Once per blind, in the discard phase swap 1 dice of your choice with any dice in your bag.', 'type': 'bag_swap', 'value': 1},
+    {'name': 'Cloak of Cunning', 'rarity': 'Legendary', 'cost': 9, 'desc': 'Saves you from losing the game. The charm is destroyed if you lose a blind and you must repeat the blind. One per game.', 'type': 'loss_prevent'},
+    {'name': 'Spellbook Scribe', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Scribe a rune to your tray if scored with a magic number "3".', 'type': 'rune_scribe', 'faces': [3]},
+    {'name': 'Necromancer\'s Needle', 'rarity': 'Uncommon', 'cost': 4, 'desc': '50% chance to revive a random dice that was destroyed this run.', 'type': 'revive_die', 'chance': 0.5},
+    {'name': 'Triboulet Token', 'rarity': 'Legendary', 'cost': 10, 'desc': 'Scored dice with faces 5 or 6 give +1 mult.', 'type': 'mult_per_face', 'faces': [5,6], 'value': 1},
+    {'name': 'Wee Widget', 'rarity': 'Legendary', 'cost': 10, 'desc': '+2 mult and +20 score per charm equipped.', 'type': 'bonus_per_charm', 'mult': 2, 'score': 20},
+    {'name': 'Flower Pot Prism', 'rarity': 'Rare', 'cost': 8, 'desc': '+2 mult if scored dice are all one color.', 'type': 'mult_conditional', 'mono': True, 'value': 2},
+    {'name': 'Glass Globe', 'rarity': 'Rare', 'cost': 6, 'desc': '+2 mult if hand contains Glass dice.', 'type': 'mult_conditional', 'glass': True, 'value': 2},
+    {'name': 'Obelisk Orb', 'rarity': 'Rare', 'cost': 8, 'desc': '+0.2 mult per consecutive hand without your most-played type.', 'type': 'mult_per_streak', 'value': 0.2},
+    {'name': 'Brainstorm Bead', 'rarity': 'Rare', 'cost': 7, 'desc': 'Copies the effect of the leftmost charm.', 'type': 'copy_effect', 'target': 'leftmost'},
+    {'name': 'Blueprint Bag', 'rarity': 'Rare', 'cost': 7, 'desc': 'Copies the effect of the charm to its left.', 'type': 'copy_effect', 'target': 'left'},
+    {'name': 'Burglar Bag', 'rarity': 'Rare', 'cost': 6, 'desc': 'When blind selected, +3 hands but lose all discards.', 'type': 'hand_bonus', 'value': 3, 'lose_discards': True},
+    {'name': 'Steel Seal', 'rarity': 'Uncommon', 'cost': 6, 'desc': '+0.2 mult per Steel-enhanced die in bag.', 'type': 'mult_per_enhance', 'enhance': 'Steel', 'value': 0.2},
+    {'name': 'Dusk Die', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Retrigger all scored dice in final hand of round.', 'type': 'retrigger', 'target': 'final_hand'},
+    {'name': 'Loyalty Luck', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+3 mult every 6 turns played.', 'type': 'mult_conditional', 'every': 6, 'value': 3},
+    {'name': 'Marble Mystic', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Add a Stone enhancement to a random die when blind selected.', 'type': 'enhance_add', 'enhance': 'Stone'},
+    {'name': 'Joker Die', 'rarity': 'Common', 'cost': 2, 'desc': '+4 mult.', 'type': 'mult_bonus', 'value': 4},
+    {'name': 'Space Sphere', 'rarity': 'Uncommon', 'cost': 5, 'desc': '25% chance to upgrade the specific hand type played.', 'type': 'hand_upgrade', 'chance': 0.25},
+    {'name': 'Ice Shard', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+100 score. -5 score per hand played.', 'type': 'score_decay', 'start': 100, 'decay': 5},
+    {'name': 'Hiker Hex', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Each scored die permanently gains +4 score value.', 'type': 'die_bonus_perm', 'value': 4},
+    {'name': 'Square Sphere', 'rarity': 'Common', 'cost': 3, 'desc': '+4 score if hand uses exactly 4 dice. (permanent scaling throughout the game)', 'type': 'score_conditional', 'dice': 4, 'value': 4},
+    {'name': 'Cloud Cube', 'rarity': 'Common', 'cost': 3, 'desc': 'Earn 1 coin per 6 dice in bag at end of round.', 'type': 'coin_per_face', 'face': 6, 'value': 1},
+    {'name': 'Rocket Rune', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Earn 1 coin at round end. Gains +2 when boss defeated.', 'type': 'coin_scaling', 'base': 1, 'boss': 2},
+    {'name': 'Luchador Lens', 'rarity': 'Rare', 'cost': 6, 'desc': 'Sell this to disable current boss effect.', 'type': 'boss_disable'},
+    {'name': 'Gift Glyph', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Adds 1 coin sell value to all charms and runes at round end.', 'type': 'sell_bonus', 'value': 1},
+    {'name': 'Turtle Token', 'rarity': 'Rare', 'cost': 5, 'desc': '+5 hands. Reduces by 1 each round.', 'type': 'hands_decay', 'start': 5, 'decay': 1},
+    {'name': 'Erosion Edge', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+2 mult per die below 25 in bag.', 'type': 'mult_per_low_bag', 'value': 2},
+    {'name': 'Reserved Relic', 'rarity': 'Common', 'cost': 3, 'desc': 'Each high face (4-6) held has 1 in 2 chance for 1 coin.', 'type': 'coin_chance', 'faces': [4,5,6], 'chance': 0.5},
+    {'name': 'Lucky Labyrinth', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.2 mult per successful lucky trigger.', 'type': 'mult_per_lucky', 'value': 0.2},
+    {'name': 'Bull Bead', 'rarity': 'Rare', 'cost': 7, 'desc': '+2 score bonus per coin held (based on current coins).', 'type': 'score_per_coin', 'value': 2},
+    {'name': 'Trading Token', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'If first discard is 1 die, destroy it for 3 coins.', 'type': 'discard_destroy_coin', 'value': 3},
+    {'name': 'Castle Cube', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+3 score per discarded color die. Color changes per round.', 'type': 'score_per_discard_color', 'value': 3},
+    {'name': 'Acrobat Amulet', 'rarity': 'Rare', 'cost': 6, 'desc': '+2 mult on final discard of round.', 'type': 'mult_final_discard', 'value': 2},
+    {'name': 'UNO Uno', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Wild: Change one die color to any for scoring.', 'type': 'color_wild', 'value': 1},
+    {'name': 'UNO Skip', 'rarity': 'Rare', 'cost': 6, 'desc': 'Skip one boss effect per run.', 'type': 'boss_skip', 'value': 1},
+    {'name': 'Monopoly Mortgage', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Sell a charm for double coins but lock it for one round.', 'type': 'sell_double_lock', 'value': 2},
+    {'name': 'Life Milestone', 'rarity': 'Legendary', 'cost': 9, 'desc': '+0.5 mult per stake milestone reached.', 'type': 'mult_per_milestone', 'value': 0.5}
 ]
+
+# Add to data.py (e.g., at the end or near CHARMS_POOL)
+
+RUNE_PACKS = [
+    {'name': 'Basic Rune Pack', 'cost': 4, 'choices': 3, 'select': 1, 'rarity': 'Common', 'desc': 'Choose 1 from 3 common mystic runes.'},
+    {'name': 'Mega Rune Pack', 'cost': 7, 'choices': 5, 'select': 1, 'rarity': 'Uncommon', 'desc': 'Choose 1 from 5 uncommon mystic runes.'},
+    {'name': 'Super Rune Pack', 'cost': 9, 'choices': 5, 'select': 2, 'rarity': 'Rare', 'desc': 'Choose 2 from 5 rare mystic runes.'}
+]
+
+# In data.py, update MYSTIC_RUNES to add 'max_dice' key (0 for no die, 1 default, 2/3 for multi)
+MYSTIC_RUNES = [
+    {'name': 'Mystic Fool Rune', 'desc': 'Creates a copy of the last Mystic or Upgrade Rune used this run (must have room in consumable inventory).', 'max_dice': 0},
+    {'name': 'Mystic Luck Rune', 'desc': 'Enhances 1 selected die in bag to "Lucky" (25% chance for +1 coin).', 'max_dice': 1},
+    {'name': 'Mystic Oracle Rune', 'desc': 'Creates up to 2 random Upgrade Runes for hand type boosts.', 'max_dice': 0},
+    {'name': 'Mystic Mult Rune', 'desc': 'Enhances 2 selected dice in bag to add +0.5x mult when scored (stacks with Glass, etc.).', 'max_dice': 2},
+    {'name': 'Mystic Emperor Rune', 'desc': 'Creates up to 2 random Mystic Runes (must have room).', 'max_dice': 0},
+    {'name': 'Mystic Bonus Rune', 'desc': 'Enhances 2 selected dice in bag to add +10 score when scored.', 'max_dice': 2},
+    {'name': 'Mystic Wild Rune', 'desc': 'Converts 1 selected die in bag to Rainbow color (acts as any color for mono/rainbow bonuses).', 'max_dice': 1},
+    {'name': 'Mystic Steel Rune', 'desc': 'Enhances 1 selected die in bag to "Steel" (x1.5 mult, can\'t break like Glass).', 'max_dice': 1},
+    {'name': 'Mystic Fragile Rune', 'desc': 'Enhances 1 selected die in bag to "Fragile" (x2 mult, 25% break chance—stacks/modifies Glass).', 'max_dice': 1},
+    {'name': 'Mystic Wealth Rune', 'desc': 'Adds coins equal to current coins, up to a maximum gain of 20.', 'max_dice': 0},
+    {'name': 'Mystic Fate Rune', 'desc': '1 in 4 chance to add a random Edition (Foil, Holo, or Poly) to a random die in bag.', 'max_dice': 0},  # Random, no select
+    {'name': 'Mystic Strength Rune', 'desc': 'Enhances up to 2 selected dice to "harmonize" faces toward mid-high values (e.g., [1,2,3,4,5,6] becomes [3,4,4,5,5,6]—duplicates mids/highs, removes lows for better kinds/straights).', 'max_dice': 2},
+    {'name': 'Mystic Sacrifice Rune', 'desc': 'Destroys up to 2 selected dice in bag (gain coins equal to their "value" based on color/rarity).', 'max_dice': 2},
+    {'name': 'Mystic Transmute Rune', 'desc': 'Convert 1 selected die to the color and faces of another selected die (clone for duplicates).', 'max_dice': 2},  # Target + source
+    {'name': 'Mystic Balance Rune', 'desc': 'Gives coins equal to total cost/sell value of equipped charms (max 50).', 'max_dice': 0},
+    {'name': 'Mystic Gold Rune', 'desc': 'Converts 1 selected die in bag to Gold color (+coins when held, as per your system).', 'max_dice': 1},
+    {'name': 'Mystic Stone Rune', 'desc': 'Enhances 1 selected die in bag to "Stone" (+50 score, but fixed value/no roll variance).', 'max_dice': 1},
+    {'name': 'Mystic Red Rune', 'desc': 'Converts up to 3 selected dice in bag to Red color.', 'max_dice': 3},
+    {'name': 'Mystic Blue Rune', 'desc': 'Converts up to 3 selected dice in bag to Blue color.', 'max_dice': 3},
+    {'name': 'Mystic Green Rune', 'desc': 'Converts up to 3 selected dice in bag to Green color.', 'max_dice': 3},
+    {'name': 'Mystic Judgement Rune', 'desc': 'Creates a random Common Charm (must have charm slot room).', 'max_dice': 0},
+    {'name': 'Mystic Purple Rune', 'desc': 'Converts up to 3 selected dice in bag to Purple color.', 'max_dice': 3},
+    {'name': 'Mystic Yellow Rune', 'desc': 'Converts up to 3 selected dice in bag to Yellow color.', 'max_dice': 3},
+    {'name': 'Mystic Silver Rune', 'desc': 'Converts 1 selected die in bag to Silver color (+coins when not held in score, as per your system).', 'max_dice': 1}
+]
+
+# In data.py, after MYSTIC_RUNES
+
+ENH_DESC = {
+    'Lucky': 'Lucky: 25% chance for +1 coin.',
+    'Mult': 'Mult: Adds +0.5x mult when scored (stacks with Glass, etc.).',
+    'Bonus': 'Bonus: Adds +10 score when scored.',
+    'Wild': 'Rainbow: Acts as any color for mono/rainbow bonuses.',
+    'Steel': 'Steel: x1.5 mult, can\'t break like Glass.',
+    'Fragile': 'Fragile: x2 mult, 25% break chance (stacks/modifies Glass).',
+    'Fate': 'Edition: Random Edition applied (Foil, Holo, or Poly).',  # If editions added later
+    'Strength': 'Harmonized: Faces shifted to mid-high duplicates for better kinds/straights.',
+    'Sacrifice': 'Destroyed: This die was sacrificed (no longer in bag).',  # If tracking history
+    'Transmute': 'Transmuted: Cloned color and faces from another die.',
+    'Gold': 'Gold: +coins when held in score.',
+    'Stone': 'Stone: +50 score, but fixed value/no roll variance.',
+    'Red': 'Red: Converted to Red color.',
+    'Blue': 'Blue: Converted to Blue color.',
+    'Green': 'Green: Converted to Green color.',
+    'Judgement': 'Judgement: Created a random Common Charm.',
+    'Purple': 'Purple: Converted to Purple color.',
+    'Yellow': 'Yellow: Converted to Yellow color.',
+    'Silver': 'Silver: +coins when not held in score.',
+    # Add more if new enhancements (e.g., from Oracle/Wealth if they add die effects)
+}

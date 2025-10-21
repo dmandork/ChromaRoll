@@ -165,39 +165,60 @@ class ShopState(State):
                         self.game.shop_charms.insert(i, charm)
                     return
 
-             # Pack buys
+            # Pack buys
             pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9]  # Append rune pack costs
             pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5]  # Append rune pack choices
             pack_select_num = [1, 1, 1, 1, 1, 1, 1, 1, 2]  # New: Select counts (1 for most, 2 for Super Rune)
             for pack_rect, pack_idx in self.pack_rects or []:
                 if pack_rect.collidepoint(mouse_pos):
-                    cost = pack_costs[pack_idx]
-                    has_debt = any(c['type'] == 'negative_coins' for c in self.game.equipped_charms)
-                    min_coins = -5 if has_debt else 0
-                    if self.game.coins - cost >= min_coins:
-                        self.game.coins -= cost
-                        if pack_idx in [0, 1, 2]:
-                            from states.pack_select import PackSelectState  # Lazy import
-                            self.game.pack_choices = random.sample(data.HAND_TYPES, pack_choices_num[pack_idx])
-                            self.game.state_machine.change_state(PackSelectState(self.game))
-                            self.game.available_packs.remove(pack_idx)
-                        elif pack_idx in [3, 4, 5]:
-                            from states.dice_select import DiceSelectState  # Lazy import
-                            if pack_idx == 5:
-                                self.game.pack_choices = random.sample(SPECIAL_COLORS, pack_choices_num[pack_idx])
-                            else:
-                                self.game.pack_choices = random.sample(BASE_COLORS, pack_choices_num[pack_idx])
-                            self.game.state_machine.change_state(DiceSelectState(self.game))
-                            self.game.available_packs.remove(pack_idx)
-                        elif pack_idx in [6, 7, 8]:  # New: Rune packs
-                            from states.rune import RuneSelectState  # Lazy import
-                            rune_pack = data.RUNE_PACKS[pack_idx - 6]  # Map to 0-2 index
-                            self.game.pack_choices = random.sample(data.MYSTIC_RUNES, pack_choices_num[pack_idx])
-                            self.game.pack_select_count = pack_select_num[pack_idx]  # Track how many to select
-                            self.game.selected_runes = []  # For multi-select/holding
-                            self.game.state_machine.change_state(RuneSelectState(self.game))
-                            self.game.available_packs.remove(pack_idx)
+                    # NEW: Handle free Grimoire rune buy (index -1)
+                    if pack_idx == -1:
+                        grimoire_rune = getattr(self.game, 'grimoire_rune', None)
+                        if grimoire_rune:
+                            # Add to equipped charms (consumes it)
+                            self.game.equipped_charms.append(grimoire_rune)
+                            # Optional: Immediately apply rune effect if it's a one-shot (e.g., cast it)
+                            # if 'effect' in grimoire_rune:
+                            #     self.game.apply_rune_effect(grimoire_rune['effect'])  # Customize based on your rune system
+                            # Clear the free rune
+                            self.game.grimoire_rune = None
+                            # Reset flag if using one
+                            if hasattr(self.game, '_grimoire_drawn'):
+                                del self.game._grimoire_drawn
+                            # Optional: Feedback (e.g., sound or message)
+                            # self.game.play_sound('buy')  # If you have audio
+                            return  # Exit early, no cost
+                    
+                    # Existing pack buy logic continues here... (no cost check for -1, so use if instead of elif)
+                    if pack_idx != -1:  # Skip cost check for Grimoire
+                        cost = pack_costs[pack_idx]
+                        has_debt = any(c['type'] == 'negative_coins' for c in self.game.equipped_charms)
+                        min_coins = -5 if has_debt else 0
+                        if self.game.coins - cost >= min_coins:
+                            self.game.coins -= cost
+                            if pack_idx in [0, 1, 2]:
+                                from states.pack_select import PackSelectState  # Lazy import
+                                self.game.pack_choices = random.sample(data.HAND_TYPES, pack_choices_num[pack_idx])
+                                self.game.state_machine.change_state(PackSelectState(self.game))
+                                self.game.available_packs.remove(pack_idx)
+                            elif pack_idx in [3, 4, 5]:
+                                from states.dice_select import DiceSelectState  # Lazy import
+                                if pack_idx == 5:
+                                    self.game.pack_choices = random.sample(SPECIAL_COLORS, pack_choices_num[pack_idx])
+                                else:
+                                    self.game.pack_choices = random.sample(BASE_COLORS, pack_choices_num[pack_idx])
+                                self.game.state_machine.change_state(DiceSelectState(self.game))
+                                self.game.available_packs.remove(pack_idx)
+                            elif pack_idx in [6, 7, 8]:  # New: Rune packs
+                                from states.rune import RuneSelectState  # Lazy import
+                                rune_pack = data.RUNE_PACKS[pack_idx - 6]  # Map to 0-2 index
+                                self.game.pack_choices = random.sample(data.MYSTIC_RUNES, pack_choices_num[pack_idx])
+                                self.game.pack_select_count = pack_select_num[pack_idx]  # Track how many to select
+                                self.game.selected_runes = []  # For multi-select/holding
+                                self.game.state_machine.change_state(RuneSelectState(self.game))
+                                self.game.available_packs.remove(pack_idx)
                     return
+                
 
             # Reroll
             if self.reroll_rect and self.reroll_rect.collidepoint(mouse_pos):
