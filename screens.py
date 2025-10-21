@@ -735,7 +735,7 @@ def draw_blinds_screen(game):
             pygame.draw.rect(game.screen, (255, 255, 255), rect, 3)
         blind_text = game.small_font.render(f"{blind} Blind", True, (constants.THEME['text']))
         game.screen.blit(blind_text, (rect.x + (box_width - blind_text.get_width()) // 2, rect.y + 20))
-        target_text = game.small_font.render(f"Score: {int(game.get_blind_target(blind))}", True, (constants.THEME['text']))
+        target_text = game.small_font.render(f"Score: {int(game.get_blind_target(game.current_stake, blind))}", True, (constants.THEME['text']))
         game.screen.blit(target_text, (rect.x + (box_width - target_text.get_width()) // 2, rect.y + 50))
 
         # Preview for Boss

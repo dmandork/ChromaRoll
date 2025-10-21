@@ -43,6 +43,10 @@ class GameState(State):
             self.game.new_turn()  # If has hand but not rolled? Rare, but handle
         self.game.update_advantage_flag()  # Refresh after entering state
         
+        # Safeguard reset for rolls
+        if len(self.game.rolls) != 5:
+            self.game.rolls = [(None, False) for _ in range(5)]
+
         # ADD: Force held reset after new_turn/roll
         self.game.held = [False] * NUM_DICE_IN_HAND
         print(f"Debug: Forced held reset in enter - held = {self.game.held}")

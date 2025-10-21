@@ -1,148 +1,269 @@
 ChromaRoll Product Requirements Document (PRD) - Updated
+
 1. Introduction
 1.1 Purpose
-This updated Product Requirements Document (PRD) builds on the initial version, incorporating a deeper analysis of the GitHub repository. It now includes the previously omitted Blinds Screen, based on code structures in statemachine.py and screens.py (e.g., 'blinds' state and draw_blinds_screen function). The PRD details existing features, game structure, and screens, while outlining new additions you specified: "tags" for blinds (renamed from Balatro's tags), game end conditions with endless mode, expanded charm count (50+ functioning, total 108 planned), porting plan to Android and PC (Steam), achievement system with unlockables (e.g., half or more charms locked behind progression), bag unlock conditions, tutorial enhancements (explaining Prism packs, Rune packs, and tags), and special "boss blinds" for the final boss.
-The repository analysis confirms a modular Pygame-based architecture with files for main loop (ChromaRoll.py), state management (statemachine.py), UI rendering (screens.py), data definitions (data.py), helpers (utils.py), constants (constants.py), and persistence (savegame.py). Assets are in /assets/ for images, audio, and fonts. Debug mode enables testing with infinite resources.
-1.2 Scope
+This updated Product Requirements Document (PRD) builds on the initial version, 
+incorporating a deeper analysis of the GitHub repository. It now includes the 
+previously omitted Challenges Screen, based on code structures in statemachine.py 
+and screens.py (e.g., 'challenges' state and draw_challenges_screen function). 
+The PRD details existing features, game structure, and screens, while outlining 
+new additions you specified: "boons" for challenges (renamed and differentiated 
+from Balatro's tags, with optional d20 roll for thematic risk/reward), game end 
+conditions with endless mode, expanded charm count (50+ functioning, total 108 
+planned), porting plan to Android and PC (Steam), achievement system with 
+unlockables (e.g., half or more charms locked behind progression), bag unlock 
+conditions, tutorial enhancements (explaining Prism packs, Rune packs, and 
+boons), and special "boss challenges" for the final boss.
+The repository analysis confirms a modular Pygame-based architecture with files 
+for main loop (ChromaRoll.py), state management (statemachine.py), UI rendering 
+(screens.py), data definitions (data.py), helpers (utils.py), constants 
+(constants.py), and persistence (savegame.py). Assets are in /assets/ for 
+images, audio, and fonts. Debug mode enables testing with infinite resources.
 
-Current Scope: Core loop including dice rolling, hands, 50+ charms, pouches (bags), boss effects, progression through blinds/stakes, shop, and basic UI/audio.
-New Additions in Scope: Blinds tags (buffs for skipping blinds, with trade-offs), round 8 end with endless mode option, achievement/unlock system (e.g., progression-based charm unlocks), bag unlock conditions, tutorial updates for Prism/Rune packs and tags, special final boss blinds.
-Out-of-Scope: Multiplayer, advanced AI opponents, real-money purchases. Porting is planned but not yet implemented.
-Target Platforms: Desktop (PC via Steam) and Mobile (Android). Initial development in Python; porting required.
+1.2 Scope
+Current Scope: Core loop including dice rolling, hands, 50+ charms, pouches 
+(bags), boss effects, progression through challenges/phases, shop, and basic 
+UI/audio.
+New Additions in Scope: Challenge boons (optional d20-rolled intensifiers that 
+heighten challenge difficulty for variable buffs, with trade-offs like higher 
+score requirements; 5 initial outcomes, variants planned), round 8 end with 
+endless mode option, achievement/unlock system (e.g., progression-based charm 
+unlocks), bag unlock conditions, tutorial updates for Prism/Rune packs and 
+boons, special final boss challenges.
+Out-of-Scope: Multiplayer, advanced AI opponents, real-money purchases. Porting 
+is planned but not yet implemented.
+Target Platforms: Desktop (PC via Steam) and Mobile (Android). Initial 
+development in Python; porting required.
 
 1.3 Audience
-
 Players: Casual to strategic gamers enjoying roguelike dice mechanics.
 Developers: You and contributors; porting may involve external tools/frameworks.
 
 1.4 Assumptions and Dependencies
-
 Dependencies: Pygame; assets in /assets/.
-Assumptions: Mouse/touch controls (adaptable for Android); local saves; no online features initially.
+Assumptions: Mouse/touch controls (adaptable for Android); local saves; no 
+online features initially.
 
 2. Game Overview
-ChromaRoll combines Balatro-inspired progression with Yahtzee-style dice rolling. Players form hands to beat blind targets, equip charms for bonuses, select starting bags, face boss effects, and shop between rounds. Progression through stakes increases difficulty, with new tags allowing blind skips for buffs (at the cost of coins/shop access). Game ends after round 8 with endless mode option. 50+ charms are functional; total planned: 108, with many unlockable via achievements.
-2.1 Key Mechanics
+ChromaRoll combines Balatro-inspired progression with Yahtzee-style dice 
+rolling. Players form hands to beat challenge targets, equip charms for bonuses, 
+select starting bags, face boss effects, and shop between rounds. Progression 
+through phases increases difficulty, with new boons allowing intensification of 
+minor/major challenges for variable buffs (at the cost of higher risk and no 
+standard rewards if failed). Game ends after round 8 with endless mode option. 
+50+ charms are functional; total planned: 108, with many unlockable via 
+achievements.
 
-Dice and Hands: Roll 5 colored dice; hold/reroll/discards to form hands (e.g., Pair, Straight, Flush). Scores beat blinds.
-Charms: 108 total (50+ implemented); effects like multipliers or modifiers. Half+ unlockable (e.g., "Play 100 Three of a Kind" or "Score >5k in one hand").
-Bags (Pouches): Starting bonuses; unlockable via conditions (e.g., complete X stakes, achieve Y scores).
-Boss Effects: 30+ modifiers; special variants for final boss (e.g., amplified effects, multi-phase challenges).
-Blinds and Tags: Targets to beat; tags allow skipping small/large blinds for buffs (instant or delayed), forfeiting coins/shop.
-Progression: Beat blinds to advance; end after round 8, prompt for endless mode (infinite scaling difficulty).
-Shop: Buy charms; accessed post-blind (skipped if tag used).
-Achievements/Unlocks: Track progress (e.g., hand plays, scores); unlock charms/bags.
-Tutorial: Mostly complete; add sections for Prism packs (multi-hand bonuses?), Rune packs (enhancements?), and tags.
+2.1 Key Mechanics
+Dice and Hands: Roll 5 colored dice; hold/reroll/discards to form hands (e.g., 
+Pair, Straight, Flush). Scores beat challenges. Players start with 25 dice 
+total: 5 each of base colors (red, blue, green, purple, yellow). In each phase, 
+players typically have 3 hands (chances to score), 3 discards (usable for the 
+entire challenge, up to 5 dice per discard action), and 3 rolls per hand. Hand 
+types: Pair, Two Pair, Three of a Kind, Four of a Kind, Five of a Kind, Small 
+Straight (4 numbers in sequence), Large Straight (5 numbers in sequence), Full 
+House (2 dice of one number and 3 of a second). Bonus scores based on colors: 
+"Rainbow" bonus (all different colors, scaling with dice used in combo); "Mono" 
+bonus (all same color, scaling with dice); bonuses for 2-color combos (e.g., 
+full house with matching colors per number group). After reaching target score 
+for a challenge, popup shows coins gained from hands remaining, discards 
+remaining, interest (+1 coin per 10 held), and bonuses from charms/special 
+dice.
+Charms: 108 total (50+ implemented); effects like multipliers or modifiers. 
+Half+ unlockable (e.g., "Play 100 Three of a Kind" or "Score >5k in one hand").
+Bags (Pouches): Starting bonuses; unlockable via conditions (e.g., complete X 
+phases, achieve Y scores). 8 pouch types: Red (+1 discard, 2 extra red dice); 
+Blue (+1 hand per round, 1 extra blue die + 1 extra silver die); Yellow (+10 
+extra starting coins, no extra colored dice); Green (+2 extra coins per 
+remaining hand +1 extra coin per remaining discard); Black (1 extra charm slot 
+but -1 hand per round +1 extra special die at random); Glass (higher chance for 
+special dice boxes in shop +1 extra glass die); Erratic (white; completely 
+randomizes the 25 dice with base colors); Plasma (TBD).
+Boss Effects: 30+ modifiers; special variants for final boss (e.g., amplified 
+effects, multi-phase challenges).
+Challenges and Boons: Targets to beat; boons allow intensifying minor/major 
+challenges for variable buffs (instant or delayed, via optional d20 roll), 
+risking failure with heightened difficulty.
+Progression: Beat challenges to advance; end after round 8, prompt for endless 
+mode (infinite scaling difficulty). 8 phases total for main loop, with 3 
+challenges per phase (minor, major, boss); endless continues after Phase 8.
+Shop: Buy charms; accessed post-challenge (skipped if boon intensification leads 
+to immediate progression or failure). In Shop Screen: Choice between 3 unique 
+charms (not already held) in top row; second row for packs (Dice boxes: 
+base/special colors; Prism packs: increase hand type modifiers; Rune packs: 
+purchasable buffs/runes applied to dice). Buying Dice/Prism box opens new 
+screen to choose 1-2 items. Buying Rune pack opens screen with 8 random dice 
+below 3-5 runes; select dice for modifying runes (choice to skip pack).
+Achievements/Unlocks: Track progress (e.g., hand plays, scores); unlock 
+charms/bags.
+Tutorial: Mostly complete; add sections for Prism packs (multi-hand bonuses?), 
+Rune packs (enhancements?), and boons.
 
 2.2 Current Completion Status
-
-Completed: Core mechanics, 50+ charms, bags, boss effects, screens (splash, game, shop, blinds, pause), saving/loading, debug mode.
+Completed: Core mechanics, 50+ charms, bags, boss effects, screens (splash, 
+game, shop, challenges, pause), saving/loading, debug mode.
 In Progress/WIP: Unlocks, balancing, full tutorial.
-New To Implement: Tags, end conditions/endless mode, achievement system, bag unlocks, tutorial updates, special final boss blinds.
-Todos from Repo/Analysis: Full tutorial, more unlocks, balancing; implement new features as specified.
+New To Implement: Boons (with d20), end conditions/endless mode, achievement 
+system, bag unlocks, tutorial updates, special final boss challenges.
+Todos from Repo/Analysis: Full tutorial, more unlocks, balancing; implement new 
+features as specified.
 
 3. Functional Requirements
 3.1 Core Gameplay Loop
-
-Splash → Select bag (if unlocked) → Blinds Screen (view rounds/boss).
-Game Screen: Roll/form hand → Score vs. blind.
-Post-blind: Optional tag application (skip for buff) → Shop (if not skipped) → Next blind.
-After round 8: End screen prompt for endless mode (continue with scaling blinds/charms).
+Load Screen -> Splash Screen (New Game, Load Game, Quit) -> Pouch Selection 
+Screen (8 bag types) -> Challenges Screen (option to roll d20 boon or pass for 
+shop after beating challenge; shows highlight for current challenge 1/3, total 
+scores needed per challenge, preview of boss on challenge 3) -> Game Screen 
+(rolling on green casino table) -> Shop Screen (if pass d20) -> back to 
+Challenges Screen.
+Game Screen: Roll/form hand -> Score vs. challenge.
+Post-challenge: Optional boon application (intensify with d20 roll for variable 
+buff) -> Shop (if not skipped)
+-> Next challenge.
+After round 8: End screen prompt for endless mode (continue with scaling 
+challenges/charms).
 Pause anytime; achievements tracked in background.
 
-3.2 New Features: Tags
-
-Mechanics: Applied in Blinds Screen; skip small/large blind for buff (e.g., +multiplier, extra charm slot). Instant tags activate immediately; delayed trigger on next boss/final round. Downside: No coins from skipped blind, no shop access.
-Implementation: Add tag data in data.py (e.g., list of 20+ tags with effects, triggers). UI in Blinds Screen: Clickable tag options per blind.
-Balancing: Random tag availability; costs or risks for powerful ones.
+3.2 New Features: Boons
+Mechanics: Applied in Challenges Screen; intensify minor/major challenge for 
+variable buff (e.g., +multiplier, extra coins/discards). Instant boons activate 
+immediately; delayed trigger on next boss/final round. Downside: Heightened 
+score target increases failure risk, no standard coins/shop access if 
+intensified. Optional d20 roll (random.randint(1,20)) determines tiered outcome 
+(5 fixed initially, 1 outcome per tier: 1-4 hard/high-reward [Prism Fracture: 
++50% target, disable hand type; success: refract to +2x buff + Prism pack], 5-8 
+challenging [Hue Dimming: +25% target, -20% random color score; success: +2x 
+multiplier +20 coins], 9-12 neutral [Roll Harmony: +8% target, stabilize 1 
+reroll; success: +1.5x multiplier +1 discard], 13-16 favorable [Roll Flow: 
+-12% target, +1 extra reroll + advantage on 1 die (spawn copy above for second 
+chance roll); success: +2.5x multiplier + free full discard up to 5], 17-20 
+crit success [Chroma Radiance: -25% target, +30% all colors score; success: 
++4x multiplier next 2 challenges +50 coins + achievement progress]; no 
+permanent charm slots; variants per tier planned for medium-term). Optional 
+color fusion modifies tiers (e.g., fused color targeted/buffed).
+Implementation: Add boon data in data.py (e.g., list of 20+ boons with effects, 
+triggers, d20 tiers). UI in Challenges Screen: Clickable boon options per 
+challenge; animate d20 roll (use blank d20 PNG base with overlaid number via 
+Pygame font blit).
+Balancing: Random boon availability; costs or risks for powerful ones. Test d20 
+in debug (force rolls).
 
 3.3 New Features: Game End and Endless Mode
-
-End Conditions: After beating round 8 boss, display victory screen with score summary, achievements unlocked.
-Endless Mode: Prompt "Continue to Endless Mode?" (yes/no). If yes, infinite rounds with escalating stakes (e.g., +10% difficulty per round, new random bosses). Track high scores.
-Implementation: In statemachine.py, add 'end' state; transition from blinds/game after round 8. Save endless progress separately.
+End Conditions: After beating round 8 boss, display victory screen with score 
+summary, achievements unlocked.
+Endless Mode: Prompt "Continue to Endless Mode?" (yes/no). If yes, infinite 
+rounds with escalating phases (e.g., +10% difficulty per round, new random 
+bosses). Track high scores.
+Implementation: In statemachine.py, add 'end' state; transition from 
+challenges/game after round 8. Save endless progress separately.
 
 3.4 New Features: Achievements and Unlockables
+System: Track stats (e.g., hands played, scores achieved) via savegame.py. 
+Achievements like "Three of a Kind Master: Play 100 Three of a Kind" unlock 
+charms/bags.
+Unlockables: 54+ charms locked (half of 108); e.g., unlock via "Score >5k" or 
+"Beat Phase 5". Bags unlocked similarly (e.g., "Complete 10 runs").
+UI: Dedicated achievements screen (accessible from pause/splash before/after 
+games); progress bars, notifications on unlock; hints for unlocking 
+charms/other features.
 
-System: Track stats (e.g., hands played, scores achieved) via savegame.py. Achievements like "Three of a Kind Master: Play 100 Three of a Kind" unlock charms/bags.
-Unlockables: 54+ charms locked (half of 108); e.g., unlock via "Score >5k" or "Beat Stake 5". Bags unlocked similarly (e.g., "Complete 10 runs").
-UI: Dedicated achievements screen (accessible from pause/splash); progress bars, notifications on unlock.
-
-3.5 New Features: Special Final Boss Blinds
-
-Mechanics: For round 8 boss: Unique effects (e.g., "Ultimate Glitch: Disable 2 charms + shuffle dice"). Multi-stage or combined effects from prior bosses.
+3.5 New Features: Special Final Boss Challenges
+Mechanics: For round 8 boss: Unique effects (e.g., "Ultimate Glitch: Disable 2 
+charms + shuffle dice"). Multi-stage or combined effects from prior bosses.
 Implementation: Add to data.py BOSS_EFFECTS; flag for final boss in game logic.
 
 3.6 Data Structures (from data.py and Analysis)
-
 Hand Types: Poker/Yahtzee-inspired with scores/multipliers.
-Charms: 108 planned (50+ functional); effects categorized (e.g., score boosts, reroll aids).
+Charms: 108 planned (50+ functional); effects categorized (e.g., score boosts, 
+reroll aids).
 Bags: Starting sets; add unlock flags/conditions.
 Boss Effects: 30+; add special final variants.
-Other: Add tags list, achievements dict, Prism/Rune packs (assumed enhancements; define in data.py if not present).
+Other: Add boons list (with d20 tiers), achievements dict, Prism/Rune packs 
+(assumed enhancements; define in data.py if not present).
 
 3.7 Saving/Loading
-
 Extend to include achievements, unlocks, endless mode scores.
 
 3.8 Debug Mode
-
-Test new features (e.g., force tags, instant unlocks).
+Test new features (e.g., force boons/d20 rolls, instant unlocks). In Challenges 
+Screen (debug mode): Dropdown menu in upper left to select phase for testing; 
+menu in bottom right to jump to boss and change boss effect. Variables 
+changeable for testing: force specific hand colors, high/unlimited coins, 
+unlimited rolls, etc. In Shop Screen (debug mode): Button for debug menu with 3 
+options to obtain charms, prisms, extra dice.
 
 4. User Interface and Screens
-Screens managed via statemachine.py states: 'splash', 'game', 'shop', 'blinds', 'pause'. Rendering in screens.py with functions like draw_blinds_screen, draw_game_screen. UI: Clickable elements, tooltips, animations.
-4.1 Splash/Title Screen
+Screens managed via statemachine.py states: 'splash', 'game', 'shop', 
+'challenges', 'pause'. Rendering in screens.py with functions like 
+draw_challenges_screen, draw_game_screen. UI: Clickable elements, tooltips, 
+animations.
 
+4.1 Splash/Title Screen
 Purpose: Start new/continue game; view achievements/unlocks.
 Layout: Centered logo; buttons below.
-UI Elements: "New Game", "Continue", "Achievements" (new), "Quit". Unlock status for bags/charms.
+UI Elements: "New Game", "Continue" (Load Game), "Achievements" (new), "Quit". 
+Unlock status for bags/charms.
 Interactions: Click to transition; hover for tooltips.
-Transitions: New → Bag selection; Continue → Load to Blinds/Game.
+Transitions: New -> Bag selection; Continue -> Load to Challenges/Game.
 Current Status: Implemented.
 Updates: Add achievements button.
 
 4.2 Bag Selection Screen
-
 Purpose: Choose starting bag; show unlocks.
 Layout: Grid of bag icons/descriptions.
-UI Elements: Bag list with effects/tooltips; locked bags grayed out with requirements (e.g., "Unlock: Beat 5 Stakes").
+UI Elements: Bag list with effects/tooltips; locked bags grayed out with 
+requirements (e.g., "Unlock: Beat 5 Phases").
 Interactions: Click to select (if unlocked).
-Transitions: Select → Blinds Screen.
+Transitions: Select -> Challenges Screen.
 Current Status: Integrated.
 Updates: Add unlock conditions/logic.
 
-4.3 Blinds Screen
-
-Purpose: Display round targets, upcoming boss; apply tags to skip blinds.
-Layout: Top: Current stake/round. Middle: List of blinds (small, large, boss) with points needed, boss preview. Bottom: Tag options, continue button.
-UI Elements: Blind rectangles/text (points to beat); boss icon/effect preview. Tags: Clickable buffs with descriptions (e.g., "Skip Small Blind: +1 Charm Slot (instant)"). Coins display.
-Interactions: Click tag to apply/skip (confirm prompt for trade-offs). Click continue to proceed to selected blind's Game Screen.
-Transitions: Proceed → Game Screen for blind; post-boss → Shop (if not skipped).
-Current Status: Implemented (draw_blinds_screen with panels, buttons; debug dropdown for testing).
-Updates: Add tags UI/logic; ensure boss preview includes special final variants.
+4.3 Challenges Screen
+Purpose: Display round targets, upcoming boss; apply boons to intensify 
+challenges.
+Layout: Top: Current phase/round. Middle: List of challenges (minor, major, 
+boss) with points needed, boss preview. Bottom: Boon options, continue button.
+UI Elements: Challenge rectangles/text (points to beat; highlight current of 3); 
+boss icon/effect preview. Boons: Clickable buffs with descriptions (e.g., 
+"Intensify Minor Challenge: Roll d20 for Variable Buff"). Coins display. Animate 
+d20 roll (blank PNG base + font-rendered number).
+Interactions: Click boon to apply/intensify (confirm prompt for trade-offs, 
+optional "Roll d20?" toggle). Click continue to proceed to selected challenge's 
+Game Screen.
+Transitions: Proceed -> Game Screen for challenge; post-boss -> Shop (if not 
+skipped).
+Current Status: Implemented (draw_challenges_screen with panels, buttons; debug 
+dropdown for testing).
+Updates: Add boons UI/logic (incl. d20 render); ensure boss preview includes 
+special final variants.
 
 4.4 Game Screen
-
-Purpose: Roll dice, form hands, score vs. blind.
-Layout: Top: Blind target, boss effect. Middle: Dice slots, hand preview. Bottom: Roll/Score buttons, charms, stats (rerolls, discards, coins).
-UI Elements: Dice (click to hold); charm icons (tooltips, gray if disabled by boss); Prism/Rune pack visuals (if applicable).
+Purpose: Roll dice, form hands, score vs. challenge.
+Layout: Top: Challenge target, boss effect. Middle: Dice slots, hand preview 
+(green casino table background). Bottom: Roll/Score buttons, charms, stats 
+(rerolls, discards, coins).
+UI Elements: Dice (click to hold); charm icons (tooltips, gray if disabled by 
+boss); Prism/Rune pack visuals (if applicable).
 Interactions: Click dice/buttons; apply charms/boss effects.
-Transitions: Score success → Blinds/Shop; fail → Game Over.
-Current Status: Core; includes charm drawing (e.g., get_charm_surface for graying).
-Updates: Integrate delayed tags; special final boss logic.
+Transitions: Score success -> Challenges/Shop; fail -> Game Over.
+Current Status: Core; includes charm drawing (e.g., get_charm_surface for 
+graying).
+Updates: Integrate delayed boons; special final boss logic.
 
 4.5 Shop Screen
-
 Purpose: Buy/equip charms.
-Layout: Top: Coins. Middle: Item grid (charms, packs?). Bottom: Equipped slots, buttons.
-UI Elements: Charm cards (prices, effects); reroll button.
-Interactions: Click to buy/equip; skipped if tag applied.
-Transitions: Exit → Next blind.
+Layout: Top: Coins. Middle: Item grid (charms, packs?). Bottom: Equipped slots, 
+buttons.
+UI Elements: Charm cards (prices, effects; 3 unique not held); reroll button; 
+pack row (Dice boxes: base/special; Prism: hand modifiers; Rune: buffs/runes).
+Interactions: Click to buy/equip; skipped if boon applied. Dice/Prism buy -> 
+new screen choose 1-2 items; Rune buy -> screen with 8 random dice below 3-5 
+runes (select dice for modifiers; skip option).
+Transitions: Exit -> Next challenge.
 Current Status: Functional.
 Updates: Add Prism/Rune packs if not present.
 
 4.6 Pause Screen
-
 Purpose: Options menu.
 Layout: Overlay; centered buttons.
 UI Elements: "Resume", "Achievements" (new), "Main Menu", "Quit", "Mute".
@@ -152,39 +273,45 @@ Current Status: Implemented.
 Updates: Add achievements access.
 
 4.7 New Screens
-
 Achievements Screen: List achievements with progress; unlocked items.
-End/Endless Prompt Screen: Post-round 8; score summary, "Enter Endless Mode?" buttons.
+End/Endless Prompt Screen: Post-round 8; score summary, "Enter Endless Mode?" 
+buttons.
 Game Over Screen: Score, restarts; integrate unlocks.
+Load Screen: Initial loading display before Splash.
 
 4.8 Tutorial Screen/Overlays
-
 Purpose: Guide players.
 Layout: Step-by-step popups/overlays on screens.
 UI Elements: Text explanations, arrows to elements.
 Current Status: Mostly complete.
-Updates: Add steps for Prism packs (e.g., "Prisms boost multi-hands"), Rune packs ("Runes add modifiers"), tags ("Skip blinds for buffs").
+Updates: Add steps for Prism packs (e.g., "Prisms boost multi-hands"), Rune 
+packs ("Runes add modifiers"), boons ("Intensify challenges with d20 rolls for 
+variable buffs").
 
 5. Non-Functional Requirements
-
 Performance: 60 FPS; optimize for Android (lower res).
 Accessibility: Touch adaptations; color-blind options.
 Audio: SFX; mute toggle.
 
 6. Technical Requirements
 6.1 Porting Plan
-
-PC (Steam): Use PyInstaller to build executable. Integrate Steamworks SDK for achievements (map game achievements to Steam). Upload to Steam via Steam Direct; handle leaderboards if added for endless mode.
-Android: Use BeeWare (for native UI) or Kivy (Pygame-compatible) to port Python code. Adapt mouse to touch (e.g., tap for clicks). Test on Android emulator; package as APK via buildozer. Google Play submission; optimize for varied screen sizes (resizable window logic helps).
-Steps: 1) Prototype with Kivy/BeeWare. 2) Refactor touch events in statemachine.py. 3) Test unlocks/audio. 4) Release betas.
+PC (Steam): Use PyInstaller to build executable. Integrate Steamworks SDK for 
+achievements (map game achievements to Steam). Upload to Steam via Steam Direct; 
+handle leaderboards if added for endless mode.
+Android: Use BeeWare (for native UI) or Kivy (Pygame-compatible) to port Python 
+code. Adapt mouse to touch (e.g., tap for clicks). Test on Android emulator; 
+package as APK via buildozer. Google Play submission; optimize for varied screen 
+sizes (resizable window logic helps).
+Steps: 1) Prototype with Kivy/BeeWare. 2) Refactor touch events in 
+statemachine.py. 3) Test unlocks/audio. 4) Release betas.
 
 6.2 Architecture
-
-Modular; extend data.py for new features.
+Modular; extend data.py for new features (e.g., boon d20 logic). Add blank d20 
+PNG to /assets/ for boon rendering.
 
 7. Roadmap and Next Steps
-
-Short-Term: Implement tags, end conditions, special final bosses; update tutorial.
-Medium-Term: Achievements/unlocks, bag conditions; balance 108 charms.
+Short-Term: Implement boons (d20 rolls, 5 outcomes), end conditions, special 
+final bosses; update tutorial.
+Medium-Term: Achievements/unlocks, bag conditions; balance 108 charms; add boon 
+variants.
 Long-Term: Port to Android/Steam; add more content.
-How to Proceed: Provide any code snippets or specifics for implementation, and I'll assist with refinements!

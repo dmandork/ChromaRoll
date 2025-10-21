@@ -261,6 +261,8 @@ class ChromaRollGame:
             self.speaker_on_icon = None  # Fallback to text button
 
         self.mute_button_rect = pygame.Rect(self.width - 50, 10, 40, 40)  # Top-right; adjust as needed
+        
+        self.is_endless = False
 
         self.current_boss_effect = None  # Current active boss effect dict, or None
         self.disabled_charms = []  # For effects like Charm Glitch/Eclipse: list of indices or names
@@ -469,22 +471,34 @@ class ChromaRollGame:
             self.bag.remove(die)  # Remove drawn dice from bag
         return hand
     
-    def get_blind_target(self, blind_type=None):
-        """Calculates the target score for the specified or current blind, scaled by stake and boss effects if applicable."""
-        if blind_type is None:
-            blind_type = self.current_blind
-        base_target = BASE_TARGETS[blind_type]
-        target = base_target * (1 + (self.current_stake - 1) * 0.5)
-        # Apply boss effects only if this is the current blind and it's Boss (effects are per-round)
-        if blind_type == self.current_blind and self.current_blind == 'Boss' and self.current_boss_effect:
-            effect_name = self.current_boss_effect['name']
-            if effect_name == 'Target Bump':
-                target *= 1.20
-            elif effect_name == 'Blind Boost':
-                target *= 1.30
-        return target
+    def get_blind_target(self, stake=None, blind_type=None):
+        """Blind targets: Forgiving early, aggressive late scaling to reward charms/prisms.
+        Stake 8 boss ~25k. Defaults to current stake/blind if not provided.
+        """
+        stake = stake or getattr(self, 'current_stake', 1)  # Safe default
+        blind_type = (blind_type or getattr(self, 'current_blind', 'small')).lower()  # Normalize & default
+        
+        base = 200
+        growth_rate = 1.8
+        
+        if blind_type == 'small':
+            mult = 1.0
+        elif blind_type == 'big':
+            mult = 1.5
+        elif blind_type == 'boss':
+            mult = 2.0
+        else:
+            raise ValueError(f"Unknown blind_type: {blind_type}")
+        
+        target = base * mult * (growth_rate ** (stake - 1))
+        
+        # Safe endless check
+        if getattr(self, 'is_endless', False) and stake > 8:
+            endless_bonus = 1 + 0.15 * (stake - 8)
+            target *= endless_bonus
+        
+        return int(math.ceil(target))
     
-    # New helper method to calculate stencil mult (add to class)
     def get_stencil_mult(self):
         for charm in self.equipped_charms:
             if charm['type'] == 'empty_slot_mult':
@@ -2112,8 +2126,11 @@ class ChromaRollGame:
                 self.temp_message = "Select exactly 2 dice!"
                 return
             target, source = die_list  # First selected = target (#1), second = source (#2)
+            # First selected = target (#1), second = source (#2)
             target['color'] = source['color']
             target['faces'] = source['faces'][:]
+            if 'enhancements' not in target:
+                target['enhancements'] = []  # Initialize if missing
             target['enhancements'].append('Transmute')
 
         elif name == 'Mystic Balance Rune':

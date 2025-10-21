@@ -133,24 +133,14 @@ class EndPromptState(State):
     def _to_endless(self):
         self.game.is_endless = True
         self.game.extra_rounds = 0
-        # Reset for new stake (start endless at stake 9 small blind)
-        self.game.current_stake = 9
-        self.game.current_blind = 'Small'  # Capitalized first letter as per your earlier fix
-        self.game.current_round = 1  # Or your round reset
-        self.game.round_score = 0
-        self.game.hands_left = 4  # Default hands
-        self.game.rerolls_left = 3  # Default rerolls
-        self.game.discards_left = 2  # Default discards
-        self.game.rolls = []  # Clear rolls
-        self.game.held = [False] * NUM_DICE_IN_HAND  # Clear holds
-        self.game.bag = [copy.deepcopy(d) for d in self.game.full_bag]  # Refill bag
-        # Populate rolls manually (stub if new_turn doesn't)
-        self.game.rolls = [(die, random.choice(die['faces'])) for die in self.game.bag[:NUM_DICE_IN_HAND]]  # Fill with random faces
-        self.game.has_rolled = False
-        self.game.is_discard_phase = True  # Start with discard
-        self.game.new_turn()  # Initialize rolls for new blind
-        from .shop import ShopState  # type: ignore  # Lazy import
-        self.game.state_machine.change_state(ShopState(self.game))
+        # Leverage the existing advance_blind method to handle all resets, bag refill, hand/reroll/discard resets,
+        # boss effect preview, and set current_stake=9, current_blind='Small' (assuming called after 'Boss')
+        # This mimics the normal post-boss progression exactly, ensuring everything is set up correctly.
+        self.game.advance_blind()
+        # Transition to BlindsState to show the stake 9 layout (small/big/boss), allowing normal proceed to game
+        # (where new_turn/rolls init likely happens). This avoids skipping setup and matches "entering stake 9 small blind".
+        from .blinds import BlindsState  # type: ignore  # Lazy import
+        self.game.state_machine.change_state(BlindsState(self.game))
 
     def _to_menu(self):
         # Stub reset if missing - clear run state, keep unlocks

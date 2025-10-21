@@ -1,22 +1,26 @@
 # states/base.py
+import pygame
+
 class State:
     def __init__(self, game):
-        self.game = game  # Reference to ChromaRollGame for shared state (e.g., self.game.coins)
+        self.game = game
+        self.prev_state = None
 
     def enter(self):
-        pass  # Optional: Setup when entering (e.g., reset timers)
+        import savegame  # Lazy import to avoid cycles
+        savegame.save_game(self.game)  # Auto-save on every state entry
 
     def exit(self):
-        pass  # Optional: Cleanup when leaving (e.g., stop sounds)
-
-    def update(self, dt):
-        pass  # Game logic/timers/animations
-
-    def draw(self):
-        pass  # Render the screen
+        pass
 
     def handle_event(self, event):
-        pass  # Handle inputs/events
+        pass
+
+    def update(self, dt):
+        pass
+
+    def draw(self):
+        pass
 
 class StateMachine:
     def __init__(self, game, initial_state):
