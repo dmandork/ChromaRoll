@@ -1306,25 +1306,31 @@ def draw_custom_button(game, rect, text, is_hover=False, fill_color=None, is_red
     game.screen.blit(text_surf, (text_x, text_y))
 
 def draw_text(game):
-        """Draws current hand info, score, rerolls, discards, etc."""
-        # Current hand type and score
-        hand_text = game.small_font.render(game.current_hand_text, True, (constants.THEME['text']))
-        game.screen.blit(hand_text, (50, 120))
+    """Draws current hand info, score, rerolls, discards, etc."""
+    # Current hand type and score
+    hand_text = game.small_font.render(game.current_hand_text, True, (constants.THEME['text']))
+    game.screen.blit(hand_text, (50, 120))
 
-        # Color modifier with special handling for "(disabled)"
-        if " (disabled)" in game.current_modifier_text:
-            base_modifier = game.current_modifier_text.replace(" (disabled)", "")
-            base_render = game.small_font.render(base_modifier, True, constants.THEME['text'])
-            disabled_render = game.small_font.render(" (disabled)", True, (255, 0, 0))  # Red for disabled
-            game.screen.blit(base_render, (50, 150))
-            game.screen.blit(disabled_render, (50 + base_render.get_width(), 150))  # Append right after base
+    # NEW: Wrap and draw modifier text (handles long lists)
+    modifier_lines = wrap_text(game.small_font, game.current_modifier_text, max_width=450)  # Adjust max_width to UI fit
+    y_offset = 150  # Start y for modifiers
+    for line in modifier_lines:
+        # Handle "(disabled)" coloring per line if needed (split lines if complex)
+        if " (disabled)" in line:
+            base_line = line.replace(" (disabled)", "")
+            base_render = game.small_font.render(base_line, True, constants.THEME['text'])
+            disabled_render = game.small_font.render(" (disabled)", True, (255, 0, 0))
+            game.screen.blit(base_render, (50, y_offset))
+            game.screen.blit(disabled_render, (50 + base_render.get_width(), y_offset))
         else:
-            modifier_text = game.small_font.render(game.current_modifier_text, True, (constants.THEME['text']))
-            game.screen.blit(modifier_text, (50, 150))
+            line_render = game.small_font.render(line, True, constants.THEME['text'])
+            game.screen.blit(line_render, (50, y_offset))
+        y_offset += game.small_font.get_height()  # Line spacing (e.g., 20px)
 
-        # Score
-        score_text = game.small_font.render(f"Score: {game.round_score}/{int(game.get_blind_target())}", True, (constants.THEME['text']))
-        game.screen.blit(score_text, (50, 180))
+    # Score (shift down if modifiers wrapped long; optional: dynamic y based on len(modifier_lines))
+    score_y = 180 + (len(modifier_lines) - 1) * game.small_font.get_height()  # Adjust if >1 line
+    score_text = game.small_font.render(f"Score: {game.round_score}/{int(game.get_blind_target())}", True, (constants.THEME['text']))
+    game.screen.blit(score_text, (50, score_y))
 
 def draw_charm_die(game, rect, charm, index=None):
     """Draws a charm as a die with icon inside. Grays out if disabled using built-in Pygame transform."""

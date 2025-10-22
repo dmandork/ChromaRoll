@@ -2,7 +2,7 @@ import pygame  # Required for key constants like K_SPACE
 import data
 
 # Debug flag: Set to True to force specific colors for testing (overrides random draw) and enable unlimited rerolls
-DEBUG = False
+DEBUG = True
 # Debug toggles (enable/disable specific features)
 DEBUG_INFINITE_COINS = True
 DEBUG_UNLIMITED_REROLLS = True

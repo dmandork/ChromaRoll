@@ -236,7 +236,7 @@ ENH_DESC = {
     'Mult': 'Mult: Adds +0.5x mult when scored (stacks with Glass, etc.).',
     'Bonus': 'Bonus: Adds +10 score when scored.',
     'Wild': 'Rainbow: Acts as any color for mono/rainbow bonuses.',
-    'Steel': 'Steel: x1.5 mult, can\'t break like Glass.',
+    'Steel': 'Steel: +0.5 mult, can\'t break like Glass.',
     'Fragile': 'Fragile: x2 mult, 25% break chance (stacks/modifies Glass).',
     'Fate': 'Edition: Random Edition applied (Foil, Holo, or Poly).',  # If editions added later
     'Strength': 'Harmonized: Faces shifted to mid-high duplicates for better kinds/straights.',
@@ -244,12 +244,29 @@ ENH_DESC = {
     'Transmute': 'Transmuted: Cloned color and faces from another die.',
     'Gold': 'Gold: +coins when held in score.',
     'Stone': 'Stone: +50 score, but fixed value/no roll variance.',
-    'Red': 'Red: Converted to Red color.',
-    'Blue': 'Blue: Converted to Blue color.',
-    'Green': 'Green: Converted to Green color.',
+    # 'Red': 'Red: Converted to Red color.',
+    # 'Blue': 'Blue: Converted to Blue color.',
+    # 'Green': 'Green: Converted to Green color.',
     'Judgement': 'Judgement: Created a random Common Charm.',
-    'Purple': 'Purple: Converted to Purple color.',
-    'Yellow': 'Yellow: Converted to Yellow color.',
+    # 'Purple': 'Purple: Converted to Purple color.',
+    # 'Yellow': 'Yellow: Converted to Yellow color.',
     'Silver': 'Silver: +coins when not held in score.',
     # Add more if new enhancements (e.g., from Oracle/Wealth if they add die effects)
+}
+
+ENH_EFFECTS = {
+    'Lucky': {'coin_chance': 0.25, 'coin_value': 1},
+    'Mult': {'mult': 0.5},
+    'Bonus': {'score': 10},
+    'Wild': {},  # No direct score/coin; assume handled in hand_type (e.g., color flex)
+    'Steel': {'mult_add': 0.5},  # Additive; no break risk (handled in break loop)
+    'Fragile': {'mult': 2.0, 'break_chance': 0.25},
+    'Fate': {},  # Edition random; skip or add random edition proc if implemented
+    'Strength': {},  # Face shift; if scored, maybe +kind bonus—defer if not base-applied
+    'Sacrifice': {},  # Historical; no proc
+    'Transmute': {},  # Clone effect; if active, +copy value
+    'Gold': {'coin_value': 1},  # On held
+    'Stone': {'score': 50},
+    'Judgement': {},  # Charm creation; maybe +charm value if tracked
+    'Silver': {'coin_value': 1}  # On not held; adjust for held context
 }

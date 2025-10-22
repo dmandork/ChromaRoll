@@ -408,6 +408,57 @@ class ChromaRollGame:
         if DEBUG:
             print("Debug: Advantage flag updated to", self.has_advantage)
 
+    def apply_enhancement_retrigger(self, die, i):
+        """Apply second proc for one enhanced die; returns (delta_score, delta_coins)."""
+        if 'enhancement' not in die:
+            return 0, 0
+        enh = die['enhancement']
+        if enh not in data.ENH_EFFECTS:
+            return 0, 0
+        effect = data.ENH_EFFECTS[enh]
+        delta_score = 0
+        delta_coins = 0
+        glass_break_chance = 0.25
+        glass_break_penalty = 0
+        
+        # Mult (Steel, Fragile, Mult): Incremental beyond base
+        if 'mult' in effect:
+            die_value = die.get('value', die.get('face', 0))  # 1-6 or scored value
+            delta_score += die_value * (effect['mult'] - 1)  # e.g., x1.5 adds 0.5 * value
+        
+        # Additive mult delta (second proc)
+        if 'mult_add' in effect:
+            die_value = die.get('value', die.get('face', 0))
+            delta_score += die_value * effect['mult_add']  # e.g., Steel: +0.5 * value for second proc
+
+        # Fixed score (Bonus, Stone)
+        if 'score' in effect:
+            delta_score += effect['score']
+        
+        # Coins (Gold, Lucky, Silver)
+        if 'coin_value' in effect:
+            if enh == 'Gold' and self.held[i]:
+                delta_coins += effect['coin_value']
+                self.sfx_channel.play(self.coin_sound)
+            elif enh == 'Silver' and not self.held[i]:
+                delta_coins += effect['coin_value']
+                self.sfx_channel.play(self.coin_sound)
+            elif enh == 'Lucky':
+                if random.random() < effect['coin_chance']:
+                    delta_coins += effect['coin_value']
+                    self.sfx_channel.play(self.coin_sound)
+        
+        # Fragile break (extra risk on Glass/Fragile)
+        if enh == 'Fragile' and die['color'] == 'Glass' and random.random() < effect['break_chance']:
+            self.sfx_channel.play(self.break_sound)
+            self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
+            self.bag = [d for d in self.bag if d['id'] != die['id']]
+            self.coins -= glass_break_penalty
+            self.broken_dice.append(i)
+            self.break_effect_start = time.time()
+        
+        # Passive/no-op (Wild, Fate, etc.): Skip or add if base has procs
+        return delta_score, delta_coins
 
     def toggle_mute(self):
         self.mute = not self.mute
@@ -1020,6 +1071,24 @@ class ChromaRollGame:
                     self.broken_dice.append(i)
                     self.break_effect_start = time.time()
 
+                # NEW: Synergy Scroll - Retrigger enhancements on held dice
+                synergy_equipped = any(charm['name'] == 'Synergy Scroll' and idx not in self.disabled_charms 
+                                    for idx, charm in enumerate(self.equipped_charms))
+
+                if synergy_equipped:
+                    synergy_score_delta = 0
+                    synergy_coin_delta = 0
+                    for i, (die, _) in enumerate(self.rolls):
+                        if self.held[i]:
+                            delta_score, delta_coins = self.apply_enhancement_retrigger(die, i)
+                            synergy_score_delta += delta_score
+                            synergy_coin_delta += delta_coins
+                    
+                    score += synergy_score_delta  # Add to this hand's score
+                    self.extra_coins += synergy_coin_delta  # Flows to total_coins/popup
+                    
+                    print(f"Synergy Scroll retriggered: +{synergy_score_delta} score, +{synergy_coin_delta} coins")  # Debug; remove later
+
         self.hands_left -= 1
         self.hands_left = max(0, self.hands_left)  # Clamp to prevent negative
         if self.round_score >= self.get_blind_target():
@@ -1029,15 +1098,26 @@ class ChromaRollGame:
                 if charm['type'] == 'interest_max_bonus':
                     dynamic_interest_max += charm['value']
             
+            # Compute base interest
+            base_interest = min(self.coins, dynamic_interest_max) // INTEREST_RATE
+
+            # Compute interest bonus from charms (e.g., Interest Idol adds +value per 10 coins)
+            interest_bonus = 0
+            capped_coins = min(self.coins, dynamic_interest_max)  # Reuse the cap
+            for charm in self.equipped_charms:
+                if charm['type'] == 'interest_bonus':
+                    interest_bonus += charm['value'] * (capped_coins // INTEREST_RATE)  # Now capped!
+            
+            # Total interest including bonus
+            interest = base_interest + interest_bonus
+            
             if self.green_pouch_active:
                 remains_coins = (self.hands_left * 2) + (self.discards_left * 1)
-                interest = 0
                 hands_dollars = '$$' * self.hands_left
                 discards_dollars = '$' * self.discards_left
                 interest_dollars = ''
             else:
                 remains_coins = self.hands_left + self.discards_left
-                interest = min(self.coins, dynamic_interest_max) // INTEREST_RATE
                 hands_dollars = '$' * self.hands_left
                 discards_dollars = '$' * self.discards_left
                 interest_dollars = '$' * interest if interest >= 0 else str(interest)
@@ -1367,23 +1447,50 @@ class ChromaRollGame:
         rune_mult_add = 0.0
         rune_break_dies = []
         self.lucky_triggers = 0
+        enh_counts = {}  # NEW: Track counts per enh type
+        enhancement_desc_parts = []  # For final descs (post-count)
         for die, value in held_rolls:
             enh = die.get('enhancements', [])
+            for e in enh:  # Handle multiple per die if possible
+                if e not in enh_counts:
+                    enh_counts[e] = 0
+                enh_counts[e] += 1
+            
+            # Apply effects based on presence (no per-die append here)
             if 'Bonus' in enh:
-                rune_chips += 10
+                rune_chips += 10 * len([e for e in enh if e == 'Bonus'])  # If multiple, scale
             if 'Mult' in enh:
-                rune_mult_add += 0.5
+                rune_mult_add += 0.5 * len([e for e in enh if e == 'Mult'])
             if 'Lucky' in enh and not is_preview and random.random() < 0.33:
-                self.lucky_triggers += 1
-                
+                self.lucky_triggers += len([e for e in enh if e == 'Lucky'])
+            elif 'Lucky' in enh and is_preview:
+                # Preview expected per Lucky
+                expected = 0.33 * enh_counts.get('Lucky', 0)  # Total expected
             if 'Steel' in enh:
-                rune_mult_add += 0.5
+                rune_mult_add += 0.5 * len([e for e in enh if e == 'Steel'])
             if 'Fragile' in enh:
-                rune_mult_add += 1.0
+                rune_mult_add += 1.0 * len([e for e in enh if e == 'Fragile'])
                 if not is_preview and random.random() < 0.25:
                     rune_break_dies.append(die)
             if 'Stone' in enh:
-                rune_chips += 50
+                rune_chips += 50 * len([e for e in enh if e == 'Stone'])
+
+        # NEW: Post-loop, build summarized descs
+        for enh_type, count in enh_counts.items():
+            if enh_type in data.ENH_EFFECTS:
+                effect = data.ENH_EFFECTS[enh_type]
+                if 'mult_add' in effect:
+                    total_add = effect['mult_add'] * count
+                    enhancement_desc_parts.append(f"{enh_type} x{count}: +{total_add} mult")
+                if 'score' in effect:
+                    total_score = effect['score'] * count
+                    enhancement_desc_parts.append(f"{enh_type} x{count}: +{total_score}")
+                if enh_type == 'Lucky':
+                    expected = 0.33 * count  # Or use coin_chance from ENH_EFFECTS
+                    enhancement_desc_parts.append(f"Lucky x{count}: ~+{expected} coins")
+                if enh_type == 'Fragile':
+                    total_add = 1.0 * count  # Assuming +1.0 per
+                    enhancement_desc_parts.append(f"Fragile x{count}: +{total_add} mult (25% break each)")
 
         for die in rune_break_dies:
             self.broken_dice.append(held_rolls.index((die, value)))
@@ -1553,11 +1660,11 @@ class ChromaRollGame:
                         # Retrigger logic (e.g., double coin effects) to be defined
                         pass
             elif charm['type'] == 'mult_per_enhance':
-                enhance_count = sum(1 for die, _ in held_rolls if die.get('enhancements'))
-                mult_add = charm['value'] * enhance_count
+                total_enhancements = sum(len(die.get('enhancements', [])) for die, _ in held_rolls)  # Total enhs across all dice
+                mult_add = charm['value'] * total_enhancements
                 if mult_add > 0:
                     charm_mult_add += mult_add
-                    modifier_desc.append(f"{charm['name']} +{mult_add} ({enhance_count} enhancements)")
+                    modifier_desc.append(f"{charm['name']} +{mult_add} ({total_enhancements} enhancements)")
             elif charm['type'] == 'discard_mult':
                 mult_add = charm['value'] * getattr(self, 'discards_used_this_round', 0)
                 if mult_add > 0:
@@ -1658,16 +1765,20 @@ class ChromaRollGame:
             total_modifier += glass_mult
             modifier_desc.append(f"Mime (Glass) +{glass_mult}")
 
+
         if self.current_blind == 'Boss' and self.current_boss_effect and self.current_boss_effect['name'] == 'Multiplier Mute':
             total_modifier = min(total_modifier, 2.5)
             if total_modifier >= 2.5:
                 modifier_desc.append("Multiplier Mute capped at +2.5")
 
+        # NEW: Append enhancement descs to main modifier_desc if any (before join)
+        if enhancement_desc_parts:
+            modifier_desc += enhancement_desc_parts
+
         modifier_desc = ", ".join(modifier_desc) if modifier_desc else "None"
 
         final_score = int((base_score + charm_chips + rune_chips) * (1 + total_modifier))
         return hand_type, base_score, modifier_desc, final_score, charm_chips, charm_color_mult_add
-    
     def calculate_score(self):
         """Calculates and returns the final score."""
         _, _, _, final_score, _, _ = self.get_hand_type_and_score()
@@ -1770,6 +1881,12 @@ class ChromaRollGame:
             
             if rect.collidepoint(mouse_pos):
                 tooltip_text = charm['name'] + ": " + charm['desc']
+                if charm['name'] == 'Enhance Elixir':
+                    # Compute total like in get_hand_type_and_score
+                    held_rolls = [(die, value) for j, (die, value) in enumerate(self.game.rolls) if self.game.held[j]]
+                    total_enhancements = sum(len(die.get('enhancements', [])) for die, _ in held_rolls)
+                    mult_add = charm['value'] * total_enhancements  # 0.25 * 5 = 1.25
+                    tooltip_text += f"\n(Preview: +{mult_add} ({total_enhancements} enhancements))"
                 if charm['type'] == 'sacrifice_mult':
                     tooltip_text += f" (Current mult: x{self.score_mult})"
                     if self.score_mult < 10.0:
@@ -2029,10 +2146,11 @@ class ChromaRollGame:
             die_list = []
         name = rune['name']
         max_dice = rune.get('max_dice', 0)
-        if max_dice > 0 and len(die_list) == 0:
+        # Bypass max_dice limit in debug mode
+        if not (DEBUG and max_dice > 0) and max_dice > 0 and len(die_list) == 0:
             self.temp_message = f"Select at least 1 die for {name}!"
             return
-        if len(die_list) > max_dice:
+        if not (DEBUG and max_dice > 0) and len(die_list) > max_dice:
             self.temp_message = "Too many dice selected!"
             return
 
@@ -2126,7 +2244,6 @@ class ChromaRollGame:
                 self.temp_message = "Select exactly 2 dice!"
                 return
             target, source = die_list  # First selected = target (#1), second = source (#2)
-            # First selected = target (#1), second = source (#2)
             target['color'] = source['color']
             target['faces'] = source['faces'][:]
             if 'enhancements' not in target:
