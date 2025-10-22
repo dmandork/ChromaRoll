@@ -1110,6 +1110,17 @@ class ChromaRollGame:
             
             # Total interest including bonus
             interest = base_interest + interest_bonus
+
+            # In score_and_new_turn win block, after interest calc
+            for idx, charm in enumerate(self.equipped_charms):
+                if charm['type'] == 'coin_per_face' and idx not in self.disabled_charms:
+                    bag_size = len(self.full_bag)
+                    coin_gain = (bag_size // 6) * charm['value']  # E.g., 25//6=4 *1=4 coins
+                    interest += coin_gain
+                    if coin_gain > 0:
+                        interest_dollars += f" + Cloud: ${coin_gain} ({bag_size} dice)"
+                    print(f"Cloud Cube: +{coin_gain} from {bag_size//6} groups of 6")
+                    break
             
             if self.green_pouch_active:
                 remains_coins = (self.hands_left * 2) + (self.discards_left * 1)
@@ -1136,6 +1147,19 @@ class ChromaRollGame:
             # Total coins including accumulated Luck's Locket and base lucky
             total_coins = remains_coins + interest + self.extra_coins + self.round_locket_coins + self.round_base_lucky_coins
             
+            for idx, charm in enumerate(self.equipped_charms):
+                if charm['type'] == 'coin_scaling' and idx not in self.disabled_charms:
+                    # Base gain on every blind win
+                    base_gain = charm['base']
+                    # Cumulative from defeated bosses (persists on charm)
+                    defeated = charm.get('boss_defeated', 0)
+                    scaling_gain = defeated * charm['boss']
+                    coin_gain = base_gain + scaling_gain
+                    interest += coin_gain  # Flows to popup/total_coins
+                    interest_dollars = f"${coin_gain} (Rocket: base+{defeated} bosses)" if coin_gain > 0 else interest_dollars
+                    print(f"Rocket Rune: +{coin_gain} coins ({defeated} bosses defeated)")
+                    break
+
             # Visual representations (standardized to '$' * coins)
             luck_locket_dollars = '$' * self.round_locket_coins if self.round_locket_coins > 0 else ''
             luck_locket_line = f"Luck Bonus: {luck_locket_dollars}\n" if self.round_locket_coins > 0 else ""
@@ -1164,6 +1188,13 @@ class ChromaRollGame:
             self.round_base_lucky_coins = 0
             self.lucky_triggers = 0
             self.blind_won = True  # Set win flag if not already
+
+            if self.current_blind == 'Boss' and self.blind_won:
+                for charm in self.equipped_charms:
+                    if charm['type'] == 'coin_scaling':
+                        charm['boss_defeated'] = charm.get('boss_defeated', 0) + 1
+                        print(f"Rocket Rune: Boss #{charm['boss_defeated']} defeated—next gain +{charm['boss']}")
+                        break
             
             if final_boss_win:
                 # Skip popup, direct to prompt
