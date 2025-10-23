@@ -182,10 +182,8 @@ def draw_init_screen(game):
 
     # New: Render temp_message if active (same logic as draw_game_screen)
     if game.temp_message and time.time() - game.temp_message_start < game.temp_message_duration:
-        print("DEBUG: Rendering temp_message:", game.temp_message)  # Confirm trigger (remove after test)
         time_elapsed = time.time() - game.temp_message_start
         alpha = max(0, 255 * (1 - time_elapsed / game.temp_message_duration))
-        print("DEBUG: Alpha value:", alpha)  # Should be ~255 initially (remove after test)
         
         text_surf = game.font.render(game.temp_message, True, (255, 0, 0))  # Red for errors
         text_surf = text_surf.convert_alpha()  # Ensure alpha support
@@ -395,7 +393,6 @@ def draw_game_screen(game):
         bonus = die.get('score_bonus', 0)
         if bonus > 0:
             desc += f"+{bonus} Score Bonus\n"
-        #  print(f"Rendering hand tooltip for die {i}: desc='{desc}' at pos ({game.hand_die_rects[i].x}, {game.hand_die_rects[i].y - 20})")  # Debug: Confirm call, desc, pos (remove later)
         if desc:
             die_rect = game.hand_die_rects[i]
             draw_tooltip(game, die_rect.x, die_rect.y + die_rect.height + 10, desc.strip())  # Below die for visibility
@@ -410,7 +407,6 @@ def draw_game_screen(game):
         bonus = die.get('score_bonus', 0)
         if bonus > 0:
             desc += f"+{bonus} Score Bonus\n"
-        #  print(f"Rendering bag tooltip for die {j}: desc='{desc}' at pos ({game.bag_die_rects[j].x}, {game.bag_die_rects[j].y - 20})")  # Debug
         if desc:
             bag_rect = game.bag_die_rects[j]
             draw_tooltip(game, bag_rect.x, bag_rect.y + bag_rect.height + 10, desc.strip())
@@ -666,8 +662,6 @@ def draw_shop_screen(game, skip_tooltips=False):
             # Clamp inside panel if overflow
             if rune_x + constants.CHARM_BOX_WIDTH > panel_x + panel_width - inner_padding:
                 rune_x = panel_x + panel_width - constants.CHARM_BOX_WIDTH - inner_padding  # Right-align inside panel
-                print("Debug: Overflow - right-aligned rune_x to", rune_x)
-            # print(f"Debug: Drawing grimoire_rune at x={rune_x}, y={rune_y}, panel = {panel_rect}, visible = {rune_x >= panel_x and rune_x + constants.CHARM_BOX_WIDTH <= panel_x + panel_width and rune_y >= panel_y and rune_y + constants.CHARM_BOX_HEIGHT <= panel_y + panel_height}")
             rune_rect = pygame.Rect(rune_x, rune_y, constants.CHARM_BOX_WIDTH, constants.CHARM_BOX_HEIGHT)
             icon_rect = pygame.Rect(rune_rect.x + (constants.CHARM_BOX_WIDTH - constants.CHARM_DIE_SIZE) // 2, rune_rect.y + 10, constants.CHARM_DIE_SIZE, constants.CHARM_DIE_SIZE)
             draw_charm_die(game, icon_rect, grimoire_rune)
@@ -1552,29 +1546,54 @@ def draw_pause_menu(game):
 
 def draw_popup(game):
     """Draws the beaten blind popup with a single Continue button and $ animation."""
-    popup_rect = pygame.Rect(game.width // 2 - constants.POPUP_WIDTH // 2, 200, constants.POPUP_WIDTH, constants.POPUP_HEIGHT)
+    # Calculate dynamic height based on message lines
+    lines = game.popup_message.split('\n')
+    base_lines = 8  # Standard: header, hands, discards, interest, extras/luckies, coins (adjust if needed)
+    num_lines = len(lines)
+    extra_lines = max(0, num_lines - base_lines)
+    dynamic_height = constants.POPUP_HEIGHT + (extra_lines * 25)  # 25px buffer per extra line; tune as needed
+    
+    popup_rect = pygame.Rect(game.width // 2 - constants.POPUP_WIDTH // 2, 200, constants.POPUP_WIDTH, dynamic_height)
     pygame.draw.rect(game.screen, (100, 100, 100), popup_rect)
     pygame.draw.rect(game.screen, (255, 255, 255), popup_rect, 3)  # White border
 
     # Split message into lines and render with animation for $
-    lines = game.popup_message.split('\n')
     for i, line in enumerate(lines):
         text = game.tiny_font.render(line, True, (constants.THEME['text']))
-        game.screen.blit(text, (popup_rect.x + (constants.POPUP_WIDTH - text.get_width()) // 2, popup_rect.y + 20 + i * 30))
+        game.screen.blit(text, (popup_rect.x + (constants.POPUP_WIDTH - text.get_width()) // 2, popup_rect.y + 20 + i * 25))
 
-    # Add Lucky bonus coins line if applicable
-    if game.lucky_triggers > 0:
-        lucky_line = f"Lucky Coins: {'$' * game.lucky_triggers}"
-        lucky_text = game.tiny_font.render(lucky_line, True, (constants.THEME['text']))
-        game.screen.blit(lucky_text, (popup_rect.x + (constants.POPUP_WIDTH - lucky_text.get_width()) // 2, popup_rect.y + 20 + len(lines) * 30))
+    # REMOVED: Manual Lucky line (now in popup_message)
 
-    # Draw single Continue button
-    continue_rect = pygame.Rect(popup_rect.x + (constants.POPUP_WIDTH - constants.BUTTON_WIDTH) // 2, popup_rect.y + constants.POPUP_HEIGHT - 70, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
+    # Draw single Continue button (adjusted for dynamic height)
+    button_y = popup_rect.y + dynamic_height - 70
+    continue_rect = pygame.Rect(popup_rect.x + (constants.POPUP_WIDTH - constants.BUTTON_WIDTH) // 2, button_y, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
     pygame.draw.rect(game.screen, (100, 100, 100), continue_rect)
     continue_text = game.tiny_font.render("Continue", True, (constants.THEME['text']))
     game.screen.blit(continue_text, (continue_rect.x + (constants.BUTTON_WIDTH - continue_text.get_width()) // 2, continue_rect.y + 10))
 
     return continue_rect
+
+def draw_instruction_popup(game, message):
+        """Draws a simple instruction popup with Cancel button."""
+        popup_width = 300  # Smaller for instructions
+        popup_height = 150
+        popup_rect = pygame.Rect(game.width // 2 - popup_width // 2, game.height // 2 - popup_height // 2, popup_width, popup_height)
+        pygame.draw.rect(game.screen, (100, 100, 100), popup_rect)
+        pygame.draw.rect(game.screen, (255, 255, 255), popup_rect, 3)  # White border
+
+        # Render message (wrap if long)
+        lines = wrap_text(game.tiny_font, message, popup_width - 40)  # Use utils.wrap_text
+        for i, line in enumerate(lines):
+            text = game.tiny_font.render(line, True, (constants.THEME['text']))
+            game.screen.blit(text, (popup_rect.x + 20, popup_rect.y + 20 + i * 25))
+
+        # Cancel button
+        cancel_rect = pygame.Rect(popup_rect.x + (popup_width - constants.BUTTON_WIDTH) // 2, popup_rect.y + popup_height - 60, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
+        pygame.draw.rect(game.screen, (100, 100, 100), cancel_rect)
+        cancel_text = game.tiny_font.render("Cancel", True, (constants.THEME['text']))
+        game.screen.blit(cancel_text, (cancel_rect.x + (constants.BUTTON_WIDTH - cancel_text.get_width()) // 2, cancel_rect.y + 10))
+
+        return cancel_rect
 
 def draw_buttons(game):
     """Draws the action buttons; in debug, add Score button; add Discard in discard phase."""

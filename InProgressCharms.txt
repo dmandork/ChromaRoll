@@ -7,9 +7,9 @@ Fate's Favor - 'reroll_advantage' (blind-specific advantage). (DONE)
 Gambler's Grimoire - 'rune_cast' (random rune effect).
 Luck's Locket - 'coin_per_lucky' (lucky synergy). (DONE)
 Rune Relic - 'random_rune' (blind-start rune).
-Interest Idol - 'interest_bonus' (coin scaling).
-Synergy Scroll - 'retrigger_special' (special color retrigger).
-Enhance Elixir - 'mult_per_enhance' (enhancement mult).
+Interest Idol - 'interest_bonus' (coin scaling). (DONE)
+Synergy Scroll - 'retrigger_special' (special color retrigger).(DONE)
+Enhance Elixir - 'mult_per_enhance' (enhancement mult).(DONE)
 Discard Drake - 'discard_mult' (discard synergy).
 Wild Warden - 'coin_per_wild' (wild coin bonus).
 Final Forge - 'final_mult_conditional' (enhancement final hand).

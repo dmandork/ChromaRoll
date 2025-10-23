@@ -3,8 +3,10 @@ import pygame
 import time
 import math
 import random
+import constants
+import utils
 from states.base import State  # Import from base
-from screens import draw_game_screen, draw_popup, draw_buttons, draw_tooltip, draw_enhancement_visuals
+from screens import draw_game_screen, draw_popup, draw_buttons, draw_tooltip, draw_enhancement_visuals, draw_instruction_popup
 from constants import DEBUG, NUM_DICE_IN_HAND, THEME, DIE_SIZE, HELD_DIE_SCALE, CHARM_SIZE, SMALL_DIE_SIZE, SMALL_DIE_SPACING, BAG_PADDING
 from data import ENH_DESC
 from states.shop import ShopState  # Add if not present
@@ -26,7 +28,11 @@ class GameState(State):
         self.tray_rects = []  # Store for click
         self.initial_auto_roll_done = False  # For auto-roll in rolling phase
         game.apply_boss_face_shuffle()  # Apply on resume/load into game state
+        self.selecting_bag_swap = False  # For Familiar's Foresight mode
+        self.swap_use_left = 1  # Per-blind uses (reset in enter)
+        self.show_instruction_popup = False
 
+    # In states/game.py, GameState.enter method (add after existing resets, before new_turn call)
     def enter(self):
         if self.game.is_resuming:
             print("Resuming GameState - Skipping init pull")  # Debug
@@ -38,6 +44,25 @@ class GameState(State):
             if self.game.turn_initialized and self.game.is_discard_phase:
                 print("DEBUG: Resuming discard - skipping pull")
             else:
+                # NEW: Apply Turtle Token here (once per blind entry, before first new_turn)
+                print(f"DEBUG: GameState enter - Equipped charms: {[c['name'] for c in self.game.equipped_charms]}")
+                print(f"DEBUG: Base hands_left before Turtle: {self.game.hands_left}")
+                print(f"DEBUG: Disabled charms: {self.game.disabled_charms}")
+
+                turtle_bonus_applied = False
+                for idx, charm in enumerate(self.game.equipped_charms):
+                    if charm['type'] == 'hands_decay' and idx not in self.game.disabled_charms:
+                        rounds_passed = charm.get('rounds_passed', 0)
+                        hands_bonus = max(0, charm['start'] - (charm['decay'] * rounds_passed))
+                        self.game.hands_left += hands_bonus
+                        print(f"Turtle Token APPLIED: +{hands_bonus} hands (round {rounds_passed + 1}) — hands_left now {self.game.hands_left}")
+                        turtle_bonus_applied = True
+                        break
+                if not turtle_bonus_applied:
+                    print("DEBUG: No Turtle Token applied—no matching charm equipped or disabled")
+
+                print(f"DEBUG: Final hands_left after enter: {self.game.hands_left}")
+
                 self.game.new_turn()
         else:
             self.game.new_turn()  # If has hand but not rolled? Rare, but handle
@@ -58,6 +83,12 @@ class GameState(State):
         self.game.held_fates_advantage = False
         self.game.selecting_fates_die = False
         print("Debug: Reset Fate's Favor for new blind")
+
+        # Reset Familiar's Foresight per blind
+        self.game.selecting_bag_swap = False
+        self.game.swap_use_left = 1  # Full use on new blind
+
+        self.show_instruction_popup = False  
 
     def update(self, dt):
         # Handle animations/timers (e.g., break effects, temp messages)
@@ -87,6 +118,10 @@ class GameState(State):
         from screens import draw_game_screen
         draw_game_screen(self.game)  # Call without assignment—main elements drawn inside
         # No flip here if it's in main loop; add if needed: pygame.display.flip()
+
+        # NEW: Draw instruction popup overlay (after main screen, before animations/buttons for layering)
+        if self.show_instruction_popup:
+            self.cancel_rect = draw_instruction_popup(self.game, self.game.temp_message)
 
         # Add animations using state data (from update_die_rects and game attrs)
         current_time = time.time()
@@ -122,8 +157,8 @@ class GameState(State):
                 die = self.game.bag[i]
                 non_color_enh = [e for e in die.get('enhancements', []) if e not in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild']]
                 if non_color_enh:  # Only show if has non-color enh
-                    enh_desc = ', '.join(ENH_DESC.get(e, e) for e in non_color_enh)
-                    draw_tooltip(self.game, small_rect.x, small_rect.y + small_rect.height + 10, enh_desc or "No enhancements")
+                    enh_desc = ', '.join(ENH_DESC.get(e, e) for e in non_color_enh)  # FIXED: Complete the line
+                    draw_tooltip(self.game, small_rect.x, small_rect.y + small_rect.height + 10, enh_desc or "No enhancements")  # FIXED: Complete the tooltip call
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
@@ -133,6 +168,12 @@ class GameState(State):
                 savegame.save_game(self.game)  # Save
                 self.game.previous_state = self  # Instance
                 self.game.state_machine.change_state(PauseMenuState(self.game))
+                # NEW: Cancel swap mode on ESC
+                self.game.selecting_bag_swap = False
+                self.game.selecting_bag_die = False
+                self.game.swap_source_index = -1
+                self.game.temp_message = ""
+                self.show_instruction_popup = False
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()  # Moved to the top to ensure it's always defined
@@ -152,6 +193,16 @@ class GameState(State):
                     self.game.advance_blind()
                     self.game.generate_shop()
                     self.game.state_machine.change_state(ShopState(self.game))
+                    return
+
+            # NEW: Handle instruction popup clicks (e.g., Cancel)
+            if self.show_instruction_popup:
+                if self.cancel_rect and self.cancel_rect.collidepoint(mouse_pos):
+                    self.show_instruction_popup = False
+                    self.game.selecting_bag_swap = False
+                    self.game.selecting_bag_die = False
+                    self.game.swap_source_index = -1
+                    self.game.temp_message = ""
                     return
 
             # Dice clicks (always check all, including center 3rd die first)
@@ -212,6 +263,50 @@ class GameState(State):
                     print(f"Debug: Toggled Fate's advantage - held_fates_advantage = {self.game.held_fates_advantage}, held[{self.game.fates_advantage_index}] = {self.game.held[self.game.fates_advantage_index]}")
                 # No optional original here—handled in toggle_hold below
             
+            # NEW: Familiar's Foresight swap logic (discard phase only)
+            if self.game.is_discard_phase and self.game.selecting_bag_swap:
+                mouse_pos = pygame.mouse.get_pos()
+                # Check hand die click (for source)
+                for i in range(NUM_DICE_IN_HAND):
+                    total_dice_width = NUM_DICE_IN_HAND * (DIE_SIZE + 20) - 20
+                    start_x = (self.game.width - total_dice_width) // 2
+                    x = start_x + i * (DIE_SIZE + 20)
+                    size = DIE_SIZE * HELD_DIE_SCALE if self.game.held[i] else DIE_SIZE
+                    offset = (DIE_SIZE - size) / 2 if self.game.held[i] else 0
+                    die_rect = pygame.Rect(x + offset, self.game.height - DIE_SIZE - 100 + offset, size, size)
+                    if die_rect.collidepoint(mouse_pos):
+                        self.game.swap_source_index = i
+                        self.game.temp_message = "Select bag die to swap with."
+                        self.show_instruction_popup = True  # Show popup for bag select
+                        print(f"DEBUG: Selected hand die {i} for swap")
+                        return  # Early return to prevent other clicks
+
+            # Separate block for bag selection (after hand picked)
+            if self.game.is_discard_phase and hasattr(self.game, 'swap_source_index') and self.game.swap_source_index != -1:
+                mouse_pos = pygame.mouse.get_pos()
+                # Check bag die click (for target)
+                for j, bag_rect in enumerate(self.game.bag_die_rects):
+                    if bag_rect.collidepoint(mouse_pos):
+                        source_die = self.game.hand[self.game.swap_source_index]
+                        target_die = self.game.bag[j]
+                        # Swap
+                        self.game.hand[self.game.swap_source_index] = target_die
+                        self.game.bag[j] = source_die
+                        self.game.bag.remove(source_die)  # Re-add to bag end
+                        self.game.bag.append(source_die)
+                        old_value = self.game.rolls[self.game.swap_source_index][1]  # Keep old value
+                        self.game.rolls[self.game.swap_source_index] = (target_die, old_value)  # Sync rolls tuple for draw
+                        self.game.swap_use_left -= 1
+                        self.game.swap_source_index = -1
+                        self.game.selecting_bag_swap = False  # FIXED: Explicit clear
+                        self.game.temp_message = f"Swapped! Uses left: {self.game.swap_use_left}"
+                        self.show_instruction_popup = False  # Dismiss popup
+                        self.game.refresh_bag()
+                        self.update_die_rects()
+                        self.game.update_hand_text()
+                        print(f"DEBUG: Swapped die {self.game.swap_source_index} with bag {j}; uses left: {self.game.swap_use_left}")
+                        return
+            
             # Button clicks
             if self.reroll_rect and self.reroll_rect.collidepoint(mouse_pos):
                 self.game.reroll()
@@ -235,13 +330,19 @@ class GameState(State):
                         self.game.selecting_fates_die = True
                         print("Debug: Entered Fate's Favor selection mode")
                         break  # No drag if activating
-                    else:
-                        # Existing drag code
-                        self.game.dragging_charm_index = i
-                        self.game.dragging_shop = False
-                        self.game.drag_offset_x = mouse_pos[0] - x
-                        self.game.drag_offset_y = mouse_pos[1] - y
-                        break  # Break after drag start
+                    # NEW: Familiar's activation
+                    elif charm['name'] == "Familiar's Foresight" and i not in self.game.disabled_charms and self.game.is_discard_phase:
+                        if self.game.swap_use_left > 0:
+                            self.game.selecting_bag_swap = True
+                            self.game.temp_message = "Select hand die to swap."
+                            self.show_instruction_popup = True
+                            print("DEBUG: Familiar's Foresight activated—select hand die")
+                            break
+                        else:
+                            self.game.temp_message = "No uses left!"
+                            self.show_instruction_popup = False  # Ensure no popup
+                            print("DEBUG: Familiar's Foresight no uses—skipped")
+                            break
 
             for i, tray_rect in enumerate(self.tray_rects):
                 if tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
@@ -295,7 +396,7 @@ class GameState(State):
                 elif target_index in self.game.disabled_charms:
                     self.game.disabled_charms.remove(target_index)
                     self.game.disabled_charms.append(self.game.dragging_charm_index)
-
+                
     def update_die_rects(self):
         # Hand dice rects (from your draw_dice logic)
         self.game.hand_die_rects = []

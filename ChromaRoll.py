@@ -71,7 +71,6 @@ class ChromaRollGame:
         try:
             self.splash_image = pygame.image.load(resource_path('assets/images/titlescreen.png')).convert()
         except pygame.error as e:
-            print(f"Error loading splash: {e}")
             self.splash_image = pygame.Surface((838, 1248))  # Fallback blank
             self.splash_image.fill((0, 0, 0))  # Black if missing
 
@@ -405,8 +404,8 @@ class ChromaRollGame:
 
     def update_advantage_flag(self):
         self.has_advantage = any(charm['type'] == 'advantage_choice' for charm in self.equipped_charms)
-        if DEBUG:
-            print("Debug: Advantage flag updated to", self.has_advantage)
+        # if DEBUG:
+            # print("Debug: Advantage flag updated to", self.has_advantage)
 
     def apply_enhancement_retrigger(self, die, i):
         """Apply second proc for one enhanced die; returns (delta_score, delta_coins)."""
@@ -559,6 +558,7 @@ class ChromaRollGame:
 
     def advance_blind(self):
         """Advances to the next blind or stake and resets the dice bag."""
+        print("DEBUG: advance_blind called")  # Confirm entry
         blind_order = ['Small', 'Big', 'Boss']
         current_index = blind_order.index(self.current_blind)
         if current_index < len(blind_order) - 1:
@@ -615,7 +615,7 @@ class ChromaRollGame:
         self.bag[:] = [copy.deepcopy(d) for d in self.full_bag]  # Refill bag from owned template
         if self.current_boss_effect and self.current_boss_effect['name'] == 'Charm Eclipse':
             self.disabled_charms = list(range(len(self.equipped_charms)))  # Ensure all current charms disabled
-        
+
         # Handle Dagger charm
         i = 0
         while i < len(self.equipped_charms) - 1:
@@ -636,8 +636,12 @@ class ChromaRollGame:
             else:
                 i += 1
 
+        # DEBUG: Final hands after all
+        print(f"DEBUG: Final hands_left after advance_blind: {self.hands_left}")
+
     def new_turn(self):
         """Starts a new turn: draw hand, set to value 1, reset holds and rerolls."""
+        print("DEBUG: new_turn called")  # Confirm entry
         #  print("DEBUG: Calling new_turn - pulling dice")  # Log to see when triggered
         self.hand = self.draw_hand()
         self.turn_initialized = True
@@ -654,12 +658,13 @@ class ChromaRollGame:
         self.has_rolled = False  # No initial roll yet
         self.round_locket_coins = 0
         self.round_base_lucky_coins = 0
-        self.update_hand_text()  # Update initial hand text
+
+        self.update_hand_text()  # Update initial hand text (now reflects Turtle bonus on first hand)
         # In new_turn():
-        if not game.turn_initialized:
+        if not self.turn_initialized:  # Fixed: self, not game
             # ... (existing turn setup)
-            game.apply_boss_face_shuffle()
-            game.turn_initialized = True
+            self.apply_boss_face_shuffle()
+            self.turn_initialized = True
         # Add after setting self.rerolls_left, etc.
         if self.current_blind == 'Boss' and self.current_boss_effect:
             effect_name = self.current_boss_effect['name']
@@ -1090,7 +1095,8 @@ class ChromaRollGame:
                     print(f"Synergy Scroll retriggered: +{synergy_score_delta} score, +{synergy_coin_delta} coins")  # Debug; remove later
 
         self.hands_left -= 1
-        self.hands_left = max(0, self.hands_left)  # Clamp to prevent negative
+        self.hands_left = max(0, self.hands_left)  # Clamp to prevent negative# In new_turn (or blind_start hook), after setting hands_left
+    
         if self.round_score >= self.get_blind_target():
             # Compute dynamic interest max from charms
             dynamic_interest_max = INTEREST_MAX
@@ -1111,17 +1117,46 @@ class ChromaRollGame:
             # Total interest including bonus
             interest = base_interest + interest_bonus
 
-            # In score_and_new_turn win block, after interest calc
+            # NEW: Unified rune gains collection (after interest, before remains_coins)
+            rune_gains_lines = []  # Collect per-rune strings
+            total_rune_coins = 0
+
+            # Loop for coin-granting runes
             for idx, charm in enumerate(self.equipped_charms):
-                if charm['type'] == 'coin_per_face' and idx not in self.disabled_charms:
+                if idx in self.disabled_charms:
+                    continue
+                rune_gain = 0
+                gain_desc = ""
+                
+                if charm['type'] == 'coin_per_face':  # Cloud Cube
                     bag_size = len(self.full_bag)
-                    coin_gain = (bag_size // 6) * charm['value']  # E.g., 25//6=4 *1=4 coins
-                    interest += coin_gain
-                    if coin_gain > 0:
-                        interest_dollars += f" + Cloud: ${coin_gain} ({bag_size} dice)"
-                    print(f"Cloud Cube: +{coin_gain} from {bag_size//6} groups of 6")
-                    break
-            
+                    rune_gain = (bag_size // 6) * charm['value']  # E.g., 25//6=4 *1=4
+                    gain_desc = f"{bag_size} dice"
+                
+                elif charm['type'] == 'coin_scaling':  # Rocket Rune
+                    defeated = charm.get('boss_defeated', 0)
+                    rune_gain = charm['base'] + (defeated * charm['boss'])  # E.g., 1 + 2*1=3
+                    gain_desc = f"base + {defeated} bosses"
+                
+                # Add future ones here, e.g.:
+                # elif charm['type'] == 'coin_per_color':
+                #     green_count = sum(1 for die, _ in held_rolls if die['color'] == 'Green')
+                #     rune_gain = green_count * charm['value']
+                #     gain_desc = f"{green_count} greens"
+                
+                if rune_gain > 0:
+                    total_rune_coins += rune_gain
+                    rune_gains_lines.append(f"{charm['name']}: ${rune_gain} ({gain_desc})")
+                    print(f"{charm['name']}: +{rune_gain} coins ({gain_desc})")  # Debug
+
+            # NEW: Boss defeat increment for Rocket (after gain calc, for next time)
+            if self.current_blind == 'Boss':
+                for charm in self.equipped_charms:
+                    if charm['type'] == 'coin_scaling':
+                        charm['boss_defeated'] = charm.get('boss_defeated', 0) + 1
+                        print(f"Rocket Rune: Boss #{charm['boss_defeated']} defeated—next gain +{charm['boss']}")
+                        break
+
             if self.green_pouch_active:
                 remains_coins = (self.hands_left * 2) + (self.discards_left * 1)
                 hands_dollars = '$$' * self.hands_left
@@ -1144,23 +1179,7 @@ class ChromaRollGame:
             base_lucky_coins_this_hand = self.lucky_triggers * 1
             self.round_base_lucky_coins += base_lucky_coins_this_hand
 
-            # Total coins including accumulated Luck's Locket and base lucky
-            total_coins = remains_coins + interest + self.extra_coins + self.round_locket_coins + self.round_base_lucky_coins
-            
-            for idx, charm in enumerate(self.equipped_charms):
-                if charm['type'] == 'coin_scaling' and idx not in self.disabled_charms:
-                    # Base gain on every blind win
-                    base_gain = charm['base']
-                    # Cumulative from defeated bosses (persists on charm)
-                    defeated = charm.get('boss_defeated', 0)
-                    scaling_gain = defeated * charm['boss']
-                    coin_gain = base_gain + scaling_gain
-                    interest += coin_gain  # Flows to popup/total_coins
-                    interest_dollars = f"${coin_gain} (Rocket: base+{defeated} bosses)" if coin_gain > 0 else interest_dollars
-                    print(f"Rocket Rune: +{coin_gain} coins ({defeated} bosses defeated)")
-                    break
-
-            # Visual representations (standardized to '$' * coins)
+            # Visual representations (standardized to '$' * coins) - moved before total_coins for dollars only
             luck_locket_dollars = '$' * self.round_locket_coins if self.round_locket_coins > 0 else ''
             luck_locket_line = f"Luck Bonus: {luck_locket_dollars}\n" if self.round_locket_coins > 0 else ""
             
@@ -1169,6 +1188,15 @@ class ChromaRollGame:
             
             extras_dollars = '$' * self.extra_coins if self.extra_coins > 0 else ''
             extras_line = f"Extras: {extras_dollars}\n" if self.extra_coins > 0 else ""
+
+            # NEW: Rune block for popup
+            rune_block = ""
+            if rune_gains_lines:
+                rune_block = "Rune Gains:\n" + "\n".join(rune_gains_lines) + "\n"
+
+            # Total coins including accumulated Luck's Locket, base lucky, and runes
+            total_coins = remains_coins + interest + self.extra_coins + self.round_locket_coins + self.round_base_lucky_coins + total_rune_coins
+
             total_dollars = '$' * abs(total_coins) if total_coins >= 0 else str(total_coins)
 
             # ADD: Clear Fate's Favor after scoring (advantage goes away for next hand)
@@ -1189,13 +1217,19 @@ class ChromaRollGame:
             self.lucky_triggers = 0
             self.blind_won = True  # Set win flag if not already
 
-            if self.current_blind == 'Boss' and self.blind_won:
-                for charm in self.equipped_charms:
-                    if charm['type'] == 'coin_scaling':
-                        charm['boss_defeated'] = charm.get('boss_defeated', 0) + 1
-                        print(f"Rocket Rune: Boss #{charm['boss_defeated']} defeated—next gain +{charm['boss']}")
-                        break
-            
+            # NEW: Increment Turtle rounds_passed on round win (early, to avoid exits; for next enter)
+            print("DEBUG: Win block reached—checking Turtle increment")
+            turtle_incremented = False
+            for charm in self.equipped_charms:
+                if charm['type'] == 'hands_decay':
+                    old_passed = charm.get('rounds_passed', 0)
+                    charm['rounds_passed'] = old_passed + 1
+                    print(f"Turtle Token WIN: Incremented from {old_passed} to {charm['rounds_passed']} for next round")
+                    turtle_incremented = True
+                    break
+            if not turtle_incremented:
+                print("DEBUG: No Turtle Token found for increment (not equipped?)")
+
             if final_boss_win:
                 # Skip popup, direct to prompt
                 from states.end_prompt import EndPromptState  # type: ignore
@@ -1211,6 +1245,7 @@ class ChromaRollGame:
                                 f"{extras_line}"
                                 f"{luck_locket_line}"  # Luck's Locket accumulated
                                 f"{base_lucky_line}"  # Base 'Lucky' accumulated
+                                f"{rune_block}"  # NEW: Rune gains block
                                 f"Coins gained: {total_dollars}")
             self.show_popup = True
         elif self.hands_left > 0:
