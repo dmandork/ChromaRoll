@@ -296,6 +296,14 @@ class ChromaRollGame:
         self.held_fates_advantage = False
         self.selecting_fates_die = False  # Flag for die selection mode after charm click
 
+        # In ChromaRollGame._init_defaults (after self.used_fates_favor_this_blind = False)
+        self.used_buy_boon_this_turn = False  # Reset in new_turn
+        self.selecting_buy_boon_die = False  # Flag for selection mode
+        self.buy_boon_target_index = -1  # Selected die index
+        self.buy_boon_shifts_left = 2  # Max shifts per use (reset on activation)
+        self.buy_boon_up_rect = None  # Temp for up arrow
+        self.buy_boon_down_rect = None  # Temp for down arrow
+
         # New for Gambler's Grimoire
         self.used_rune_cast_this_shop = False
 
@@ -654,6 +662,13 @@ class ChromaRollGame:
         self.lucky_triggers = 0  # Reset to 0 each new turn/hand
         self.turn += 1
         self.discard_used_this_round = False  # Reset per hand
+        # In new_turn (after self.discard_used_this_round = False)
+        self.used_buy_boon_this_turn = False
+        self.selecting_buy_boon_die = False
+        self.buy_boon_target_index = -1
+        self.buy_boon_shifts_left = 2
+        self.buy_boon_up_rect = None
+        self.buy_boon_down_rect = None
         self.is_discard_phase = True  # Reset to discard phase
         self.has_rolled = False  # No initial roll yet
         self.round_locket_coins = 0

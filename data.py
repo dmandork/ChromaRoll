@@ -133,7 +133,7 @@ CHARMS_POOL = [
     {'name': 'Wild Warden', 'rarity': 'Common', 'cost': 3, 'desc': 'Rainbow dice gain +1 coin when wilding a mono.', 'type': 'coin_per_wild', 'value': 1},
     {'name': 'Kind Keeper', 'rarity': 'Rare', 'cost': 5, 'desc': '4s count as wild for three/four of a kinds.', 'type': 'kind_wild', 'face': 4},
     {'name': 'Final Forge', 'rarity': 'Legendary', 'cost': 10, 'desc': '+3 mult on last hand if it includes an enhancement.', 'type': 'final_mult_conditional', 'value': 3},
-    {'name': 'Buy Boon', 'rarity': 'Common', 'cost': 3, 'desc': 'Pay 3 coins to +2 a die face once per turn.', 'type': 'face_buy_high', 'value': 2},
+    {'name': 'Buy Boon', 'rarity': 'Common', 'cost': 3, 'desc': 'Pay 2 coins per +/-1 shift to a die face once per turn (max 2 shifts).', 'type': 'face_buy_high', 'value': 1},  # Updated desc; value=1 for per-shift
     {'name': 'Echo Ember', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+2 coins per unused discard.', 'type': 'coin_per_discard', 'value': 2},
     {'name': 'Triple Threat', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+0.5 mult for Three of a Kind.', 'type': 'mult_bonus', 'hands': ['3 of a Kind'], 'value': 1.5},
     {'name': 'Disadvantage Dice', 'rarity': 'Common', 'cost': 3, 'desc': '-1 to one die face, but +0.5 mult overall.', 'type': 'risk_mult', 'value': 0.5},

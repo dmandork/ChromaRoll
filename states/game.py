@@ -152,6 +152,24 @@ class GameState(State):
                     enh_desc = ', '.join(ENH_DESC.get(e, e) for e in non_color_enh)
                     draw_tooltip(self.game, die_rect.x, die_rect.y + die_rect.height + 10, enh_desc or "No enhancements")
 
+        # After for i, die_rect in enumerate(self.game.hand_die_rects or []): ...
+        # NEW: Draw arrows if active
+        # NEW: Draw arrows if active
+        if self.game.buy_boon_target_index != -1:
+            if self.game.buy_boon_up_rect:
+                pygame.draw.polygon(self.game.screen, (0, 255, 0), [  # Green up triangle
+                    (self.game.buy_boon_up_rect.centerx, self.game.buy_boon_up_rect.top),
+                    (self.game.buy_boon_up_rect.left, self.game.buy_boon_up_rect.bottom),
+                    (self.game.buy_boon_up_rect.right, self.game.buy_boon_up_rect.bottom)
+                ])
+            
+            if self.game.buy_boon_down_rect:
+                pygame.draw.polygon(self.game.screen, (255, 0, 0), [  # Red down triangle
+                    (self.game.buy_boon_down_rect.centerx, self.game.buy_boon_down_rect.bottom),
+                    (self.game.buy_boon_down_rect.left, self.game.buy_boon_down_rect.top),
+                    (self.game.buy_boon_down_rect.right, self.game.buy_boon_down_rect.top)
+                ])
+
         for i, small_rect in enumerate(self.game.bag_die_rects or []):
             if i < len(self.game.bag) and small_rect.collidepoint(mouse_pos):
                 die = self.game.bag[i]
@@ -174,6 +192,11 @@ class GameState(State):
                 self.game.swap_source_index = -1
                 self.game.temp_message = ""
                 self.show_instruction_popup = False
+                # In if event.key == pygame.K_ESCAPE: (after existing cancels)
+                self.game.selecting_buy_boon_die = False
+                self.game.buy_boon_target_index = -1
+                self.game.buy_boon_up_rect = None
+                self.game.buy_boon_down_rect = None
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()  # Moved to the top to ensure it's always defined
@@ -251,7 +274,8 @@ class GameState(State):
                         self.game.held_advantage = False  # Unhold advantage if original held
                     print("Debug: Toggled original - held[2] =", self.game.held[2], "held_advantage =", self.game.held_advantage)
                     self.game.update_hand_text()  # Refresh preview score
-
+            
+            
             # Fate's Favor advantage toggle
             if not self.game.is_discard_phase and self.game.fates_advantage_index != -1 and self.game.fates_advantage_value is not None:
                 fates_rect = getattr(self.game, 'fates_advantage_die_rect', None)  # Safe access
@@ -307,6 +331,68 @@ class GameState(State):
                         print(f"DEBUG: Swapped die {self.game.swap_source_index} with bag {j}; uses left: {self.game.swap_use_left}")
                         return
             
+            # NEW: Buy Boon die selection (roll phase only)
+            if not self.game.is_discard_phase and self.game.selecting_buy_boon_die:
+                mouse_pos = pygame.mouse.get_pos()
+                for i in range(NUM_DICE_IN_HAND):
+                    # Use existing hand_die_rects
+                    die_rect = self.game.hand_die_rects[i]
+                    if die_rect.collidepoint(mouse_pos) and self.game.held[i]:  # Only held dice
+                        self.game.buy_boon_target_index = i
+                        self.game.temp_message = "Shift die value (up/down arrows)"
+                        self.show_instruction_popup = False  # Dismiss select popup
+                        self.game.selecting_buy_boon_die = False  # Exit select mode
+                        # Calc arrow rects dynamically (in update_die_rects or here)
+                        size = DIE_SIZE * HELD_DIE_SCALE if self.game.held[i] else DIE_SIZE
+                        offset = (DIE_SIZE - size) / 2 if self.game.held[i] else 0
+                        arrow_size = 30  # Small triangle buttons
+                        up_x = die_rect.x + (die_rect.width - arrow_size) // 2
+                        up_y = die_rect.y - arrow_size - 5  # Above die
+                        self.game.buy_boon_up_rect = pygame.Rect(up_x, up_y, arrow_size, arrow_size)
+                        
+                        down_x = up_x
+                        down_y = die_rect.y + die_rect.height + 5  # Below die
+                        self.game.buy_boon_down_rect = pygame.Rect(down_x, down_y, arrow_size, arrow_size)
+                        print(f"DEBUG: Selected die {i} for Buy Boon shifts; shifts left: {self.game.buy_boon_shifts_left}")
+                        return  # Early return
+
+            # NEW: Arrow clicks (anytime arrows active)
+            if self.game.buy_boon_target_index != -1:
+                mouse_pos = pygame.mouse.get_pos()
+                if self.game.buy_boon_up_rect and self.game.buy_boon_up_rect.collidepoint(mouse_pos):
+                    if self.game.buy_boon_shifts_left > 0 and self.game.coins >= 2:
+                        i = self.game.buy_boon_target_index
+                        die, value = self.game.rolls[i]
+                        new_value = min(6, value + 1)
+                        self.game.rolls[i] = (die, new_value)
+                        self.game.coins -= 2
+                        self.game.buy_boon_shifts_left -= 1
+                        self.game.update_hand_text()
+                        print(f"DEBUG: Shifted up die {i} to {new_value}; coins: {self.game.coins}, shifts left: {self.game.buy_boon_shifts_left}")
+                        if self.game.buy_boon_shifts_left == 0:
+                            self.game.used_buy_boon_this_turn = True
+                            self.game.buy_boon_target_index = -1  # Done
+                            self.game.buy_boon_up_rect = None
+                            self.game.buy_boon_down_rect = None
+                    return
+                
+                if self.game.buy_boon_down_rect and self.game.buy_boon_down_rect.collidepoint(mouse_pos):
+                    if self.game.buy_boon_shifts_left > 0 and self.game.coins >= 2:
+                        i = self.game.buy_boon_target_index
+                        die, value = self.game.rolls[i]
+                        new_value = max(1, value - 1)
+                        self.game.rolls[i] = (die, new_value)
+                        self.game.coins -= 2
+                        self.game.buy_boon_shifts_left -= 1
+                        self.game.update_hand_text()
+                        print(f"DEBUG: Shifted down die {i} to {new_value}; coins: {self.game.coins}, shifts left: {self.game.buy_boon_shifts_left}")
+                        if self.game.buy_boon_shifts_left == 0:
+                            self.game.used_buy_boon_this_turn = True
+                            self.game.buy_boon_target_index = -1
+                            self.game.buy_boon_up_rect = None
+                            self.game.buy_boon_down_rect = None
+                    return
+    
             # Button clicks
             if self.reroll_rect and self.reroll_rect.collidepoint(mouse_pos):
                 self.game.reroll()
@@ -343,6 +429,17 @@ class GameState(State):
                             self.show_instruction_popup = False  # Ensure no popup
                             print("DEBUG: Familiar's Foresight no uses—skipped")
                             break
+                    # New: Buy Boon
+                    elif charm['name'] == "Buy Boon" and i not in self.game.disabled_charms and not self.game.used_buy_boon_this_turn and not self.game.is_discard_phase:
+                        if self.game.coins < 4:  # Min for 2 shifts at 2 each
+                            self.game.temp_message = "Not enough coins! (Need at least 4)"
+                            self.game.temp_message_start = time.time()
+                            break
+                        self.game.selecting_buy_boon_die = True
+                        self.game.temp_message = "Select hand die to shift (2 coins per +/-1, max 2 shifts)"
+                        self.show_instruction_popup = True
+                        print("DEBUG: Buy Boon activated—select die")
+                        break
 
             for i, tray_rect in enumerate(self.tray_rects):
                 if tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
