@@ -143,7 +143,7 @@ CHARMS_POOL = [
     {'name': 'Homebrew Hazard', 'rarity': 'Rare', 'cost': 7, 'desc': 'Random encounter: 1/6 chance for bonus charm, else lose a discard.', 'type': 'random_event'},
     {'name': 'Greedy Gambler', 'rarity': 'Common', 'cost': 3, 'desc': '+0.5 mult for Red dice scored.', 'type': 'color_mult', 'color': 'Red', 'value': 0.5},
     {'name': 'Retrigger Rune', 'rarity': 'Legendary', 'cost': 10, 'desc': 'Retrigger scoring on kinds.', 'type': 'retrigger', 'hands': 'kinds'},
-    {'name': 'Economy Echo', 'rarity': 'Common', 'cost': 4, 'desc': '+1 coin per unused reroll (echo interest).', 'type': 'coin_gen', 'value': 1},
+    {'name': 'Economy Echo', 'rarity': 'Common', 'cost': 4, 'desc': '+1 coin per unused hand at round end.', 'type': 'coin_gen', 'value': 1},
     {'name': 'Break Buffer', 'rarity': 'Rare', 'cost': 6, 'desc': 'Glass dice break only on 1.', 'type': 'break_reduce'},
     {'name': 'Wild Whirl', 'rarity': 'Common', 'cost': 3, 'desc': 'Rainbow dice count double for monos.', 'type': 'rainbow_double'},
     {'name': 'Discard Dynamo', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.5 mult per discard used.', 'type': 'discard_mult', 'value': 0.5},

@@ -84,6 +84,11 @@ class GameState(State):
         self.game.selecting_fates_die = False
         print("Debug: Reset Fate's Favor for new blind")
 
+        self.game.buy_boon_target_index = -1
+        self.game.buy_boon_up_rect = None
+        self.game.buy_boon_down_rect = None
+        self.game.buy_boon_confirm_rect = None
+
         # Reset Familiar's Foresight per blind
         self.game.selecting_bag_swap = False
         self.game.swap_use_left = 1  # Full use on new blind
@@ -170,6 +175,14 @@ class GameState(State):
                     (self.game.buy_boon_down_rect.right, self.game.buy_boon_down_rect.top)
                 ])
 
+            # After down arrow pygame.draw.polygon...
+            if self.game.buy_boon_confirm_rect:
+                pygame.draw.rect(self.game.screen, (100, 100, 100), self.game.buy_boon_confirm_rect)  # Gray button
+                confirm_text = self.game.small_font.render("Confirm", True, (255, 255, 255))
+                text_x = self.game.buy_boon_confirm_rect.x + (self.game.buy_boon_confirm_rect.width - confirm_text.get_width()) // 2
+                text_y = self.game.buy_boon_confirm_rect.y + (self.game.buy_boon_confirm_rect.height - confirm_text.get_height()) // 2
+                self.game.screen.blit(confirm_text, (text_x, text_y))
+
         for i, small_rect in enumerate(self.game.bag_die_rects or []):
             if i < len(self.game.bag) and small_rect.collidepoint(mouse_pos):
                 die = self.game.bag[i]
@@ -227,6 +240,18 @@ class GameState(State):
                     self.game.swap_source_index = -1
                     self.game.temp_message = ""
                     return
+                
+            # NEW: Confirm click
+            if self.game.buy_boon_confirm_rect and self.game.buy_boon_confirm_rect.collidepoint(mouse_pos):
+                self.game.used_buy_boon_this_turn = True
+                self.game.buy_boon_target_index = -1
+                self.game.buy_boon_up_rect = None
+                self.game.buy_boon_down_rect = None
+                self.game.buy_boon_confirm_rect = None
+                self.game.temp_message = "Buy Boon confirmed!"
+                self.game.temp_message_start = time.time()
+                print("DEBUG: Buy Boon confirmed early; used up")
+                return
 
             # Dice clicks (always check all, including center 3rd die first)
             for i in range(NUM_DICE_IN_HAND):
@@ -334,6 +359,7 @@ class GameState(State):
             # NEW: Buy Boon die selection (roll phase only)
             if not self.game.is_discard_phase and self.game.selecting_buy_boon_die:
                 mouse_pos = pygame.mouse.get_pos()
+                arrow_size = 30  # Define early to avoid unbound
                 for i in range(NUM_DICE_IN_HAND):
                     # Use existing hand_die_rects
                     die_rect = self.game.hand_die_rects[i]
@@ -342,10 +368,9 @@ class GameState(State):
                         self.game.temp_message = "Shift die value (up/down arrows)"
                         self.show_instruction_popup = False  # Dismiss select popup
                         self.game.selecting_buy_boon_die = False  # Exit select mode
-                        # Calc arrow rects dynamically (in update_die_rects or here)
+                        # Calc arrow rects dynamically
                         size = DIE_SIZE * HELD_DIE_SCALE if self.game.held[i] else DIE_SIZE
                         offset = (DIE_SIZE - size) / 2 if self.game.held[i] else 0
-                        arrow_size = 30  # Small triangle buttons
                         up_x = die_rect.x + (die_rect.width - arrow_size) // 2
                         up_y = die_rect.y - arrow_size - 5  # Above die
                         self.game.buy_boon_up_rect = pygame.Rect(up_x, up_y, arrow_size, arrow_size)
@@ -353,6 +378,14 @@ class GameState(State):
                         down_x = up_x
                         down_y = die_rect.y + die_rect.height + 5  # Below die
                         self.game.buy_boon_down_rect = pygame.Rect(down_x, down_y, arrow_size, arrow_size)
+                        
+                        # In the die selection if (after setting down_rect)
+                        confirm_width = 80
+                        confirm_height = 30
+                        confirm_x = die_rect.x + (die_rect.width - confirm_width) // 2
+                        confirm_y = up_y - confirm_height - 10  # Above up arrow
+                        self.game.buy_boon_confirm_rect = pygame.Rect(confirm_x, confirm_y, confirm_width, confirm_height)
+                        
                         print(f"DEBUG: Selected die {i} for Buy Boon shifts; shifts left: {self.game.buy_boon_shifts_left}")
                         return  # Early return
 

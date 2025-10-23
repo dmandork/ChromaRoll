@@ -303,6 +303,7 @@ class ChromaRollGame:
         self.buy_boon_shifts_left = 2  # Max shifts per use (reset on activation)
         self.buy_boon_up_rect = None  # Temp for up arrow
         self.buy_boon_down_rect = None  # Temp for down arrow
+        self.buy_boon_confirm_rect = None  # Temp for confirm button
 
         # New for Gambler's Grimoire
         self.used_rune_cast_this_shop = False
@@ -669,6 +670,7 @@ class ChromaRollGame:
         self.buy_boon_shifts_left = 2
         self.buy_boon_up_rect = None
         self.buy_boon_down_rect = None
+        self.buy_boon_confirm_rect = None
         self.is_discard_phase = True  # Reset to discard phase
         self.has_rolled = False  # No initial roll yet
         self.round_locket_coins = 0
@@ -1209,8 +1211,18 @@ class ChromaRollGame:
             if rune_gains_lines:
                 rune_block = "Rune Gains:\n" + "\n".join(rune_gains_lines) + "\n"
 
+            coin_gen_bonus = 0
+            for idx, charm in enumerate(self.equipped_charms):
+                if charm['type'] == 'coin_gen' and idx not in self.disabled_charms:
+                    unused_hands = self.hands_left # Unused at round end
+                    coin_gen_bonus += charm['value'] * unused_hands
+
+            # For popup (add to dollar line):
+            coin_gen_dollars = '$' * coin_gen_bonus if coin_gen_bonus > 0 else ''
+            coin_gen_line = f"Echo Coins: {coin_gen_dollars}\n" if coin_gen_bonus > 0 else ""
+
             # Total coins including accumulated Luck's Locket, base lucky, and runes
-            total_coins = remains_coins + interest + self.extra_coins + self.round_locket_coins + self.round_base_lucky_coins + total_rune_coins
+            total_coins = remains_coins + interest + self.extra_coins + self.round_locket_coins + self.round_base_lucky_coins + total_rune_coins + coin_gen_bonus
 
             total_dollars = '$' * abs(total_coins) if total_coins >= 0 else str(total_coins)
 
@@ -1261,6 +1273,7 @@ class ChromaRollGame:
                                 f"{luck_locket_line}"  # Luck's Locket accumulated
                                 f"{base_lucky_line}"  # Base 'Lucky' accumulated
                                 f"{rune_block}"  # NEW: Rune gains block
+                                f"{coin_gen_line}"  # Echo Coins from Coin Generation charms
                                 f"Coins gained: {total_dollars}")
             self.show_popup = True
         elif self.hands_left > 0:
