@@ -1,5 +1,6 @@
 # states/confirm_sell.py
 import pygame
+import time
 from states.base import State
 from states.shop import ShopState  # For returning to shop after confirmation
 from screens import draw_shop_screen, draw_confirm_sell_popup
@@ -27,10 +28,17 @@ class ConfirmSellState(State):
             mouse_pos = pygame.mouse.get_pos()
             if self.yes_rect and self.yes_rect.collidepoint(mouse_pos):
                 charm = self.game.equipped_charms.pop(self.game.confirm_sell_index)
-                sell_val = charm['cost'] // 2
+                sell_val = charm.get('sell_value', charm['cost'] // 2)  # **CHANGE: Use sell_value fallback**
                 self.game.coins += sell_val
-                self.game.confirm_sell_index = -1
-                self.game.state_machine.change_state(ShopState(self.game))  # Back to shop
-            elif self.no_rect and self.no_rect.collidepoint(mouse_pos):
+                # **REPLACED: Set Luchador flag (persistent until boss done)**
+                if charm['name'] == 'Luchador Lens':
+                    if self.game.current_round == 8:  # Final boss exception
+                        self.game.temp_message = "Luchador sold, but final boss cannot be disabled."
+                        self.game.temp_message_start = time.time()
+                    else:
+                        self.game.luchador_disable_active = True
+                        self.game.temp_message = "Luchador sold! Boss will be disabled next boss round."
+                        self.game.temp_message_start = time.time()
+                        print("DEBUG: Luchador flag set from shop")
                 self.game.confirm_sell_index = -1
                 self.game.state_machine.change_state(ShopState(self.game))  # Back to shop

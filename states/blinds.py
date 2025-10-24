@@ -2,6 +2,7 @@
 import pygame
 import random
 import copy
+import time
 from constants import *  # For THEME, BUTTON_WIDTH, BASE_TARGETS, etc.
 from utils import draw_rounded_element, resource_path  # For buttons/UI elements
 from screens import draw_blinds_screen, draw_custom_button  # For main blinds drawing/buttons
@@ -39,9 +40,15 @@ class BlindsState(State):
             # Set rect now that screen is ready
             screen_height = self.game.screen.get_height()
             self.dropdown_rect = pygame.Rect(10, 10, 120, 30)  # Upper left
-        # Conditional: Generate upcoming boss only if None (fix randomize every entry)
+        # Conditional: Generate upcoming boss only if None
         if self.game.upcoming_boss_effect is None:
             self.game.upcoming_boss_effect = random.choice(BOSS_EFFECTS)
+
+        # **INSERT: Apply Luchador flag for upcoming boss**
+        if self.game.luchador_disable_active and self.game.current_blind != 'Boss':  # Only set for upcoming, not current
+            dummy_disabled = {'name': 'DISABLED', 'desc': 'Boss effect disabled by Luchador Lens!', 'difficulty': 'None'}
+            self.game.upcoming_boss_effect = dummy_disabled
+            print("DEBUG: Luchador flag applied to upcoming boss")
 
     def update(self, dt):
         pass

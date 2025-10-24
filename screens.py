@@ -303,7 +303,37 @@ def draw_game_screen(game):
             if charm['type'] == 'score_per_discard_color':
                 tooltip_text += "\nPreview: +3 per discarded color die"
             if charm['type'] == 'mult_final_discard':
-                tooltip_text += "\nPreview: +2 mult on final discard"        
+                tooltip_text += "\nPreview: +2 mult on final discard"
+            if charm['name'] == 'Ice Shard':
+                hands_played = charm.get('hands_played', 0)
+                preview_hands = hands_played + 1
+                decay_bonus = max(0, charm['start'] - (charm['decay'] * (preview_hands - 1)))
+                tooltip_text += f"\nCurrent Bonus: +{decay_bonus}"
+            
+            # NEW: Loyalty Luck tooltip (add here, after all other ifs, before disabled)
+            if charm['name'] == 'Loyalty Luck':
+                local_turn = charm.get('local_turns', 0)
+                every = charm.get('every', 6)
+                if local_turn % every == 0:
+                    tooltip_text += f"\nActive: +{charm['value']} mult this turn"
+                else:
+                    turns_left = every - (local_turn % every)
+                    tooltip_text += f"\nNext in {turns_left} turns"
+            
+            # **INSERT: Luchador Lens tooltip (here, after Loyalty Luck, before disabled check)**
+            if charm['name'] == 'Luchador Lens':
+                tooltip_text += "\nClick to instantly sell and disable current boss (except final)."
+                if game.current_boss_effect:
+                    tooltip_text += f"\nTarget: {game.current_boss_effect['name']}"
+                else:
+                    tooltip_text += "\nBoss already disabled."
+                if game.current_round == 8 and game.current_blind == 'Boss':
+                    tooltip_text += "\n(Cannot disable final boss)"
+
+            if charm['name'] == 'Gift Glyph':
+                total_bonus = sum(c.get('sell_value', c['cost']) - c['cost'] for c in game.equipped_charms if c != charm)
+                tooltip_text += f"\nPreview: +{total_bonus} total sell value at round end"
+
             if i in game.disabled_charms:
                 tooltip_text += " (Disabled this round by Boss Effect)"
             
@@ -413,7 +443,7 @@ def draw_game_screen(game):
 
 
 def draw_shop_screen(game, skip_tooltips=False):
-    """Draws the shop screen with equipped charms (sell), shop charms (buy), and Prism Packs."""
+    """Draws the shop screen with equipped charms (sell), equipped charms (buy), and Prism Packs."""
     mouse_pos = pygame.mouse.get_pos()
     game.screen.fill(constants.THEME['background'])
 
@@ -490,7 +520,7 @@ def draw_shop_screen(game, skip_tooltips=False):
         eq_rect = pygame.Rect(x, y, constants.CHARM_BOX_WIDTH, constants.CHARM_BOX_HEIGHT)
         icon_rect = pygame.Rect(eq_rect.x + (constants.CHARM_BOX_WIDTH - constants.CHARM_DIE_SIZE) // 2, eq_rect.y + 10, constants.CHARM_DIE_SIZE, constants.CHARM_DIE_SIZE)  # Adjusted padding
         draw_charm_die(game, icon_rect, charm)
-        sell_val = charm['cost'] // 2
+        sell_val = charm.get('sell_value', charm['cost'] // 2)
         sell_label = game.tiny_font.render(f"Sell: {sell_val}", True, (constants.THEME['text']))
         game.screen.blit(sell_label, (eq_rect.x + 5, eq_rect.y + constants.CHARM_BOX_HEIGHT - 30))  # Moved lower
         sell_rect = pygame.Rect(eq_rect.x + constants.CHARM_BOX_WIDTH - 60, eq_rect.y + constants.CHARM_BOX_HEIGHT - 30, 50, 20)
@@ -519,8 +549,8 @@ def draw_shop_screen(game, skip_tooltips=False):
                 tooltip_text += "\nPreview: Once per blind, reroll with choice"
             if charm['type'] == 'rune_cast':
                 tooltip_text += "\nPreview: Cast random rune (once per shop)"
-            #  if charm['type'] == 'coin_per_lucky':
-            #      tooltip_text += f"\nPreview: +{charm['value']} coins per lucky trigger"
+            # if charm['type'] == 'coin_per_lucky':
+            #     tooltip_text += f"\nPreview: +{charm['value']} coins per lucky trigger"
             if charm['type'] == 'random_rune':
                 tooltip_text += "\nPreview: Random rune at blind start"
             if charm['type'] == 'interest_bonus':
@@ -535,6 +565,13 @@ def draw_shop_screen(game, skip_tooltips=False):
                 discards_used = getattr(game, 'discards_used_this_round', 0)
                 mult_add = charm['value'] * discards_used
                 tooltip_text += f"\nPreview: +{mult_add:.1f} ({discards_used} discards)"
+            if charm['type'] == 'coin_per_wild':
+                wild_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die['color'] == 'Rainbow' and len(set([d['color'] for d, _ in [(dd, vv) for ii, (dd, vv) in enumerate(game.rolls) if game.held[ii] and dd['color'] != 'Rainbow']]) <= 1))
+                tooltip_text += f"\nPreview: +{charm['value'] * wild_count} coins ({wild_count} wilds)"
+            if charm['type'] == 'final_mult_conditional':
+                tooltip_text += "\nPreview: +3 mult on last hand with enhancement"
+            if charm['type'] == 'face_buy_high':
+                tooltip_text += "\nPreview: +2 to a face (3 coins, once/turn)"
             if charm['type'] == 'coin_per_wild':
                 wild_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die['color'] == 'Rainbow' and len(set([d['color'] for d, _ in [(dd, vv) for ii, (dd, vv) in enumerate(game.rolls) if game.held[ii] and dd['color'] != 'Rainbow']]) <= 1))
                 tooltip_text += f"\nPreview: +{charm['value'] * wild_count} coins ({wild_count} wilds)"
@@ -575,107 +612,111 @@ def draw_shop_screen(game, skip_tooltips=False):
     # Shop charms horizontal inside panel (top section, leaving space below for future)
     shop_title = game.small_font.render("Shop Charms", True, (constants.THEME['text']))
     game.screen.blit(shop_title, (panel_x + inner_padding, panel_y + inner_padding - 20))  # Title inside/top of panel
-
-    # Initialize lists and hover here
+    shop_charms_y = panel_y + inner_padding
     buy_rects = []
     shop_rects = []
     shop_hover = None
-    
-    shop_charms_y = panel_y + inner_padding
-    for i, charm in enumerate(game.shop_charms):
-        x = panel_x + inner_padding + i * (constants.CHARM_BOX_WIDTH + constants.CHARM_SPACING)
-        y = shop_charms_y
-        shop_rect = pygame.Rect(x, y, constants.CHARM_BOX_WIDTH, constants.CHARM_BOX_HEIGHT)
-        icon_rect = pygame.Rect(shop_rect.x + (constants.CHARM_BOX_WIDTH - constants.CHARM_DIE_SIZE) // 2, shop_rect.y + 10, constants.CHARM_DIE_SIZE, constants.CHARM_DIE_SIZE)
-        draw_charm_die(game, icon_rect, charm)
-        cost_label = game.tiny_font.render(f"Cost: {charm['cost']}", True, (constants.THEME['text']))
-        game.screen.blit(cost_label, (shop_rect.x + 5, shop_rect.y + constants.CHARM_BOX_HEIGHT - 30))
-        buy_rect = pygame.Rect(shop_rect.x + constants.CHARM_BOX_WIDTH - 60, shop_rect.y + constants.CHARM_BOX_HEIGHT - 30, 50, 20)
-        pygame.draw.rect(game.screen, (0, 150, 0), buy_rect)
-        buy_text = game.tiny_font.render("Buy", True, (constants.THEME['text']))
-        game.screen.blit(buy_text, (buy_rect.x + 10, buy_rect.y + 3))
-        buy_rects.append(buy_rect)
-        shop_rects.append(shop_rect)
-        if shop_rect.collidepoint(mouse_pos):
-            tooltip_text = charm['name'] + ": " + charm['desc']
-            if charm['type'] == 'empty_slot_mult':
-                preview_mult = charm['value'] * (game.max_charms - len(game.equipped_charms))
-                tooltip_text += f" (If bought: x{preview_mult})"
-            shop_hover = (x, y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
-            if charm['name'] == 'Lucky Labyrinth':
-                permanent_bonus = charm.get('permanent_bonus', 0.0)
-                tooltip_text += f"\nPermanent Mult: +{permanent_bonus:.1f}"
-            # ADDED: Append Life Milestone modifier
-            if charm['name'] == 'Life Milestone':
-                mult_add = charm['value'] * getattr(game, 'stake_milestones', 0)
-                if mult_add > 0:
-                    tooltip_text += f"\nCurrent Mult: +{mult_add:.1f} ({game.stake_milestones} milestones)"
-            if charm['name'] == 'Stat Roller':
-                # Preview with current held rolls
-                face_sum = sum(value for _, value in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]])
-                tooltip_text += f"\nCurrent Bonus: +{face_sum} (Sum of faces)"
-            draw_tooltip(game, x, y + constants.CHARM_SIZE + 10, tooltip_text)
+    pack_rects = []
 
-        # Packs section inside panel (below shop charms, with space for future additions above/below/sides)
-        pack_title = game.small_font.render("Packs", True, (constants.THEME['text']))
-        game.screen.blit(pack_title, (panel_x + inner_padding, shop_charms_y + constants.CHARM_BOX_HEIGHT + 20))  # Below shop charms
-
-        pack_y = shop_charms_y + constants.CHARM_BOX_HEIGHT + 50  # Space below charms
-        pack_rects = []
-        pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9]  # Append rune pack costs
-        pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5]  # Append rune pack choices
-        pack_names = [
-            "Basic Prism (1 of 2)", "Standard Prism (1 of 3)", "Premium Prism (1 of 5)",
-            "Dice Pack (1 of 3)", "Dice Pack (1 of 4)", "Special Dice Pack (1 of 3)",
-            "Basic Rune Pack (1 of 3)", "Mega Rune Pack (1 of 5)", "Super Rune Pack (2 of 5)"
-        ]  # Append rune pack names
-        pack_x_start = panel_x + inner_padding  # Left-aligned
-        pack_x = pack_x_start
-        for pack_idx in game.available_packs:
-            x = pack_x
-            y = pack_y
-            pack_rect = pygame.Rect(x, y, 80, 80)  # Your size
-            # Draw icon centered (your existing logic)
-            if pack_idx in [0,1,2]:
-                draw_prism_pack_icon(game, pack_idx, pack_rect.x, pack_rect.y + 10)
-            elif pack_idx in [3,4,5]:
-                cycle = constants.BASE_COLORS if pack_idx in [3,4] else constants.SPECIAL_COLORS
-                draw_pack_icon(game, pack_rect, pack_choices_num[pack_idx], cycle)
-            elif pack_idx in [6,7,8]:  # Rune packs
-                pygame.draw.rect(game.screen, constants.BAG_COLOR, pack_rect, border_radius=constants.BAG_BORDER_RADIUS)
-                text = game.small_font.render(f"Rune Pack ${pack_costs[pack_idx]}", True, constants.THEME['text'])
-                game.screen.blit(text, (pack_rect.centerx - text.get_width()//2, pack_rect.centery))
-            if not skip_tooltips and pack_rect.collidepoint(mouse_pos):
-                tooltip_text = f"{pack_names[pack_idx]}\nCost: {pack_costs[pack_idx]}"
-                tooltip_y = pack_rect.y + 80 + 5
-                if tooltip_y + 50 > game.height:
-                    tooltip_y = pack_rect.y - 60
-                draw_tooltip(game, pack_rect.x, tooltip_y, tooltip_text)
-            pack_rects.append((pack_rect, pack_idx))
-            pack_x += 80 + 10  # Your spacing
-
-        # ADD: Draw free Grimoire rune next to packs (using stored var)
-        grimoire_rune = getattr(game, 'grimoire_rune', None)  # Use stored var from gen
-        if grimoire_rune:
-            rune_x = pack_x_start + len(game.available_packs) * (80 + 10)  # Dynamic after last pack
-            rune_y = pack_y
-            # Clamp inside panel if overflow
-            if rune_x + constants.CHARM_BOX_WIDTH > panel_x + panel_width - inner_padding:
-                rune_x = panel_x + panel_width - constants.CHARM_BOX_WIDTH - inner_padding  # Right-align inside panel
-            rune_rect = pygame.Rect(rune_x, rune_y, constants.CHARM_BOX_WIDTH, constants.CHARM_BOX_HEIGHT)
-            icon_rect = pygame.Rect(rune_rect.x + (constants.CHARM_BOX_WIDTH - constants.CHARM_DIE_SIZE) // 2, rune_rect.y + 10, constants.CHARM_DIE_SIZE, constants.CHARM_DIE_SIZE)
-            draw_charm_die(game, icon_rect, grimoire_rune)
-            free_label = game.tiny_font.render("Free", True, (constants.THEME['text']))
-            game.screen.blit(free_label, (rune_rect.x + 5, rune_rect.y + constants.CHARM_BOX_HEIGHT - 30))
-            buy_rect = pygame.Rect(rune_rect.x + constants.CHARM_BOX_WIDTH - 60, rune_rect.y + constants.CHARM_BOX_HEIGHT - 30, 50, 20)
+    if game.shop_charms:
+        for i, charm in enumerate(game.shop_charms):
+            x = panel_x + inner_padding + i * (constants.CHARM_BOX_WIDTH + constants.CHARM_SPACING)
+            y = shop_charms_y
+            shop_rect = pygame.Rect(x, y, constants.CHARM_BOX_WIDTH, constants.CHARM_BOX_HEIGHT)
+            icon_rect = pygame.Rect(shop_rect.x + (constants.CHARM_BOX_WIDTH - constants.CHARM_DIE_SIZE) // 2, shop_rect.y + 10, constants.CHARM_DIE_SIZE, constants.CHARM_DIE_SIZE)
+            draw_charm_die(game, icon_rect, charm)
+            cost_label = game.tiny_font.render(f"Cost: {charm['cost']}", True, (constants.THEME['text']))
+            game.screen.blit(cost_label, (shop_rect.x + 5, shop_rect.y + constants.CHARM_BOX_HEIGHT - 30))
+            buy_rect = pygame.Rect(shop_rect.x + constants.CHARM_BOX_WIDTH - 60, shop_rect.y + constants.CHARM_BOX_HEIGHT - 30, 50, 20)
             pygame.draw.rect(game.screen, (0, 150, 0), buy_rect)
             buy_text = game.tiny_font.render("Buy", True, (constants.THEME['text']))
             game.screen.blit(buy_text, (buy_rect.x + 10, buy_rect.y + 3))
-            buy_rects.append(buy_rect)  # For buy handling
-            pack_rects.append((rune_rect, -1))  # Special index for buy
-            if not skip_tooltips and rune_rect.collidepoint(mouse_pos):
-                tooltip_text = grimoire_rune['name'] + ": " + grimoire_rune['desc'] + " (Free!)"
-                draw_tooltip(game, rune_rect.x, rune_rect.y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
+            buy_rects.append(buy_rect)
+            shop_rects.append(shop_rect)
+            if shop_rect.collidepoint(mouse_pos):
+                tooltip_text = charm['name'] + ": " + charm['desc']
+                if charm['type'] == 'empty_slot_mult':
+                    preview_mult = charm['value'] * (game.max_charms - len(game.equipped_charms))
+                    tooltip_text += f" (If bought: x{preview_mult})"
+                shop_hover = (x, y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
+                if charm['name'] == 'Lucky Labyrinth':
+                    permanent_bonus = charm.get('permanent_bonus', 0.0)
+                    tooltip_text += f"\nPermanent Mult: +{permanent_bonus:.1f}"
+                # ADDED: Append Life Milestone modifier
+                if charm['name'] == 'Life Milestone':
+                    mult_add = charm['value'] * getattr(game, 'stake_milestones', 0)
+                    if mult_add > 0:
+                        tooltip_text += f"\nCurrent Mult: +{mult_add:.1f} ({game.stake_milestones} milestones)"
+                if charm['name'] == 'Stat Roller':
+                    # Preview with current held rolls
+                    face_sum = sum(value for _, value in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]])
+                    tooltip_text += f"\nCurrent Bonus: +{face_sum} (Sum of faces)"
+                draw_tooltip(game, x, y + constants.CHARM_SIZE + 10, tooltip_text)
+    else:
+        # **INSERT: Empty shop charms message**
+        no_shop_text = game.small_font.render("No charms available", True, (constants.THEME['text']))
+        no_shop_y = shop_charms_y + 20  # Center in section
+        game.screen.blit(no_shop_text, (panel_x + inner_padding, no_shop_y))
+
+    # Packs section inside panel (below shop charms, with space for future additions above/below/sides)
+    pack_title = game.small_font.render("Packs", True, (constants.THEME['text']))
+    game.screen.blit(pack_title, (panel_x + inner_padding, shop_charms_y + constants.CHARM_BOX_HEIGHT + 20))  # Below shop charms
+    pack_y = shop_charms_y + constants.CHARM_BOX_HEIGHT + 50 # Space below charms
+    pack_rects = []
+    pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9] # Append rune pack costs
+    pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5] # Append rune pack choices
+    pack_names = [
+        "Basic Prism (1 of 2)", "Standard Prism (1 of 3)", "Premium Prism (1 of 5)",
+        "Dice Pack (1 of 3)", "Dice Pack (1 of 4)", "Special Dice Pack (1 of 3)",
+        "Basic Rune Pack (1 of 3)", "Mega Rune Pack (1 of 5)", "Super Rune Pack (2 of 5)"
+    ] # Append rune pack names
+    pack_x_start = panel_x + inner_padding # Left-aligned
+    pack_x = pack_x_start
+    for pack_idx in game.available_packs:
+        x = pack_x
+        y = pack_y
+        pack_rect = pygame.Rect(x, y, 80, 80) # Your size
+        # Draw icon centered (your existing logic)
+        if pack_idx in [0,1,2]:
+            draw_prism_pack_icon(game, pack_idx, pack_rect.x, pack_rect.y + 10)
+        elif pack_idx in [3,4,5]:
+            cycle = constants.BASE_COLORS if pack_idx in [3,4] else constants.SPECIAL_COLORS
+            draw_pack_icon(game, pack_rect, pack_choices_num[pack_idx], cycle)
+        elif pack_idx in [6,7,8]: # Rune packs
+            pygame.draw.rect(game.screen, constants.BAG_COLOR, pack_rect, border_radius=constants.BAG_BORDER_RADIUS)
+            text = game.small_font.render(f"Rune Pack ${pack_costs[pack_idx]}", True, constants.THEME['text'])
+            game.screen.blit(text, (pack_rect.centerx - text.get_width()//2, pack_rect.centery))
+        if not skip_tooltips and pack_rect.collidepoint(mouse_pos):
+            tooltip_text = f"{pack_names[pack_idx]}\nCost: {pack_costs[pack_idx]}"
+            tooltip_y = pack_rect.y + 80 + 5
+            if tooltip_y + 50 > game.height:
+                tooltip_y = pack_rect.y - 60
+            draw_tooltip(game, pack_rect.x, tooltip_y, tooltip_text)
+        pack_rects.append((pack_rect, pack_idx))
+        pack_x += 80 + 10 # Your spacing
+
+    # ADD: Draw free Grimoire rune next to packs (using stored var)
+    grimoire_rune = getattr(game, 'grimoire_rune', None) # Use stored var from gen
+    if grimoire_rune:
+        rune_x = pack_x_start + len(game.available_packs) * (80 + 10) # Dynamic after last pack
+        rune_y = pack_y
+        # Clamp inside panel if overflow
+        if rune_x + constants.CHARM_BOX_WIDTH > panel_x + panel_width - inner_padding:
+            rune_x = panel_x + panel_width - constants.CHARM_BOX_WIDTH - inner_padding # Right-align inside panel
+        rune_rect = pygame.Rect(rune_x, rune_y, constants.CHARM_BOX_WIDTH, constants.CHARM_BOX_HEIGHT)
+        icon_rect = pygame.Rect(rune_rect.x + (constants.CHARM_BOX_WIDTH - constants.CHARM_DIE_SIZE) // 2, rune_rect.y + 10, constants.CHARM_DIE_SIZE, constants.CHARM_DIE_SIZE)
+        draw_charm_die(game, icon_rect, grimoire_rune)
+        free_label = game.tiny_font.render("Free", True, (constants.THEME['text']))
+        game.screen.blit(free_label, (rune_rect.x + 5, rune_rect.y + constants.CHARM_BOX_HEIGHT - 30))
+        buy_rect = pygame.Rect(rune_rect.x + constants.CHARM_BOX_WIDTH - 60, rune_rect.y + constants.CHARM_BOX_HEIGHT - 30, 50, 20)
+        pygame.draw.rect(game.screen, (0, 150, 0), buy_rect)
+        buy_text = game.tiny_font.render("Buy", True, (constants.THEME['text']))
+        game.screen.blit(buy_text, (buy_rect.x + 10, buy_rect.y + 3))
+        buy_rects.append(buy_rect) # For buy handling
+        pack_rects.append((rune_rect, -1)) # Special index for buy
+        if not skip_tooltips and rune_rect.collidepoint(mouse_pos):
+            tooltip_text = grimoire_rune['name'] + ": " + grimoire_rune['desc'] + " (Free!)"
+            draw_tooltip(game, rune_rect.x, rune_rect.y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
 
     # Draw tooltips after all elements
     if not skip_tooltips and equipped_hover:
@@ -733,25 +774,39 @@ def draw_blinds_screen(game):
         game.screen.blit(target_text, (rect.x + (box_width - target_text.get_width()) // 2, rect.y + 50))
 
         # Preview for Boss
-        if blind == 'Boss' and game.upcoming_boss_effect:
-            effect_str = f"Effect: {game.upcoming_boss_effect['name']} - {game.upcoming_boss_effect['desc']}"
-            # Simple wrap if too long (split into lines if > box_width * 1.5)
+        if blind == 'Boss':
+            if game.current_boss_effect and game.current_boss_effect['name'] == 'DISABLED':
+                boss_name = "DISABLED"
+                boss_desc = "Boss effect disabled by Luchador Lens!"
+                boss_color = constants.THEME['disabled']  # Gray
+            elif game.upcoming_boss_effect:
+                boss_name = game.upcoming_boss_effect['name']
+                boss_desc = game.upcoming_boss_effect['desc']
+                boss_color = (255, 0, 0)  # Red
+            else:
+                boss_name = "Random"  # Fallback for no effect
+                boss_desc = "Boss effect TBD"
+                boss_color = (255, 0, 0)
+            
+            effect_str = f"{boss_name} - {boss_desc}"
+            # Your existing wrap logic...
             lines = []
             words = effect_str.split()
             current_line = ""
             for word in words:
-                if game.small_font.render(current_line + word, True, (255, 0, 0)).get_width() > box_width * 1.5:
+                if game.small_font.size(current_line + word + " ")[0] > box_width * 1.5:
                     lines.append(current_line.strip())
                     current_line = word + " "
                 else:
                     current_line += word + " "
             lines.append(current_line.strip())
             
-            y_offset = rect.y + box_height + 10  # Start below box
+            y_offset = rect.y + box_height + 10
             for line in lines:
-                effect_text = game.small_font.render(line, True, (255, 0, 0))  # Red for warning
-                game.screen.blit(effect_text, (rect.x + (box_width - effect_text.get_width()) // 2, y_offset))  # Center
-                y_offset += effect_text.get_height() + 5  # Vertical spacing
+                effect_text = game.small_font.render(line, True, boss_color)
+                game.screen.blit(effect_text, (rect.x + (box_width - effect_text.get_width()) // 2, y_offset))
+                y_offset += effect_text.get_height() + 5
+
         elif blind == 'Boss':  # Fallback if no effect (e.g., bug)
             fallback_text = game.small_font.render("Effect: Random", True, (255, 0, 0))
             game.screen.blit(fallback_text, (rect.x + (box_width - fallback_text.get_width()) // 2, rect.y + box_height + 10))

@@ -166,6 +166,7 @@ class ChromaRollGame:
             'Square Sphere': resource_path('assets/icons/square-sphere-icon.png'),
             'Cloud Cube': resource_path('assets/icons/cloud-cube-icon.png'),
             'Rocket Rune': resource_path('assets/icons/rocket-rune-icon.png'),
+            'Luchador Lens': resource_path('assets/icons/luchador-lens-icon.png'),
             'Gift Glyph': resource_path('assets/icons/gift-glyph-icon.png'),
             'Turtle Token': resource_path('assets/icons/turtle-token-icon.png'),
             'Erosion Edge': resource_path('assets/icons/erosion-edge-icon.png'),
@@ -289,6 +290,8 @@ class ChromaRollGame:
         self.initial_auto_roll_done = False  # For auto-roll in rolling phase
         self.original_center_value = None  # Save original 3rd die value for revert
 
+        
+
         # New for Fate's Favor
         self.used_fates_favor_this_blind = False
         self.fates_advantage_index = -1  # -1 means no advantage active
@@ -321,6 +324,11 @@ class ChromaRollGame:
         self.round_locket_coins = 0
         self.round_base_lucky_coins = 0
 
+        # In __init__, after dedup CHARMS_POOL
+        for c in data.CHARMS_POOL:
+            if 'sell_value' not in c:
+                c['sell_value'] = c['cost'] // 2  # Default half cost; adjust if full refund
+
         self._init_defaults()  # Call after one-time setups
 
     def _init_defaults(self):
@@ -335,6 +343,10 @@ class ChromaRollGame:
         self.discard_used_this_round = False  # Track if discard was used in the current hand's discard phase
         self.hands_left = MAX_HANDS  # Hands (scores) per round
         self.coins = 0  # Chroma Coins for upgrades
+        # **INSERT: Initialize round and blind (after coins or state vars)**
+        self.current_round = 1  # Start at Stake 1; adjust if 0-based
+        self.current_blind = 'Small'  # Or None if unset until blinds
+        self.luchador_disable_active = False  # **INSERT: Luchador flag (start false)**
         self.extra_coins = 0  # For tracking bonus coins from gold and silver dice
         if DEBUG and DEBUG_INFINITE_COINS:
             self.coins = 999999  # Infinite coins for debug (large value to simulate infinity without breaking int ops)
@@ -578,7 +590,7 @@ class ChromaRollGame:
 
     def advance_blind(self):
         """Advances to the next blind or stake and resets the dice bag."""
-        print("DEBUG: advance_blind called")  # Confirm entry
+        # print("DEBUG: advance_blind called")  # Confirm entry
         blind_order = ['Small', 'Big', 'Boss']
         current_index = blind_order.index(self.current_blind)
         if current_index < len(blind_order) - 1:
@@ -660,11 +672,11 @@ class ChromaRollGame:
                 i += 1
 
         # DEBUG: Final hands after all
-        print(f"DEBUG: Final hands_left after advance_blind: {self.hands_left}")
+        # print(f"DEBUG: Final hands_left after advance_blind: {self.hands_left}")
 
     def new_turn(self):
         """Starts a new turn: draw hand, set to value 1, reset holds and rerolls."""
-        print("DEBUG: new_turn called")  # Confirm entry
+        # print("DEBUG: new_turn called")  # Confirm entry
         #  print("DEBUG: Calling new_turn - pulling dice")  # Log to see when triggered
         self.hand = self.draw_hand()
         self.turn_initialized = True
@@ -679,11 +691,7 @@ class ChromaRollGame:
         self.discard_used_this_round = False  # Reset per hand
         # In new_turn (after self.discard_used_this_round = False)
         # NEW: Increment per-charm local turns for equipped charms
-        for charm in self.equipped_charms:
-            if 'local_turns' not in charm:
-                charm['local_turns'] = 0  # Init on first use
-            charm['local_turns'] += 1
-            print(f"DEBUG: {charm['name']} local_turns now {charm['local_turns']}")  # Temp debug—remove after
+        # Increment per-charm local turns for equipped charms
         self.used_buy_boon_this_turn = False
         self.selecting_buy_boon_die = False
         self.buy_boon_target_index = -1
@@ -699,12 +707,6 @@ class ChromaRollGame:
         self.selecting_disadvantage_die = False
         self.disadvantage_target_index = -1
         self.disadvantage_confirm_rect = None
-
-        # NEW: Increment per-charm local turns for equipped charms
-        for charm in self.equipped_charms:
-            if 'local_turns' not in charm:
-                charm['local_turns'] = 0  # Init on first use
-            charm['local_turns'] += 1
 
         self.update_hand_text()  # Update initial hand text (now reflects Turtle bonus on first hand)
         # In new_turn():
@@ -782,7 +784,7 @@ class ChromaRollGame:
                 self.fates_advantage_value = None
                 self.held_fates_advantage = False
                 self.selecting_fates_die = False  # Safety
-                print("Debug: Cleared Fate's Favor on reroll")
+                # print("Debug: Cleared Fate's Favor on reroll")
 
             # Animate cycling for non-held dice
             # Play roll sound here (at start of reroll)
@@ -811,7 +813,7 @@ class ChromaRollGame:
             # ADDED: Roll advantage if not held_advantage (independent)
             if self.has_advantage and not self.held_advantage:
                 self.advantage_value = random.randint(1, 6)
-                print("Debug: Rerolled advantage value:", self.advantage_value)
+                # print("Debug: Rerolled advantage value:", self.advantage_value)
 
             if not DEBUG:
                 self.rerolls_left -= 1
@@ -900,6 +902,10 @@ class ChromaRollGame:
                     end_prompt = EndPromptState(self)
                     self.state_machine.change_state(end_prompt)
                     return  # Exit early to avoid further logic
+                # **INSERT: Clear Luchador flag after Boss completion**
+                if self.current_blind == 'Boss':
+                    self.luchador_disable_active = False
+                    print("DEBUG: Luchador flag cleared after boss")
                 dynamic_interest_max = INTEREST_MAX
                 for charm in self.equipped_charms:
                     if charm['type'] == 'interest_max_bonus':
@@ -1010,36 +1016,59 @@ class ChromaRollGame:
         held_rolls = [(die, value) for i, (die, value) in enumerate(self.rolls) if self.held[i]]
         for idx, charm in enumerate(self.equipped_charms):
             if charm['type'] == 'die_bonus_perm' and idx not in self.disabled_charms:
-                print("Hiker Hex: Applying +4 to", len(held_rolls), "dice")
+                # print("Hiker Hex: Applying +4 to", len(held_rolls), "dice")
                 for die, _ in held_rolls:
                     die_id = die.get('id')
-                    if die_id is None:
-                        print("Warning: Die missing 'id'")  # If no 'id', add unique IDs to all dice in init
+                    # if die_id is None:
+                        # print("Warning: Die missing 'id'")  # If no 'id', add unique IDs to all dice in init
                     for bag_die in self.full_bag:
                         if bag_die.get('id') == die_id:
                             current_bonus = bag_die.get('score_bonus', 0)
                             bag_die['score_bonus'] = current_bonus + charm['value']
-                            print(f"Updated bag die {die_id}: now {bag_die['score_bonus']}")
+                            # print(f"Updated bag die {die_id}: now {bag_die['score_bonus']}")
                             break  # No need to loop further
                 break
 
         # score = self.calculate_score() # Old: Calculate score again
         score = final_score  # Use pre-calculated final score
-        print("Computed score:", score, "(base:", base_score, "chips:", charm_chips, "modifier:", 1 + charm_mono_add)  # Add this debug to see components
+        # print("Computed score:", score, "(base:", base_score, "chips:", charm_chips, "modifier:", 1 + charm_mono_add)  # Add this debug to see components
         self.round_score += score
+
+        # NEW: Increment Ice Shard hands_played on score (per played hand, no reset)
+        for charm in self.equipped_charms:
+            if charm['name'] == 'Ice Shard':
+                if 'hands_played' not in charm:
+                    charm['hands_played'] = 0
+                charm['hands_played'] += 1
+
+        # Apply Ice Shard decay to this hand's score
+        for charm in self.equipped_charms:
+            if charm['name'] == 'Ice Shard':
+                hands_played = charm['hands_played']
+                decay_bonus = max(0, charm['start'] - (charm['decay'] * (hands_played - 1)))
+                self.round_score += decay_bonus
+
+        # NEW: Increment Loyalty Luck local_turns on score (per played turn)
+        for charm in self.equipped_charms:
+            if charm['name'] == 'Loyalty Luck':
+                if 'local_turns' not in charm:
+                    charm['local_turns'] = 1  # Safety (shouldn't hit)
+                else:
+                    charm['local_turns'] += 1
+                print(f"DEBUG: Loyalty Luck local_turns now {charm['local_turns']} after score")  # Temp—remove after
 
         # Apply Square Sphere permanent bonus on charm if equipped, not disabled, and exactly 4 dice scored
         for idx, charm in enumerate(self.equipped_charms):
             if charm['name'] == 'Square Sphere' and idx not in self.disabled_charms:
                 if len(held_rolls) == 4:
                     charm['permanent_bonus'] = charm.get('permanent_bonus', 0) + charm['value']
-                    print("Square Sphere charm bonus applied (4 dice): now", charm['permanent_bonus'])  # Debug
+                    # print("Square Sphere charm bonus applied (4 dice): now", charm['permanent_bonus'])  # Debug
                 break
 
         for idx, charm in enumerate(self.equipped_charms):
             if charm['type'] == 'score_conditional' and idx not in self.disabled_charms:
                 self.permanent_score_bonus = getattr(self, 'permanent_score_bonus', 0) + charm['value']
-                print("Square Sphere permanent bonus applied: now", self.permanent_score_bonus)  # Debug, remove later
+                # print("Square Sphere permanent bonus applied: now", self.permanent_score_bonus)  # Debug, remove later
                 break
 
         # Apply Lucky Labyrinth permanent bonus on charm if equipped and triggers >0
@@ -1048,7 +1077,7 @@ class ChromaRollGame:
                 triggers = self.lucky_triggers
                 if triggers > 0:
                     charm['permanent_bonus'] = charm.get('permanent_bonus', 0.0) + (charm['value'] * triggers)
-                    print("Lucky Labyrinth permanent bonus applied:", charm['permanent_bonus'])  # Debug, remove later
+                    # print("Lucky Labyrinth permanent bonus applied:", charm['permanent_bonus'])  # Debug, remove later
                 break
 
         # Accumulate sound for lucky triggers but don't add coins yet
@@ -1203,14 +1232,14 @@ class ChromaRollGame:
                 if rune_gain > 0:
                     total_rune_coins += rune_gain
                     rune_gains_lines.append(f"{charm['name']}: ${rune_gain} ({gain_desc})")
-                    print(f"{charm['name']}: +{rune_gain} coins ({gain_desc})")  # Debug
+                    # print(f"{charm['name']}: +{rune_gain} coins ({gain_desc})")  # Debug
 
             # NEW: Boss defeat increment for Rocket (after gain calc, for next time)
             if self.current_blind == 'Boss':
                 for charm in self.equipped_charms:
                     if charm['type'] == 'coin_scaling':
                         charm['boss_defeated'] = charm.get('boss_defeated', 0) + 1
-                        print(f"Rocket Rune: Boss #{charm['boss_defeated']} defeated—next gain +{charm['boss']}")
+                        # print(f"Rocket Rune: Boss #{charm['boss_defeated']} defeated—next gain +{charm['boss']}")
                         break
 
             if self.green_pouch_active:
@@ -1250,6 +1279,16 @@ class ChromaRollGame:
             if rune_gains_lines:
                 rune_block = "Rune Gains:\n" + "\n".join(rune_gains_lines) + "\n"
 
+            # NEW: Gift Glyph sell bonus (after rune gains, before popup)
+            gift_bonus = 0
+            for idx, charm in enumerate(self.equipped_charms):
+                if charm['type'] == 'sell_bonus' and idx not in self.disabled_charms:
+                    for eq_charm in self.equipped_charms:  # Loop all equipped (including self)
+                        eq_charm['sell_value'] = eq_charm.get('sell_value', eq_charm['cost']) + charm['value']
+                        gift_bonus += charm['value']  # Track for popup if wanted
+                    print(f"Gift Glyph: +{charm['value']} sell to {len(self.equipped_charms)} charms")  # Debug, remove later
+                    break
+
             coin_gen_bonus = 0
             for idx, charm in enumerate(self.equipped_charms):
                 if charm['type'] == 'coin_gen' and idx not in self.disabled_charms:
@@ -1271,7 +1310,7 @@ class ChromaRollGame:
                 self.fates_advantage_value = None
                 self.held_fates_advantage = False
                 self.selecting_fates_die = False  # Safety
-                print("Debug: Cleared Fate's Favor after scoring")
+                # print("Debug: Cleared Fate's Favor after scoring")
             
             # NEW: Set flag for final boss win and award coins/clear accumulators
             final_boss_win = (self.current_blind == 'Boss' and self.current_stake == 8)
@@ -1284,17 +1323,22 @@ class ChromaRollGame:
             self.blind_won = True  # Set win flag if not already
 
             # NEW: Increment Turtle rounds_passed on round win (early, to avoid exits; for next enter)
-            print("DEBUG: Win block reached—checking Turtle increment")
+            # print("DEBUG: Win block reached—checking Turtle increment")
             turtle_incremented = False
             for charm in self.equipped_charms:
                 if charm['type'] == 'hands_decay':
                     old_passed = charm.get('rounds_passed', 0)
                     charm['rounds_passed'] = old_passed + 1
-                    print(f"Turtle Token WIN: Incremented from {old_passed} to {charm['rounds_passed']} for next round")
+                    # print(f"Turtle Token WIN: Incremented from {old_passed} to {charm['rounds_passed']} for next round")
                     turtle_incremented = True
                     break
-            if not turtle_incremented:
-                print("DEBUG: No Turtle Token found for increment (not equipped?)")
+            # if not turtle_incremented:
+                # print("DEBUG: No Turtle Token found for increment (not equipped?)")
+            
+            # **INSERT: Clear Luchador flag after blind completion**
+            if self.current_blind == 'Boss':
+                self.luchador_disable_active = False
+                print("DEBUG: Luchador flag cleared after boss")
 
             if final_boss_win:
                 # Skip popup, direct to prompt
@@ -1333,26 +1377,26 @@ class ChromaRollGame:
         # Then normal toggle
         if self.show_popup:
             return  # Block actions during popup
-        print(f"Debug: toggle_hold {index} - before flip: held[{index}] = {self.held[index]}, held_fates_advantage = {self.held_fates_advantage}")  # Debug swap
+        # print(f"Debug: toggle_hold {index} - before flip: held[{index}] = {self.held[index]}, held_fates_advantage = {self.held_fates_advantage}")  # Debug swap
         self.held[index] = not self.held[index]
-        print(f"Debug: toggle_hold {index} - after flip: held[{index}] = {self.held[index]}")
+        # print(f"Debug: toggle_hold {index} - after flip: held[{index}] = {self.held[index]}")
         
         # Existing amulet exclusion
         if index == 2 and self.held[index] and self.has_advantage and self.held_advantage:
             self.held_advantage = False
-            print("Debug: Unheld amulet advantage due to holding original - held_advantage =", self.held_advantage)
+            # print("Debug: Unheld amulet advantage due to holding original - held_advantage =", self.held_advantage)
         
         # For Fate's Favor: Flip original and unhold advantage if held
         if index == self.fates_advantage_index:
             if self.held[index] and self.held_fates_advantage:
                 self.held_fates_advantage = False
-                print(f"Debug: Unheld Fate's advantage due to holding original - held_fates_advantage = {self.held_fates_advantage}")
+                # print(f"Debug: Unheld Fate's advantage due to holding original - held_fates_advantage = {self.held_fates_advantage}")
             elif not self.held[index] and self.held_fates_advantage:
                 self.held_fates_advantage = False  # Optional: Unhold advantage if unholding original
-                print(f"Debug: Unheld Fate's advantage due to unholding original - held_fates_advantage = {self.held_fates_advantage}")
+                # print(f"Debug: Unheld Fate's advantage due to unholding original - held_fates_advantage = {self.held_fates_advantage}")
         
         self.update_hand_text()
-        print(f"Debug: toggle_hold {index} - after update_hand_text: held[{index}] = {self.held[index]}, held_fates_advantage = {self.held_fates_advantage}")  # Check no revert
+        # print(f"Debug: toggle_hold {index} - after update_hand_text: held[{index}] = {self.held[index]}, held_fates_advantage = {self.held_fates_advantage}")  # Check no revert
 
     def get_hand_type_and_score(self, is_preview=True):
         """Determines the hand type, base score, modifier, and final score.
@@ -1367,19 +1411,19 @@ class ChromaRollGame:
         if self.has_advantage and self.held_advantage:
             center_die = self.rolls[2][0]
             held_rolls.append((center_die, self.advantage_value))
-            print("Debug: Added advantage die to held_rolls with value", self.advantage_value)
+            # print("Debug: Added advantage die to held_rolls with value", self.advantage_value)
 
         # New for Fate's Favor
         if self.fates_advantage_index != -1 and self.held_fates_advantage:
             selected_die = self.rolls[self.fates_advantage_index][0]
             held_rolls.append((selected_die, self.fates_advantage_value))
-            print("Debug: Added Fate's advantage die to held_rolls with value", self.fates_advantage_value)
+            # print("Debug: Added Fate's advantage die to held_rolls with value", self.fates_advantage_value)
         
         # Use copy for held_rolls
         # held_rolls = [(die, value) for i, (die, value) in enumerate(rolls_copy) if self.held[i]]
 
-        print("Debug: Before hand type - held_rolls =", [(die['id'], value) for die, value in held_rolls])  # ID and value
-        print("Debug: rolls[2] =", self.rolls[2])  # Check if replaced
+        # print("Debug: Before hand type - held_rolls =", [(die['id'], value) for die, value in held_rolls])  # ID and value
+        # print("Debug: rolls[2] =", self.rolls[2])  # Check if replaced
 
         values = [value for die, value in held_rolls]
         colors_list = [die['color'] for die, value in held_rolls]
@@ -1717,19 +1761,14 @@ class ChromaRollGame:
             elif charm['type'] == 'mult_conditional':
                 # Loyalty Luck: +3 mult every 6 local turns
                 if 'local_turns' not in charm:
-                    charm['local_turns'] = 0  # Safety init
+                    charm['local_turns'] = 0
                 local_turn = charm['local_turns']
-                if local_turn % 6 == 0:  # Active local turn
+                every = charm.get('every', 6)
+                if local_turn % every == 0:  # Active
                     mult_add = charm['value']  # 3
                     charm_mult_add += mult_add
-                    modifier_desc.append(f"{charm['name']} +{mult_add} (local turn {local_turn})")
-                # No else: Countdown only in tooltip (hand text clean)
-                if charm.get('glass', False):
-                    glass_count = sum(1 for die, _ in held_rolls if die['color'] == 'Glass' or 'Glass' in die.get('enhancements', []))
-                    if glass_count > 0:
-                        mult_add = charm['value'] - 1
-                        charm_mult_add += mult_add
-                        modifier_desc.append(f"{charm['name']} +{mult_add}")
+                    modifier_desc.append(f"{charm['name']} +{mult_add}")  # Clean, no turn number
+                # No else: No off-turn text in hand
             elif charm['type'] == 'mult_per_face':
                 count = sum(1 for _, v in held_rolls if v in charm['faces'])
                 mult_add = charm['value'] * count
@@ -1749,11 +1788,10 @@ class ChromaRollGame:
                     charm_mult_add += mult_add
                     modifier_desc.append(f"{charm['name']} +{mult_add} ({self.avoid_streak} streak)")
             elif charm['type'] == 'mult_per_low_bag':
-                low_count = max(0, 25 - len(self.full_bag))
-                mult_add = charm['value'] * low_count
-                if mult_add > 0:
-                    charm_mult_add += mult_add
-                    modifier_desc.append(f"{charm['name']} +{mult_add} ({low_count} below 25)")
+                low_count = max(0, 25 - len(self.full_bag))  # Missing dice
+                mult_add = charm['value'] * low_count  # +2 per
+                charm_mult_add += mult_add
+                modifier_desc.append(f"{charm['name']} +{mult_add} ({low_count} below 25)")
             elif charm['type'] == 'mult_per_lucky':
                 mult_add = charm.get('permanent_bonus', 0.0)  # EDIT: Only add permanent_bonus; no current lucky_triggers mult for this hand
                 if mult_add > 0:
@@ -1869,17 +1907,19 @@ class ChromaRollGame:
                 charm_chips += face_sum  # Add to chips (base score additive)
                 modifier_desc.append(f"{charm['name']} +{face_sum} (Sum of faces)")
             elif charm['type'] == 'score_decay':
-                # Initialize hands_played on the charm if not present (per-charm counter)
                 if 'hands_played' not in charm:
                     charm['hands_played'] = 0
-                decay_bonus = max(0, charm['start'] - (charm['decay'] * charm['hands_played']))
+                # Preview: Assume current hands_played +1 for this hand
+                preview_hands = charm['hands_played'] + 1
+                decay_bonus = max(0, charm['start'] - (charm['decay'] * (preview_hands - 1)))
                 charm_chips += decay_bonus
+                modifier_desc.append(f"{charm['name']} +{decay_bonus} (hand {preview_hands})")
             elif charm['type'] == 'score_conditional':
                 if len(held_rolls) == charm['dice']:
                     charm_chips += charm['value']
                     charm_chips += charm.get('permanent_bonus', 0)
             elif charm['type'] == 'die_bonus_perm':
-                # No calculation here; increment moved to score_and_new_turn to avoid previews
+                
             
                 pass
 
@@ -2044,18 +2084,16 @@ class ChromaRollGame:
                     current_mult = self.get_stencil_mult()
                     tooltip_text += f" (Current: x{current_mult})"
                 
-                # NEW: Loyalty Luck tooltip (add here, inside hover if)
+                # Loyalty Luck tooltip (inside hover if)
+                print(f"DEBUG: Charm name exact: '{charm['name']}'")  # Temp—remove after
                 if charm['name'] == 'Loyalty Luck':
                     local_turn = charm.get('local_turns', 0)
-                    print(f"DEBUG: Loyalty Luck local_turns = {local_turn}")  # Temp debug—remove after
-                    if local_turn % 6 == 0:
+                    every = charm.get('every', 6)
+                    if local_turn % every == 0:
                         tooltip_text += f"\nActive: +{charm['value']} mult this turn"
                     else:
-                        turns_left = 6 - (local_turn % 6)
+                        turns_left = every - (local_turn % every)
                         tooltip_text += f"\nNext in {turns_left} turns"
-                    # Temp debug—remove after
-                    last_line = tooltip_text.rsplit('\n', 1)[-1] if '\n' in tooltip_text else tooltip_text
-                    print(f"DEBUG: Loyalty Luck tooltip append: {last_line}")
                 
                 if i in self.disabled_charms:
                     tooltip_text += " (Disabled this round by Boss Effect)"

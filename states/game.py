@@ -326,6 +326,25 @@ class GameState(State):
                     self.game.update_hand_text()
                     print(f"Debug: Toggled Fate's advantage - held_fates_advantage = {self.game.held_fates_advantage}, held[{self.game.fates_advantage_index}] = {self.game.held[self.game.fates_advantage_index]}")
                 # No optional original here—handled in toggle_hold below
+
+            # Luchador instant sell block (early in MOUSEBUTTONDOWN, after mouse_pos)
+            for i, charm in enumerate(self.game.equipped_charms):
+                x = 50 + i * (constants.CHARM_SIZE + 10)
+                y = 10
+                charm_rect = pygame.Rect(x, y, constants.CHARM_SIZE, constants.CHARM_SIZE)
+                if charm_rect.collidepoint(mouse_pos) and charm['name'] == 'Luchador Lens':
+                    if self.game.current_round == 8:
+                        self.game.temp_message = "Cannot disable the final boss!"
+                        self.game.temp_message_start = time.time()
+                        return
+                    # Sell & set flag
+                    self.game.coins += charm['cost']
+                    del self.game.equipped_charms[i]
+                    self.game.luchador_disable_active = True
+                    self.game.temp_message = "Luchador Lens sold! Boss will be disabled next boss round."
+                    self.game.temp_message_start = time.time()
+                    print(f"DEBUG: Luchador flag set from mid-game")
+                    return   
             
             # NEW: Familiar's Foresight swap logic (discard phase only)
             if self.game.is_discard_phase and self.game.selecting_bag_swap:
@@ -457,7 +476,7 @@ class GameState(State):
                 self.game.update_hand_text()
                 print(f"DEBUG: Disadvantage applied to die {i}: {current_value} → {new_value}")
                 return
-            
+    
             # NEW: Whirlwind Wild selection (roll phase only)
             if not self.game.is_discard_phase and self.game.selecting_whirlwind_die:
                 mouse_pos = pygame.mouse.get_pos()

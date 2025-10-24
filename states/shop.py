@@ -165,6 +165,11 @@ class ShopState(State):
                 if sell_rect.collidepoint(mouse_pos):
                     from states.confirm_sell import ConfirmSellState  # Lazy import
                     self.game.confirm_sell_index = i
+                    # **INSERT: Pre-set flag if Luchador (before transition)**
+                    charm = self.game.equipped_charms[i] if i < len(self.game.equipped_charms) else self.shop_items[i]  # Adjust based on your sell source
+                    if charm['name'] == 'Luchador Lens':
+                        self.game.pending_luchador_disable = True
+                        print("DEBUG: Luchador sell flagged from shop")
                     self.game.state_machine.change_state(ConfirmSellState(self.game))
                     return
 
@@ -176,7 +181,10 @@ class ShopState(State):
                     has_debt = any(c['type'] == 'negative_coins' for c in self.game.equipped_charms)
                     min_coins = -5 if has_debt else 0
                     if len(self.game.equipped_charms) < self.game.max_charms and self.game.coins - cost >= min_coins:
-                        self.game.equipped_charms.append(charm)
+                        self.game.equipped_charms.append(charm)  # After append
+                        # NEW: Init local_turns on equip (start at 1 for off-cycle first hand)
+                        if charm['name'] == 'Loyalty Luck':
+                            charm['local_turns'] = 1  # Start at 1 (Next in 5 turns)
                         self.game.coins -= cost
                         if self.game.current_boss_effect and self.game.current_boss_effect['name'] == 'Charm Eclipse':
                             self.game.disabled_charms = list(range(len(self.game.equipped_charms)))
@@ -196,10 +204,6 @@ class ShopState(State):
                         if grimoire_rune:
                             # Add to equipped charms (consumes it)
                             self.game.equipped_charms.append(grimoire_rune)
-                            # Optional: Immediately apply rune effect if it's a one-shot (e.g., cast it)
-                            # if 'effect' in grimoire_rune:
-                            #     self.game.apply_rune_effect(grimoire_rune['effect'])  # Customize based on your rune system
-                            # Clear the free rune
                             self.game.grimoire_rune = None
                             # Reset flag if using one
                             if hasattr(self.game, '_grimoire_drawn'):
