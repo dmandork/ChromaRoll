@@ -134,7 +134,7 @@ class ChromaRollGame:
             'Retrigger Rune': resource_path('assets/icons/retrigger-rune-icon.png'),
             'Economy Echo': resource_path('assets/icons/economy-echo-icon.png'),
             'Break Buffer': resource_path('assets/icons/break-buffer-icon.png'),
-            'Wild Whirl': resource_path('assets/icons/wild-whirl-icon.png'),
+            'Whirlwind Wild': resource_path('assets/icons/wild-whirl-icon.png'),
             'Discard Dynamo': resource_path('assets/icons/discard-dynamo-icon.png'),
             'Rune Recycler': resource_path('assets/icons/rune-recycler-icon.png'),
             'Kind King': resource_path('assets/icons/kind-king-icon.png'),
@@ -305,6 +305,16 @@ class ChromaRollGame:
         self.buy_boon_down_rect = None  # Temp for down arrow
         self.buy_boon_confirm_rect = None  # Temp for confirm button
 
+        # For disadvantage dice charm
+        self.used_disadvantage_this_turn = False  # Reset in new_turn
+        self.selecting_disadvantage_die = False  # Selection mode
+        self.disadvantage_target_index = -1  # Selected die
+        self.disadvantage_confirm_rect = None  # Confirm button
+
+        self.used_whirlwind_this_blind = False  # Per blind (resets in advance_blind)
+        self.selecting_whirlwind_die = False  # Selection mode
+        self.whirlwind_target_index = -1  # Selected die for free reroll
+
         # New for Gambler's Grimoire
         self.used_rune_cast_this_shop = False
 
@@ -375,6 +385,7 @@ class ChromaRollGame:
         self.current_rune = None  # For 
         self.current_rune_slot = -1
         self.selected_dice = []  # For die selection during apply
+    
 
         # Set initial hand texts
         self.update_hand_text()
@@ -617,6 +628,9 @@ class ChromaRollGame:
             # Note: Other effects applied in specific methods below
 
         self.round_score = 0
+        self.used_whirlwind_this_blind = False
+        self.selecting_whirlwind_die = False
+        self.whirlwind_target_index = -1
         self.hands_left = MAX_HANDS
         self.discards_left = MAX_DISCARDS
         self.extra_coins = 0
@@ -675,6 +689,10 @@ class ChromaRollGame:
         self.has_rolled = False  # No initial roll yet
         self.round_locket_coins = 0
         self.round_base_lucky_coins = 0
+        self.used_disadvantage_this_turn = False
+        self.selecting_disadvantage_die = False
+        self.disadvantage_target_index = -1
+        self.disadvantage_confirm_rect = None
 
         self.update_hand_text()  # Update initial hand text (now reflects Turtle bonus on first hand)
         # In new_turn():
@@ -1065,6 +1083,11 @@ class ChromaRollGame:
         # Handle Glass break chance (only for held Glass)
         for i, (die, _) in enumerate(self.rolls):
             if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
+                # NEW: Saving Throw check if equipped (use die value as save)
+                has_saving_throw = any(charm['type'] == 'break_save' and idx not in self.disabled_charms 
+                                    for idx, charm in enumerate(self.equipped_charms))
+                if has_saving_throw and value > 3:  # Success: skip break
+                    continue
                 self.sfx_channel.play(self.break_sound)
                 self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
                 self.bag = [d for d in self.bag if d['id'] != die['id']]
@@ -1084,12 +1107,18 @@ class ChromaRollGame:
             glass_count = sum(1 for i, (die, _) in enumerate(self.rolls) if die['color'] == 'Glass' and self.held[i])
             score *= (4 ** glass_count)
 
-            for i, (die, _) in enumerate(self.rolls):
+            # Mime retrigger break loop
+            for i, (die, value) in enumerate(self.rolls):  # Changed _ to value
                 if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
+                    # NEW: Saving Throw check if equipped (use die value as save)
+                    has_saving_throw = any(charm['type'] == 'break_save' and idx not in self.disabled_charms 
+                                        for idx, charm in enumerate(self.equipped_charms))
+                    if has_saving_throw and value > 3:  # Now value is defined
+                        continue
                     self.sfx_channel.play(self.break_sound)
                     self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
                     self.bag = [d for d in self.bag if d['id'] != die['id']]
-                    self.coins -= glass_break_penalty  # Penalty immediate
+                    self.coins -= glass_break_penalty
                     self.broken_dice.append(i)
                     self.break_effect_start = time.time()
 
@@ -1105,11 +1134,9 @@ class ChromaRollGame:
                             delta_score, delta_coins = self.apply_enhancement_retrigger(die, i)
                             synergy_score_delta += delta_score
                             synergy_coin_delta += delta_coins
-                    
+                        
                     score += synergy_score_delta  # Add to this hand's score
                     self.extra_coins += synergy_coin_delta  # Flows to total_coins/popup
-                    
-                    print(f"Synergy Scroll retriggered: +{synergy_score_delta} score, +{synergy_coin_delta} coins")  # Debug; remove later
 
         self.hands_left -= 1
         self.hands_left = max(0, self.hands_left)  # Clamp to prevent negative# In new_turn (or blind_start hook), after setting hands_left
@@ -1783,10 +1810,10 @@ class ChromaRollGame:
                     charm_chips += charm['value'] * discards_left
                     modifier_desc.append(f"{charm['name']} +{charm['value'] * discards_left} coins ({discards_left} discards)")
             elif charm['type'] == 'risk_mult':
-                # Stub: -1 to one die, +0.5 mult; handle die mod in roll phase
-                if not is_preview:
-                    charm_mult_add += charm['value']
-                    modifier_desc.append(f"{charm['name']} +{charm['value']} (risk)")
+                mult_add = charm['value']  # +0.5 mult overall
+                charm_mult_add += mult_add
+                if mult_add > 0:
+                    modifier_desc.append(f"{charm['name']} +{mult_add}")
             elif charm['type'] == 'loss_prevent':
                 # Stub: Prevent loss once per game; handle in game over logic
                 pass
@@ -1811,6 +1838,15 @@ class ChromaRollGame:
                     modifier_desc.append(f"{charm['name']} +{charm['value']} (final discard)")
             elif charm['type'] == 'score_per_coin':
                 charm_chips += charm['value'] * self.coins
+            # In the charm if-elif chain (e.g., after 'mult_per_milestone'):
+            elif charm['type'] == 'crit_bonus':
+                if all(value == 6 for _, value in held_rolls):
+                    mult_add = charm['value'] - 1  # e.g., +5 for value=6 (since base 1.0)
+                    charm_mult_add += mult_add
+                    if mult_add > 0:
+                        modifier_desc.append(f"{charm['name']} +{mult_add}")
+                    if not is_preview:
+                        self.coins += 50  # Fixed +50 coins on crit
             elif charm['type'] == 'score_bonus' and charm['value'] == 'stat_sum':
                 # Sum the face values of all held dice
                 face_sum = sum(value for _, value in held_rolls)
@@ -1828,6 +1864,7 @@ class ChromaRollGame:
                     charm_chips += charm.get('permanent_bonus', 0)
             elif charm['type'] == 'die_bonus_perm':
                 # No calculation here; increment moved to score_and_new_turn to avoid previews
+            
                 pass
 
         # Sum per-die bonuses for scored dice

@@ -40,6 +40,25 @@ class ShopState(State):
         # ADD: Reset for Gambler's Grimoire on new shop
         self.game.used_rune_cast_this_shop = False
         print("Debug: Reset Gambler's Grimoire for new shop")
+        # NEW: Homebrew Hazard random event if equipped
+        has_homebrew = any(charm['type'] == 'random_event' and idx not in self.game.disabled_charms 
+                   for idx, charm in enumerate(self.game.equipped_charms))
+        if has_homebrew and random.random() < 1/6:
+            # Success: +1 bonus charm (free common/rare pick)
+            available_pool = [c for c in data.CHARMS_POOL 
+                            if c['rarity'] in ['Common', 'Uncommon', 'Rare'] and  # Limit to non-legendary for balance
+                            c['name'] not in [e['name'] for e in self.game.equipped_charms]]
+            if available_pool:
+                bonus_charm = random.choice(available_pool)
+                bonus_charm['cost'] = 0  # Free
+                self.game.shop_charms.append(bonus_charm)
+                self.game.temp_message = f"Homebrew success! Free {bonus_charm['name']} added to shop."
+                self.game.temp_message_start = time.time()
+                print(f"DEBUG: Homebrew added free {bonus_charm['name']} to shop")
+            else:
+                self.game.temp_message = "Homebrew success... but no charms available!"
+                self.game.temp_message_start = time.time()
+    # No penalty branch—pure upside
 
     def update(self, dt):
         pass  # Expand for animations if needed

@@ -1574,6 +1574,8 @@ def draw_popup(game):
     return continue_rect
 
 def draw_instruction_popup(game, message):
+        if message is None:
+            return None  # Skip drawing if no message
         """Draws a simple instruction popup with Cancel button."""
         popup_width = 300  # Smaller for instructions
         popup_height = 150

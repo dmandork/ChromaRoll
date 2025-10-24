@@ -125,8 +125,10 @@ class GameState(State):
         # No flip here if it's in main loop; add if needed: pygame.display.flip()
 
         # NEW: Draw instruction popup overlay (after main screen, before animations/buttons for layering)
-        if self.show_instruction_popup:
+        if self.show_instruction_popup and self.game.temp_message is not None:
             self.cancel_rect = draw_instruction_popup(self.game, self.game.temp_message)
+        else:
+            self.cancel_rect = None  # Avoid None errors downstream
 
         # Add animations using state data (from update_die_rects and game attrs)
         current_time = time.time()
@@ -183,6 +185,14 @@ class GameState(State):
                 text_y = self.game.buy_boon_confirm_rect.y + (self.game.buy_boon_confirm_rect.height - confirm_text.get_height()) // 2
                 self.game.screen.blit(confirm_text, (text_x, text_y))
 
+        # NEW: Draw Disadvantage confirm if active
+        if self.game.disadvantage_target_index != -1 and self.game.disadvantage_confirm_rect:
+            pygame.draw.rect(self.game.screen, (100, 100, 100), self.game.disadvantage_confirm_rect)
+            confirm_text = self.game.small_font.render("Confirm", True, (255, 255, 255))
+            text_x = self.game.disadvantage_confirm_rect.x + (self.game.disadvantage_confirm_rect.width - confirm_text.get_width()) // 2
+            text_y = self.game.disadvantage_confirm_rect.y + (self.game.disadvantage_confirm_rect.height - confirm_text.get_height()) // 2
+            self.game.screen.blit(confirm_text, (text_x, text_y))
+
         for i, small_rect in enumerate(self.game.bag_die_rects or []):
             if i < len(self.game.bag) and small_rect.collidepoint(mouse_pos):
                 die = self.game.bag[i]
@@ -210,6 +220,11 @@ class GameState(State):
                 self.game.buy_boon_target_index = -1
                 self.game.buy_boon_up_rect = None
                 self.game.buy_boon_down_rect = None
+                self.game.selecting_disadvantage_die = False
+                self.game.disadvantage_target_index = -1
+                self.game.disadvantage_confirm_rect = None
+                self.game.selecting_whirlwind_die = False
+                self.game.whirlwind_target_index = -1
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()  # Moved to the top to ensure it's always defined
@@ -409,22 +424,76 @@ class GameState(State):
                             self.game.buy_boon_down_rect = None
                     return
                 
-                if self.game.buy_boon_down_rect and self.game.buy_boon_down_rect.collidepoint(mouse_pos):
-                    if self.game.buy_boon_shifts_left > 0 and self.game.coins >= 2:
-                        i = self.game.buy_boon_target_index
-                        die, value = self.game.rolls[i]
-                        new_value = max(1, value - 1)
+            # NEW: Disadvantage Dice selection (roll phase only)
+            if not self.game.is_discard_phase and self.game.selecting_disadvantage_die:
+                mouse_pos = pygame.mouse.get_pos()
+                for i in range(NUM_DICE_IN_HAND):
+                    die_rect = self.game.hand_die_rects[i]
+                    if die_rect.collidepoint(mouse_pos) and self.game.held[i]:  # Only held
+                        self.game.disadvantage_target_index = i
+                        self.game.temp_message = "Disadvantage applied? (-1 value, +0.5 mult)"
+                        self.show_instruction_popup = False
+                        self.game.selecting_disadvantage_die = False
+                        # Confirm button (below die)
+                        confirm_width = 80
+                        confirm_height = 30
+                        confirm_x = die_rect.x + (die_rect.width - confirm_width) // 2
+                        confirm_y = die_rect.y + die_rect.height + 10
+                        self.game.disadvantage_confirm_rect = pygame.Rect(confirm_x, confirm_y, confirm_width, confirm_height)
+                        print(f"DEBUG: Selected die {i} for Disadvantage")
+                        return
+
+            # NEW: Confirm click
+            if self.game.disadvantage_target_index != -1 and self.game.disadvantage_confirm_rect and self.game.disadvantage_confirm_rect.collidepoint(mouse_pos):
+                i = self.game.disadvantage_target_index
+                _, current_value = self.game.rolls[i]
+                new_value = max(1, current_value - 1)
+                self.game.rolls[i] = (self.game.rolls[i][0], new_value)  # Update value
+                self.game.used_disadvantage_this_turn = True
+                self.game.disadvantage_target_index = -1
+                self.game.disadvantage_confirm_rect = None
+                self.game.temp_message = f"Die disadvantaged to {new_value}! +0.5 mult."
+                self.game.temp_message_start = time.time()
+                self.game.update_hand_text()
+                print(f"DEBUG: Disadvantage applied to die {i}: {current_value} → {new_value}")
+                return
+            
+            # NEW: Whirlwind Wild selection (roll phase only)
+            if not self.game.is_discard_phase and self.game.selecting_whirlwind_die:
+                mouse_pos = pygame.mouse.get_pos()
+                for i in range(NUM_DICE_IN_HAND):
+                    die_rect = self.game.hand_die_rects[i]
+                    if die_rect.collidepoint(mouse_pos):
+                        # Free reroll this die (no hold check—any die)
+                        die, _ = self.game.rolls[i]
+                        new_value = random.choice(die['faces'])  # Reroll
                         self.game.rolls[i] = (die, new_value)
-                        self.game.coins -= 2
-                        self.game.buy_boon_shifts_left -= 1
+                        self.game.used_whirlwind_this_blind = True
+                        self.game.selecting_whirlwind_die = False
+                        self.game.whirlwind_target_index = -1  # Not needed, but clear
+                        self.game.temp_message = f"Free reroll on die {i}! Rolled {new_value}."
+                        self.game.temp_message_start = time.time()
                         self.game.update_hand_text()
-                        print(f"DEBUG: Shifted down die {i} to {new_value}; coins: {self.game.coins}, shifts left: {self.game.buy_boon_shifts_left}")
-                        if self.game.buy_boon_shifts_left == 0:
-                            self.game.used_buy_boon_this_turn = True
-                            self.game.buy_boon_target_index = -1
-                            self.game.buy_boon_up_rect = None
-                            self.game.buy_boon_down_rect = None
-                    return
+                        self.game.sfx_channel.play(self.game.roll_sound)  # Optional SFX
+                        print(f"DEBUG: Whirlwind free rerolled die {i} to {new_value}")
+                        return
+
+            if self.game.buy_boon_down_rect and self.game.buy_boon_down_rect.collidepoint(mouse_pos):
+                if self.game.buy_boon_shifts_left > 0 and self.game.coins >= 2:
+                    i = self.game.buy_boon_target_index
+                    die, value = self.game.rolls[i]
+                    new_value = max(1, value - 1)
+                    self.game.rolls[i] = (die, new_value)
+                    self.game.coins -= 2
+                    self.game.buy_boon_shifts_left -= 1
+                    self.game.update_hand_text()
+                    print(f"DEBUG: Shifted down die {i} to {new_value}; coins: {self.game.coins}, shifts left: {self.game.buy_boon_shifts_left}")
+                    if self.game.buy_boon_shifts_left == 0:
+                        self.game.used_buy_boon_this_turn = True
+                        self.game.buy_boon_target_index = -1
+                        self.game.buy_boon_up_rect = None
+                        self.game.buy_boon_down_rect = None
+                return
     
             # Button clicks
             if self.reroll_rect and self.reroll_rect.collidepoint(mouse_pos):
@@ -472,6 +541,26 @@ class GameState(State):
                         self.game.temp_message = "Select hand die to shift (2 coins per +/-1, max 2 shifts)"
                         self.show_instruction_popup = True
                         print("DEBUG: Buy Boon activated—select die")
+                        break
+                    elif charm['name'] == "Disadvantage Dice" and i not in self.game.disabled_charms and not self.game.used_disadvantage_this_turn and not self.game.is_discard_phase:
+                        self.game.selecting_disadvantage_die = True
+                        self.game.temp_message = "Select die to disadvantage (-1 value, +0.5 mult)"
+                        self.show_instruction_popup = True
+                        print("DEBUG: Disadvantage Dice activated—select die")
+                        break
+                    elif charm['name'] == "Whirlwind Wild" and i not in self.game.disabled_charms and not self.game.used_whirlwind_this_blind and not self.game.is_discard_phase:
+                        # Check for Rainbow charge
+                        print(f"DEBUG: Whirlwind clicked - disabled? {i in self.game.disabled_charms}, used? {self.game.used_whirlwind_this_blind}, discard phase? {self.game.is_discard_phase}")
+                        has_rainbow_charge = any(die['color'] == 'Rainbow' for die, _ in self.game.rolls)
+                        print(f"DEBUG: Rainbow charge available? {has_rainbow_charge} (rolls: {[die['color'] for die, _ in self.game.rolls]})")
+                        if has_rainbow_charge:
+                            self.game.selecting_whirlwind_die = True
+                            self.game.temp_message = "Select die for free reroll (Rainbow charge)"
+                            self.show_instruction_popup = True
+                            print("DEBUG: Whirlwind Wild activated—select die")
+                        else:
+                            self.game.temp_message = "No Rainbow charge available!"
+                            self.game.temp_message_start = time.time()
                         break
 
             for i, tray_rect in enumerate(self.tray_rects):

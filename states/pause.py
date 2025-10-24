@@ -27,27 +27,37 @@ class PauseMenuState(State):
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                # Resume game
+                # Resume on ESC
+                self.game.is_resuming = True  # Set flag to skip GameState reset
                 self.game.state_machine.change_state(self.game.previous_state)
                 return
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
             
-            # Resume button (e.g., "Return to Game")
-            if self.resume_rect and self.resume_rect.collidepoint(mouse_pos):
-                self.game.state_machine.change_state(self.game.previous_state)
-                return
+            # Unpack button_rects for specific checks (assume order: 0=Resume, 1=Main Menu, 2=Quit)
+            if self.button_rects:
+                # Resume (index 0)
+                if len(self.button_rects) > 0 and self.button_rects[0][0].collidepoint(mouse_pos):
+                    self.game.is_resuming = True  # Set flag to skip GameState reset
+                    self.game.state_machine.change_state(self.game.previous_state)
+                    return
+                
+                # Main Menu (index 1)
+                if len(self.button_rects) > 1 and self.button_rects[1][0].collidepoint(mouse_pos):
+                    from states.init import InitState  # Or BlindsState if preferred
+                    self.game.state_machine.change_state(InitState(self.game))
+                    return
+                
+                # Quit (index 2)
+                if len(self.button_rects) > 2 and self.button_rects[2][0].collidepoint(mouse_pos):
+                    # Save before quit
+                    savegame.save_game(self.game)
+                    pygame.quit()
+                    sys.exit()
             
-            # Menu button (e.g., "Quit to Menu")
-            if self.menu_rect and self.menu_rect.collidepoint(mouse_pos):
-                from states.blinds import BlindsState  # Lazy import
-                self.game.state_machine.change_state(BlindsState(self.game))
+            # Mute toggle (on self.mute_button_rect from draw_pause_menu)
+            if self.mute_button_rect and self.mute_button_rect.collidepoint(mouse_pos):
+                self.game.toggle_mute()
+                print(f"DEBUG: Muted: {self.game.mute}")  # For testing
                 return
-            
-            # Quit button (e.g., "Quit Game")
-            if self.quit_rect and self.quit_rect.collidepoint(mouse_pos):
-                # Save before quit
-                savegame.save_game(self.game)
-                pygame.quit()
-                sys.exit()

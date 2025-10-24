@@ -56,6 +56,8 @@ def grayscale_surface(surface):
     return surface
 
 def wrap_text(font, text, max_width):  # Or keep as word_wrap if preferred
+    if text is None:
+        return []  # Return empty list
     paragraphs = text.split('\n')
     lines = []
     for para in paragraphs:
