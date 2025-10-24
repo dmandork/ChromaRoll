@@ -678,6 +678,12 @@ class ChromaRollGame:
         self.turn += 1
         self.discard_used_this_round = False  # Reset per hand
         # In new_turn (after self.discard_used_this_round = False)
+        # NEW: Increment per-charm local turns for equipped charms
+        for charm in self.equipped_charms:
+            if 'local_turns' not in charm:
+                charm['local_turns'] = 0  # Init on first use
+            charm['local_turns'] += 1
+            print(f"DEBUG: {charm['name']} local_turns now {charm['local_turns']}")  # Temp debug—remove after
         self.used_buy_boon_this_turn = False
         self.selecting_buy_boon_die = False
         self.buy_boon_target_index = -1
@@ -693,6 +699,12 @@ class ChromaRollGame:
         self.selecting_disadvantage_die = False
         self.disadvantage_target_index = -1
         self.disadvantage_confirm_rect = None
+
+        # NEW: Increment per-charm local turns for equipped charms
+        for charm in self.equipped_charms:
+            if 'local_turns' not in charm:
+                charm['local_turns'] = 0  # Init on first use
+            charm['local_turns'] += 1
 
         self.update_hand_text()  # Update initial hand text (now reflects Turtle bonus on first hand)
         # In new_turn():
@@ -1703,11 +1715,15 @@ class ChromaRollGame:
                     charm_mult_add += mult_add
                     modifier_desc.append(f"{charm['name']} +{mult_add} ({count} {charm['color']})")
             elif charm['type'] == 'mult_conditional':
-                if charm.get('mono', False):
-                    if len(set(colors_list)) == 1:
-                        mult_add = charm['value'] - 1
-                        charm_mult_add += mult_add
-                        modifier_desc.append(f"{charm['name']} +{mult_add}")
+                # Loyalty Luck: +3 mult every 6 local turns
+                if 'local_turns' not in charm:
+                    charm['local_turns'] = 0  # Safety init
+                local_turn = charm['local_turns']
+                if local_turn % 6 == 0:  # Active local turn
+                    mult_add = charm['value']  # 3
+                    charm_mult_add += mult_add
+                    modifier_desc.append(f"{charm['name']} +{mult_add} (local turn {local_turn})")
+                # No else: Countdown only in tooltip (hand text clean)
                 if charm.get('glass', False):
                     glass_count = sum(1 for die, _ in held_rolls if die['color'] == 'Glass' or 'Glass' in die.get('enhancements', []))
                     if glass_count > 0:
@@ -1796,11 +1812,11 @@ class ChromaRollGame:
                 if not is_preview and wild_count > 0:
                     charm_chips += charm['value'] * wild_count
                     modifier_desc.append(f"{charm['name']} +{charm['value'] * wild_count} coins ({wild_count} wilds)")
-            elif charm['type'] == 'final_mult_conditional':
-                # Stub: +3 mult on last hand with enhancement; needs hand count check
-                if not is_preview and getattr(self, 'is_last_hand', False) and any(die.get('enhancements') for die, _ in held_rolls):
-                    charm_mult_add += charm['value']
-                    modifier_desc.append(f"{charm['name']} +{charm['value']} (final)")
+            elif charm['type'] == 'final_mult':
+                if self.hands_left == 1:  # Last hand of round
+                    mult_add = charm['value']
+                    charm_mult_add += mult_add
+                    modifier_desc.append(f"{charm['name']} +{mult_add} (final hand)")
             elif charm['type'] == 'face_buy_high':
                 # Stub: Pay 3 coins for +2 to a face; handle in event/turn logic
                 pass
@@ -2012,6 +2028,8 @@ class ChromaRollGame:
             
             if rect.collidepoint(mouse_pos):
                 tooltip_text = charm['name'] + ": " + charm['desc']
+                print(f"DEBUG: Hover on {charm['name']} - building tooltip")  # Temp debug—remove after
+                
                 if charm['name'] == 'Enhance Elixir':
                     # Compute total like in get_hand_type_and_score
                     held_rolls = [(die, value) for j, (die, value) in enumerate(self.game.rolls) if self.game.held[j]]
@@ -2025,6 +2043,20 @@ class ChromaRollGame:
                 elif charm['type'] == 'empty_slot_mult':
                     current_mult = self.get_stencil_mult()
                     tooltip_text += f" (Current: x{current_mult})"
+                
+                # NEW: Loyalty Luck tooltip (add here, inside hover if)
+                if charm['name'] == 'Loyalty Luck':
+                    local_turn = charm.get('local_turns', 0)
+                    print(f"DEBUG: Loyalty Luck local_turns = {local_turn}")  # Temp debug—remove after
+                    if local_turn % 6 == 0:
+                        tooltip_text += f"\nActive: +{charm['value']} mult this turn"
+                    else:
+                        turns_left = 6 - (local_turn % 6)
+                        tooltip_text += f"\nNext in {turns_left} turns"
+                    # Temp debug—remove after
+                    last_line = tooltip_text.rsplit('\n', 1)[-1] if '\n' in tooltip_text else tooltip_text
+                    print(f"DEBUG: Loyalty Luck tooltip append: {last_line}")
+                
                 if i in self.disabled_charms:
                     tooltip_text += " (Disabled this round by Boss Effect)"
                 screens.draw_tooltip(x, y + CHARM_SIZE + TOOLTIP_PADDING, tooltip_text)
