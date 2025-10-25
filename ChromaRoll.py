@@ -318,6 +318,12 @@ class ChromaRollGame:
         self.selecting_whirlwind_die = False  # Selection mode
         self.whirlwind_target_index = -1  # Selected die for free reroll
 
+        self.selecting_bag_swap = False
+        self.swap_use_left = 1
+        self.swap_source_index = -1
+        self.selecting_bag_die = False
+
+
         # New for Gambler's Grimoire
         self.used_rune_cast_this_shop = False
 
@@ -325,6 +331,10 @@ class ChromaRollGame:
         self.round_base_lucky_coins = 0
 
         self.is_last_hand = False
+
+        self.first_discard_this_turn = True
+
+        self.last_state_was_rune = False
 
         # In __init__, after dedup CHARMS_POOL
         for c in data.CHARMS_POOL:
@@ -343,6 +353,7 @@ class ChromaRollGame:
         self.rerolls_left = -1 if DEBUG and DEBUG_UNLIMITED_REROLLS else MAX_REROLLS  # Rerolls per turn (-1 for unlimited in debug)
         self.discards_left = MAX_DISCARDS  # Discards per round
         self.discard_used_this_round = False  # Track if discard was used in the current hand's discard phase
+        self.first_discard_this_turn = True
         self.hands_left = MAX_HANDS  # Hands (scores) per round
         self.coins = 0  # Chroma Coins for upgrades
         # **INSERT: Initialize round and blind (after coins or state vars)**
@@ -653,6 +664,11 @@ class ChromaRollGame:
         if self.current_boss_effect and self.current_boss_effect['name'] == 'Charm Eclipse':
             self.disabled_charms = list(range(len(self.equipped_charms)))  # Ensure all current charms disabled
 
+        # FIXED: Set dummy rolls after refill to avoid fresh pull on new GameState
+        self.rolls = [(None, 0) for _ in range(5)]  # Empty hand for new blind
+        self.hand = [None] * 5  # Clear hand
+        self.has_rolled = False  # Reset for new blind
+
         # Handle Dagger charm
         i = 0
         while i < len(self.equipped_charms) - 1:
@@ -908,7 +924,7 @@ class ChromaRollGame:
                 # **INSERT: Clear Luchador flag after Boss completion**
                 if self.current_blind == 'Boss':
                     self.luchador_disable_active = False
-                    print("DEBUG: Luchador flag cleared after boss")
+                    # print("DEBUG: Luchador flag cleared after boss")
                 dynamic_interest_max = INTEREST_MAX
                 for charm in self.equipped_charms:
                     if charm['type'] == 'interest_max_bonus':
@@ -973,6 +989,18 @@ class ChromaRollGame:
             self.discard_selected = [False] * NUM_DICE_IN_HAND
             self.discards_left -= 1
             self.discard_used_this_round = True
+            # Trading Token: Destroy 1 die for coins on first discard
+            if self.first_discard_this_turn and selected_count == 1:
+                self.first_discard_this_turn = False
+                for charm in self.equipped_charms:
+                    if charm['type'] == 'discard_destroy_coin':
+                        destroyed_die = self.hand[selected_indices[0]]  # The selected die
+                        self.bag = [d for d in self.bag if d['id'] != destroyed_die['id']]
+                        self.full_bag = [d for d in self.full_bag if d['id'] != destroyed_die['id']]
+                        self.coins += charm['value']  # +3
+                        self.temp_message = f"Destroyed die for +{charm['value']} coins!"
+                        self.temp_message_start = time.time()
+                        break  # Assume one charm
             # New: Grant extra reroll if Recycler equipped and discard used
             recycler_count = sum(1 for c in self.equipped_charms if c['type'] == 'reroll_recycler')
             if recycler_count > 0:
@@ -1058,7 +1086,7 @@ class ChromaRollGame:
                     charm['local_turns'] = 1  # Safety (shouldn't hit)
                 else:
                     charm['local_turns'] += 1
-                print(f"DEBUG: Loyalty Luck local_turns now {charm['local_turns']} after score")  # Temp—remove after
+                # print(f"DEBUG: Loyalty Luck local_turns now {charm['local_turns']} after score")  # Temp—remove after
 
         # Apply Square Sphere permanent bonus on charm if equipped, not disabled, and exactly 4 dice scored
         for idx, charm in enumerate(self.equipped_charms):
@@ -1289,7 +1317,7 @@ class ChromaRollGame:
                     for eq_charm in self.equipped_charms:  # Loop all equipped (including self)
                         eq_charm['sell_value'] = eq_charm.get('sell_value', eq_charm['cost']) + charm['value']
                         gift_bonus += charm['value']  # Track for popup if wanted
-                    print(f"Gift Glyph: +{charm['value']} sell to {len(self.equipped_charms)} charms")  # Debug, remove later
+                    # print(f"Gift Glyph: +{charm['value']} sell to {len(self.equipped_charms)} charms")  # Debug, remove later
                     break
 
             coin_gen_bonus = 0
@@ -1341,7 +1369,7 @@ class ChromaRollGame:
             # **INSERT: Clear Luchador flag after blind completion**
             if self.current_blind == 'Boss':
                 self.luchador_disable_active = False
-                print("DEBUG: Luchador flag cleared after boss")
+                # print("DEBUG: Luchador flag cleared after boss")
 
             if final_boss_win:
                 # Skip popup, direct to prompt
@@ -2128,7 +2156,7 @@ class ChromaRollGame:
             
             if rect.collidepoint(mouse_pos):
                 tooltip_text = charm['name'] + ": " + charm['desc']
-                print(f"DEBUG: Hover on {charm['name']} - building tooltip")  # Temp debug—remove after
+                # print(f"DEBUG: Hover on {charm['name']} - building tooltip")  # Temp debug—remove after
                 
                 if charm['name'] == 'Enhance Elixir':
                     # Compute total like in get_hand_type_and_score
@@ -2145,7 +2173,7 @@ class ChromaRollGame:
                     tooltip_text += f" (Current: x{current_mult})"
                 
                 # Loyalty Luck tooltip (inside hover if)
-                print(f"DEBUG: Charm name exact: '{charm['name']}'")  # Temp—remove after
+                # print(f"DEBUG: Charm name exact: '{charm['name']}'")  # Temp—remove after
                 if charm['name'] == 'Loyalty Luck':
                     local_turn = charm.get('local_turns', 0)
                     every = charm.get('every', 6)
@@ -2322,7 +2350,7 @@ class ChromaRollGame:
         
         # ADD: Gambler's Grimoire - add free random rune if not used this shop
         active_charms = [c for idx, c in enumerate(self.equipped_charms) if idx not in self.disabled_charms]
-        print(f"Debug: generate_shop - active_charms = {[c['name'] for c in active_charms]}, used_rune_cast_this_shop = {self.used_rune_cast_this_shop}")
+        # print(f"Debug: generate_shop - active_charms = {[c['name'] for c in active_charms]}, used_rune_cast_this_shop = {self.used_rune_cast_this_shop}")
 
         if any(c['type'] == 'rune_cast' for c in active_charms) and not self.used_rune_cast_this_shop:
             if hasattr(data, 'MYSTIC_RUNES') and data.MYSTIC_RUNES:
@@ -2331,17 +2359,15 @@ class ChromaRollGame:
                 random_rune['free_grimoire'] = True
                 self.shop_charms.append(random_rune)
                 self.used_rune_cast_this_shop = True
-                print(f"Debug: Added free random rune '{random_rune['name']}' from Gambler's Grimoire")
+                # print(f"Debug: Added free random rune '{random_rune['name']}' from Gambler's Grimoire")
                 
                 # Store for bottom draw and remove from shop_charms to avoid top draw
                 self.grimoire_rune = random_rune
                 self.shop_charms.remove(random_rune)
-                print("Debug: Stored grimoire_rune for bottom draw = ", self.grimoire_rune['name'])
-                print("Debug: Removed grimoire_rune from shop_charms - now = ", [c['name'] for c in self.shop_charms])
-            else:
-                print("Debug: No MYSTIC_RUNES data - skipping free rune")
-        else:
-            print("Debug: Skipping Grimoire - no active rune_cast or already used")
+                # print("Debug: Stored grimoire_rune for bottom draw = ", self.grimoire_rune['name'])
+                # print("Debug: Removed grimoire_rune from shop_charms - now = ", [c['name'] for c in self.shop_charms])
+            
+        
 
         # Compute weights per charm: base rarity * stake modifier
         charm_weights = []
@@ -2378,11 +2404,14 @@ class ChromaRollGame:
         #  print("DEBUG: Generated shop charms:", [c['name'] for c in self.shop_charms])  # Optional: Confirm no dups (remove after test)
 
     def add_to_rune_tray(self, rune):
+        print(f"DEBUG: Adding rune to tray: {rune['name']}")  # Add
         for k in range(len(self.rune_tray)):
             if self.rune_tray[k] is None:
                 self.rune_tray[k] = copy.deepcopy(rune)
+                print(f"DEBUG: Added to slot {k}")  # Add
                 return True
         self.temp_message = "Rune tray full - discard a rune first."
+        print("DEBUG: Tray full – skipped")  # Add
         return False
 
     def reroll_shop(self):
@@ -2399,8 +2428,7 @@ class ChromaRollGame:
                 if die['id'] in self.boss_shuffled_faces:
                     die['faces'] = copy.deepcopy(self.boss_shuffled_faces[die['id']])
             # Optional: Log for debug
-            if DEBUG:
-                print("Applied boss face shuffle to", len(all_dice), "dice")
+            
 
     def apply_rune_effect(self, rune, die_list=None):
         if die_list is None:

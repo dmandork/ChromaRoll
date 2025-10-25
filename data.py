@@ -204,7 +204,7 @@ RUNE_PACKS = [
 # In data.py, update MYSTIC_RUNES to add 'max_dice' key (0 for no die, 1 default, 2/3 for multi)
 MYSTIC_RUNES = [
     {'name': 'Mystic Fool Rune', 'desc': 'Creates a copy of the last Mystic or Upgrade Rune used this run (must have room in consumable inventory).', 'max_dice': 0},
-    {'name': 'Mystic Luck Rune', 'desc': 'Enhances 1 selected die in bag to "Lucky" (25% chance for +1 coin).', 'max_dice': 1},
+    {'name': 'Mystic Luck Rune', 'desc': 'Enhances 1 selected die in bag to "Lucky" (33% chance for +1 coin).', 'max_dice': 1},
     {'name': 'Mystic Oracle Rune', 'desc': 'Creates up to 2 random Upgrade Runes for hand type boosts.', 'max_dice': 0},
     {'name': 'Mystic Mult Rune', 'desc': 'Enhances 2 selected dice in bag to add +0.5x mult when scored (stacks with Glass, etc.).', 'max_dice': 2},
     {'name': 'Mystic Emperor Rune', 'desc': 'Creates up to 2 random Mystic Runes (must have room).', 'max_dice': 0},
@@ -232,7 +232,7 @@ MYSTIC_RUNES = [
 # In data.py, after MYSTIC_RUNES
 
 ENH_DESC = {
-    'Lucky': 'Lucky: 25% chance for +1 coin.',
+    'Lucky': 'Lucky: 33% chance for +1 coin.',
     'Mult': 'Mult: Adds +0.5x mult when scored (stacks with Glass, etc.).',
     'Bonus': 'Bonus: Adds +10 score when scored.',
     'Wild': 'Rainbow: Acts as any color for mono/rainbow bonuses.',
@@ -255,7 +255,7 @@ ENH_DESC = {
 }
 
 ENH_EFFECTS = {
-    'Lucky': {'coin_chance': 0.25, 'coin_value': 1},
+    'Lucky': {'coin_chance': 0.33, 'coin_value': 1},
     'Mult': {'mult': 0.5},
     'Bonus': {'score': 10},
     'Wild': {},  # No direct score/coin; assume handled in hand_type (e.g., color flex)

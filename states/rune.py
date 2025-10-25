@@ -113,19 +113,23 @@ class RuneSelectState(State):
                 draw_custom_button(self.game, self.skip_rect, "Skip Pack", is_hover=self.skip_rect.collidepoint(mouse_pos))
 
         else:
-            # Preview mode: Show updated dice (no runes, no borders)
+            # Preview mode: Show updated dice (no runes, no borders, no full screen draw to avoid pull)
             title_text = self.game.font.render("Preview Enhanced Dice", True, THEME['text'])
             self.game.screen.blit(title_text, (self.game.width // 2 - title_text.get_width() // 2, 50))
 
-            # Show enhanced dice (centered, no yellow borders)
+            # Manual enhanced dice draw (centered, no yellow borders)
             num_preview = len(self.preview_dies)
-            total_preview_width = num_preview * DIE_SIZE + (num_preview - 1) * 10
-            preview_start_x = (self.game.width - total_preview_width) // 2
-            for k, die in enumerate(self.preview_dies):
-                die_x = preview_start_x + k * (DIE_SIZE + 10)
-                die_rect = pygame.Rect(die_x, self.game.height//2 - 100, DIE_SIZE, DIE_SIZE)  # Higher y for space
-                draw_rounded_element(self.game.screen, die_rect, COLORS[die['color']], inner_content=lambda r: self.draw_dots_or_icon(die))
-                # Call enhancement visuals if you have a function (e.g., draw_enhancement_visuals(self.game, die_rect, die))
+            if num_preview > 0:
+                total_preview_width = num_preview * DIE_SIZE + (num_preview - 1) * 10
+                preview_start_x = (self.game.width - total_preview_width) // 2
+                for k, die in enumerate(self.preview_dies):
+                    die_x = preview_start_x + k * (DIE_SIZE + 10)
+                    die_rect = pygame.Rect(die_x, self.game.height//2 - 100, DIE_SIZE, DIE_SIZE)  # Higher y for space
+                    draw_rounded_element(self.game.screen, die_rect, COLORS[die['color']], inner_content=lambda r: self.draw_dots_or_icon(die))
+                    # Call enhancement visuals if you have it (e.g., draw_enhancement_visuals(self.game, die_rect, die))
+            else:
+                no_dice_text = self.game.small_font.render("No dice affected – rune applied!", True, THEME['text'])
+                self.game.screen.blit(no_dice_text, (self.game.width // 2 - no_dice_text.get_width() // 2, self.game.height // 2))
 
             if self.preview_message:
                 msg_text = self.game.small_font.render(self.preview_message, True, (255, 255, 0))
@@ -221,20 +225,40 @@ class RuneUseState(State):
     def __init__(self, game, rune):
         super().__init__(game)
         self.rune = rune  # Single rune to apply
-        self.selected_die_indices = []  # For multi if max_dice > 0
-        self.random_dice = random.sample(self.game.bag, min(8, len(self.game.bag)))  # 8 random for mod
-        self.die_rects = []   # To store for handle_event
+        self.selected_die_indices = []  # FIXED: Consistent for selection
+        self.max_dice = rune.get('max_dice', 0)
+        self.random_dice = []
+        self.die_rects = []  # To store for handle_event
         self.confirm_rect = None
         self.cancel_rect = None  # To cancel back
         self.hover = False  # For rune tooltip
+        self.low_bag_message = ""  # For bag <8
+
+        # Sample dice if needed
+        if self.max_dice > 0:
+            bag_len = len(self.game.bag)
+            print(f"DEBUG: RuneUseState bag_len: {bag_len}, max_dice: {self.max_dice}")  # TEMP
+            if bag_len == 0:
+                self.low_bag_message = "Bag empty – cannot select dice!"
+            else:
+                sample_size = min(8, bag_len)
+                self.random_dice = random.sample(self.game.bag, sample_size)
+                if bag_len < 8:
+                    self.low_bag_message = f"Bag low ({bag_len} dice) – limited options."
+        else:
+            print(f"DEBUG: RuneUseState max_dice=0 – no dice needed for {rune['name']}")  # TEMP
+
+        self.temp_message = f"Select up to {self.max_dice} dice for {rune['name']}"
+        self.game.temp_message = self.temp_message
+        self.game.show_instruction_popup = True
 
     def draw(self):
         self.game.screen.fill(THEME['background'])
-        # Top: Single rune
+        # Top: Single rune (no full screen draw to avoid pull)
         rune_rect = pygame.Rect(self.game.width // 2 - CHARM_BOX_WIDTH // 2, 50, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
         pygame.draw.rect(self.game.screen, (200,200,200), rune_rect)  # Gray box
         
-        # Wrap text
+        # Wrap name
         lines = wrap_text(self.game.small_font, self.rune['name'], CHARM_BOX_WIDTH - 20)
         y_offset = rune_rect.centery - (len(lines) * self.game.small_font.get_height() // 2)
         for line in lines:
@@ -242,31 +266,29 @@ class RuneUseState(State):
             self.game.screen.blit(text, (rune_rect.centerx - text.get_width()//2, y_offset))
             y_offset += self.game.small_font.get_height()
 
-        # Bottom: 8 Dice if max_dice > 0
-        if self.rune.get('max_dice', 0) > 0:
-            num_dice = len(self.random_dice)
-            total_die_width = num_dice * DIE_SIZE + (num_dice - 1) * 10
-            die_start_x = (self.game.width - total_die_width) // 2
-            self.die_rects = []
-            for j, die in enumerate(self.random_dice):
-                die_x = die_start_x + j * (DIE_SIZE + 10)
-                die_rect = pygame.Rect(die_x, self.game.height//2, DIE_SIZE, DIE_SIZE)
-                draw_rounded_element(self.game.screen, die_rect, COLORS[die['color']], inner_content=lambda r: self.draw_dots_or_icon(die))
-                if j in self.selected_die_indices:
-                    pygame.draw.rect(self.game.screen, (255,255,0), die_rect, width=3)
-                    
-                    # New: Label "1" and "2" for Transmute selected order
-                    if self.rune['name'] == 'Mystic Transmute Rune':
-                        order_index = self.selected_die_indices.index(j) + 1  # 1-based: first selected = 1 (target)
-                        if order_index <= 2:  # Only label up to 2
-                            label_text = self.game.small_font.render(str(order_index), True, (255, 255, 255))  # White text
-                            text_x = die_rect.centerx - label_text.get_width() // 2
-                            text_y = die_rect.centery - label_text.get_height() // 2
-                            self.game.screen.blit(label_text, (text_x, text_y))
-                
-                self.die_rects.append(die_rect)
+        # Bottom: Dice if max_dice > 0 (manual draw, no full game screen)
+        if self.max_dice > 0:
+            if len(self.random_dice) == 0:
+                # Empty/low bag message
+                msg_text = self.game.small_font.render(self.low_bag_message or "No dice available", True, (255, 0, 0))
+                self.game.screen.blit(msg_text, (self.game.width // 2 - msg_text.get_width() // 2, self.game.height // 2))
+            else:
+                num_dice = len(self.random_dice)
+                total_die_width = num_dice * DIE_SIZE + (num_dice - 1) * 10
+                die_start_x = (self.game.width - total_die_width) // 2
+                self.die_rects = []
+                for j, die in enumerate(self.random_dice):
+                    die_x = die_start_x + j * (DIE_SIZE + 10)
+                    die_rect = pygame.Rect(die_x, self.game.height//2, DIE_SIZE, DIE_SIZE)
+                    draw_rounded_element(self.game.screen, die_rect, COLORS[die['color']], inner_content=lambda r: self.draw_dots_or_icon(die))
+                    if j in self.selected_die_indices:
+                        pygame.draw.rect(self.game.screen, (255,255,0), die_rect, width=3)
+                    self.die_rects.append(die_rect)
         else:
-            self.die_rects = []  # No dice needed
+            # No dice needed message
+            no_dice_text = self.game.small_font.render("No dice needed – press Apply", True, THEME['text'])
+            self.game.screen.blit(no_dice_text, (self.game.width // 2 - no_dice_text.get_width() // 2, self.game.height // 2))
+            self.die_rects = []  # No dice
 
         # Confirm button
         self.confirm_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
@@ -279,30 +301,63 @@ class RuneUseState(State):
         # Tooltip for rune on hover
         mouse_pos = pygame.mouse.get_pos()
         if rune_rect.collidepoint(mouse_pos):
-            draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20, self.rune['desc'])
+            tooltip_text = f"{self.rune['name']}: {self.rune['desc']}"
+            draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20, tooltip_text)
 
-    def draw_dots_or_icon(self, die):  # Placeholder
-        pass  # Your pip code
+        # print("DEBUG: RuneUseState draw – bag len: {len(self.game.bag)}")  # TEMP – check if pull here
+
+    def draw_dots_or_icon(self, die):  # Placeholder – replace with your pip code
+        pass
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
             # Die select if needed
-            if self.rune.get('max_dice', 0) > 0:
+            if self.max_dice > 0 and len(self.random_dice) > 0:
                 for j, die_rect in enumerate(self.die_rects):
                     if die_rect.collidepoint(mouse_pos):
                         if j in self.selected_die_indices:
                             self.selected_die_indices.remove(j)
                         else:
                             self.selected_die_indices.append(j)
-                        max_dice = self.rune.get('max_dice', 1)
+                        max_dice = self.max_dice
                         while len(self.selected_die_indices) > max_dice:
-                            self.selected_die_indices.pop(0)  # Remove oldest if over
-
+                            self.selected_die_indices.pop(0)  # Remove oldest
+                        print(f"DEBUG: Selected die {j} – indices: {self.selected_die_indices}")  # TEMP
+                        return
+            # Confirm
             if self.confirm_rect.collidepoint(mouse_pos):
-                dies = [self.random_dice[j] for j in self.selected_die_indices]
+                dies = [self.random_dice[j] for j in self.selected_die_indices]  # Sync to dies
+                print(f"DEBUG: Confirm rune {self.rune['name']} with {len(dies)} dice")  # TEMP
                 self.game.apply_rune_effect(self.rune, dies)
-                self.game.state_machine.change_state(self.game.previous_state)  # Back to game/shop
+                # FIXED: Always change_state, set resuming for enter skip
+                self.game.last_state_was_rune = True  # FIXED: New flag
+                previous = self.game.previous_state
+                if previous is None:
+                    from states.game import GameState
+                    previous = GameState(self.game)
+                self.game.state_machine.change_state(previous)
+                print("DEBUG: Rune applied, changed state with last_state_was_rune=True")  # TEMP
+                return
 
+            # Cancel (same)
             if self.cancel_rect.collidepoint(mouse_pos):
-                self.game.state_machine.change_state(self.game.previous_state)  # Back without apply
+                # FIXED: Always change_state, set resuming
+                self.game.last_state_was_rune = True  # FIXED: New flag
+                previous = self.game.previous_state
+                if previous is None:
+                    from states.game import GameState
+                    previous = GameState(self.game)
+                self.game.state_machine.change_state(previous)
+                print("DEBUG: Canceled, changed state to previous")  # TEMP
+                return
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                # Cancel back
+                self.game.is_resuming = True  # FIXED: Set resuming
+                previous = self.game.previous_state
+                if previous is None:
+                    from states.game import GameState
+                    previous = GameState(self.game)
+                self.game.state_machine.change_state(previous)
+                return

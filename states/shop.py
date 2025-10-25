@@ -2,6 +2,7 @@
 import pygame
 import random  # If used for shop generation
 import time
+import math
 import copy
 import os
 import savegame  # For saving on exit to pause
@@ -44,7 +45,7 @@ class ShopState(State):
             self.game.is_resuming = False
         # ADD: Reset for Gambler's Grimoire on new shop
         self.game.used_rune_cast_this_shop = False
-        print("Debug: Reset Gambler's Grimoire for new shop")
+        # print("Debug: Reset Gambler's Grimoire for new shop")
         # NEW: Homebrew Hazard random event if equipped
         has_homebrew = any(charm['type'] == 'random_event' and idx not in self.game.disabled_charms 
                    for idx, charm in enumerate(self.game.equipped_charms))
@@ -59,7 +60,7 @@ class ShopState(State):
                 self.game.shop_charms.append(bonus_charm)
                 self.game.temp_message = f"Homebrew success! Free {bonus_charm['name']} added to shop."
                 self.game.temp_message_start = time.time()
-                print(f"DEBUG: Homebrew added free {bonus_charm['name']} to shop")
+                # print(f"DEBUG: Homebrew added free {bonus_charm['name']} to shop")
             else:
                 self.game.temp_message = "Homebrew success... but no charms available!"
                 self.game.temp_message_start = time.time()
@@ -73,6 +74,21 @@ class ShopState(State):
         # Draw shop, but pass debug_panel_open to skip tooltips when panel is open
         self.continue_rect, self.sell_rects, self.buy_rects, self.equipped_rects, self.shop_rects, self.pack_rects, self.reroll_rect = draw_shop_screen(self.game, skip_tooltips=self.debug_panel_open)
         
+        # Calc bag_width for tray pos (match screens.py)
+        columns = 5
+        rows = math.ceil(len(self.game.bag) / columns) if self.game.bag else 1
+        bag_width = columns * (SMALL_DIE_SIZE + SMALL_DIE_SPACING) - SMALL_DIE_SPACING + BAG_PADDING * 2
+
+        # Calc tray_rects for clicks (match screens.py)
+        tray_width = 2 * TRAY_SLOT_SIZE + TRAY_SLOT_SPACING
+        tray_x = self.game.width - bag_width - 20 - tray_width - 10  # Left of bag
+        tray_y = 50
+        self.tray_rects = []
+        for i in range(2):
+            slot_rect = pygame.Rect(tray_x + i * (TRAY_SLOT_SIZE + TRAY_SLOT_SPACING), tray_y, TRAY_SLOT_SIZE, TRAY_SLOT_SIZE)
+            self.tray_rects.append(slot_rect)
+        # print("DEBUG: shop tray_rects set:", self.tray_rects)  # TEMP
+
         # Debug button (bottom-right to avoid prism packs)
         if DEBUG:
             button_x = self.game.width - DEBUG_BUTTON_SIZE[0] - 50  # Bottom-right
@@ -98,7 +114,7 @@ class ShopState(State):
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 from states.pause import PauseMenuState  # Lazy import
-                print("ESC in ShopState - Pausing")  # Debug
+                # print("ESC in ShopState - Pausing")  # Debug
                 savegame.save_game(self.game)  # Save
                 self.game.previous_state = self  # ADD: Set to current ShopState instance
                 self.game.state_machine.change_state(PauseMenuState(self.game))
@@ -120,7 +136,7 @@ class ShopState(State):
             # Handle debug button
             if DEBUG and self.debug_rect and self.debug_rect.collidepoint(mouse_pos):
                 self.debug_panel_open = not self.debug_panel_open
-                print(f"DEBUG: Panel {'opened' if self.debug_panel_open else 'closed'}")
+                # print(f"DEBUG: Panel {'opened' if self.debug_panel_open else 'closed'}")
                 return
             
             # Handle debug panel interactions
@@ -135,33 +151,38 @@ class ShopState(State):
                             for charm in CHARMS_POOL:
                                 if charm['name'] not in [c['name'] for c in self.game.equipped_charms] and len(self.game.equipped_charms) < self.game.max_charms * 2:
                                     self.game.equipped_charms.append(copy.deepcopy(charm))
-                            print("DEBUG: Equipped all available charms!")
+                            # print("DEBUG: Equipped all available charms!")
                             self.game.temp_message = "Equipped all possible charms!"
                             self.game.temp_message_start = time.time()
                         elif action and len(self.game.equipped_charms) < self.game.max_charms * 2:
                             if any(c['name'] == action['name'] for c in self.game.equipped_charms):
-                                print(f"DEBUG: {action['name']} already owned")
+                                # print(f"DEBUG: {action['name']} already owned")
                                 self.game.temp_message = f"{action['name']} already owned!"
                             else:
                                 self.game.equipped_charms.append(copy.deepcopy(action))
-                                print(f"DEBUG: Added {action['name']} (free)")
+                                # print(f"DEBUG: Added {action['name']} (free)")
                                 self.game.temp_message = f"Added {action['name']}!"
                             self.game.temp_message_start = time.time()
                         else:
-                            print("DEBUG: Max charms reached")
+                            # print("DEBUG: Max charms reached")
                             self.game.temp_message = "No charm slots left!"
                             self.game.temp_message_start = time.time()
                         return
             
-            # Handle debug menu button click
-            if DEBUG and DEBUG_MENU_IN_SHOP and self.debug_button_rect is not None and self.debug_button_rect.collidepoint(mouse_pos):
+            # Handle new debug menu button click
+            if DEBUG and DEBUG_MENU_IN_SHOP and self.debug_button_rect.collidepoint(mouse_pos):
                 from states.debug import DebugMenuState  # Lazy import
                 self.game.state_machine.change_state(DebugMenuState(self.game))  # New state below
                 return
-            
-            # Handle continue
-            if self.continue_rect and self.continue_rect.collidepoint(mouse_pos):
+
+            # Handle continue to blinds
+            if self.continue_rect.collidepoint(mouse_pos):
                 self.game.shop_charms = []  # Clear shop
+                # FIXED: Set dummy rolls for new GameState (avoids fresh pull)
+                self.game.rolls = [(None, 0) for _ in range(5)]  # Dummy empty
+                self.game.hand = [None] * 5  # Clear hand
+                self.game.has_rolled = False  # Reset for new blind
+                from states.blinds import BlindsState
                 self.game.state_machine.change_state(BlindsState(self.game))
                 return
 
@@ -174,7 +195,7 @@ class ShopState(State):
                     charm = self.game.equipped_charms[i] if i < len(self.game.equipped_charms) else self.shop_items[i]  # Adjust based on your sell source
                     if charm['name'] == 'Luchador Lens':
                         self.game.pending_luchador_disable = True
-                        print("DEBUG: Luchador sell flagged from shop")
+                        # print("DEBUG: Luchador sell flagged from shop")
                     self.game.state_machine.change_state(ConfirmSellState(self.game))
                     return
 
@@ -266,13 +287,17 @@ class ShopState(State):
                     break
 
             # New: Tray click to use rune
-            for i, tray_rect in enumerate(self.tray_rects):
-                if tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
+            print("DEBUG: Checking shop tray click – tray_rects:", self.tray_rects)  # Add
+            for i, tray_rect in enumerate(self.tray_rects or []):
+                if tray_rect is not None and tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
+                    print(f"DEBUG: Clicking shop tray slot {i}: {self.game.rune_tray[i]['name']}")  # Add
                     from states.rune import RuneUseState  # Lazy import
                     rune = self.game.rune_tray[i]
                     self.game.previous_state = self  # Store for back
                     self.game.state_machine.change_state(RuneUseState(self.game, rune))
+                    self.game.previous_state = self
                     self.game.rune_tray[i] = None  # Remove
+                    print("DEBUG: Shop tray transitioned, removed")  # Add
                     break
 
         if event.type == pygame.MOUSEBUTTONUP:

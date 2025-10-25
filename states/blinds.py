@@ -32,6 +32,11 @@ class BlindsState(State):
             self.font_small = pygame.font.Font(None, 20)
 
     def enter(self):
+        print(f"DEBUG: GameState enter – is_resuming: {self.game.is_resuming}, bag len: {len(self.game.bag)}")  # TEMP
+        if self.game.is_resuming:
+            print("DEBUG: Resuming – skipping init pull")  # Your debug
+            self.game.is_resuming = False  # FIXED: Clear after
+            return  # Skip new_turn/draw_hand
         # Reset any blinds-specific vars (e.g., debug states)
         self.game.debug_boss_dropdown_open = False  # If not already reset
         self.game.debug_boss_scroll_offset = 0
@@ -43,6 +48,21 @@ class BlindsState(State):
         # Conditional: Generate upcoming boss only if None
         if self.game.upcoming_boss_effect is None:
             self.game.upcoming_boss_effect = random.choice(BOSS_EFFECTS)
+
+        # Rune Relic: Add random rune at blind start (after shop)
+        print("DEBUG: Checking for Rune Relic in blinds enter")  # TEMP
+        for idx, charm in enumerate(self.game.equipped_charms):
+            if charm['type'] == 'random_rune' and idx not in self.game.disabled_charms:
+                print("DEBUG: Triggering Rune Relic in blinds")  # TEMP
+                rune = random.choice(data.MYSTIC_RUNES).copy()
+                if self.game.add_to_rune_tray(rune):
+                    self.game.temp_message = f"Added {rune['name']} from Rune Relic!"
+                    self.game.temp_message_start = time.time()
+                else:
+                    self.game.temp_message = "Rune tray full – Rune Relic skipped!"
+                    self.game.temp_message_start = time.time()
+                break
+        print(f"DEBUG: Tray after Relic in blinds: {self.game.rune_tray}")  # TEMP
 
         # **INSERT: Apply Luchador flag for upcoming boss**
         if self.game.luchador_disable_active and self.game.current_blind != 'Boss':  # Only set for upcoming, not current

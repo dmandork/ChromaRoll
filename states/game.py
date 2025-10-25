@@ -34,38 +34,37 @@ class GameState(State):
 
     # In states/game.py, GameState.enter method (add after existing resets, before new_turn call)
     def enter(self):
+        print(f"DEBUG: GameState enter – is_resuming: {self.game.is_resuming}, last_state_was_rune: {self.game.last_state_was_rune}, rolls len: {len(self.game.rolls)}, bag len: {len(self.game.bag)}")  # TEMP
+        # FIXED: Skip only if from rune (not fresh/resume)
+        if self.game.last_state_was_rune:
+            print("DEBUG: From rune state – skipping init pull")  # TEMP
+            self.game.last_state_was_rune = False
+            self.game.has_rolled = True  # FIXED: Preserve to skip block
+            return
         if self.game.is_resuming:
-            print("Resuming GameState - Skipping init pull")  # Debug
+            print("DEBUG: Resuming – skipping init pull")  # Your debug
             self.game.is_resuming = False
-            return  # Skip dice pull
-        # Init or reset game vars (call new_turn only if no loaded hand/rolls)
-        print("DEBUG: GameState enter - checking conditions")
+            self.game.has_rolled = True  # FIXED: Preserve to skip block
+            # FIXED: Force pull on resume if no rolls (load empty)
+            if len(self.game.rolls) == 0:
+                print("DEBUG: Resume empty rolls – forcing pull")  # TEMP
+                self.game.new_turn()
+            return
+        # FIXED: Fresh entry from blinds – always pull if empty
+        if len(self.game.rolls) == 0:
+            print("DEBUG: Fresh entry – forcing new_turn/pull")  # TEMP
+            self.game.new_turn()
         if not self.game.hand or not self.game.rolls or not self.game.has_rolled:
             if self.game.turn_initialized and self.game.is_discard_phase:
-                print("DEBUG: Resuming discard - skipping pull")
+                # print("DEBUG: Resuming discard - skipping pull")
+                pass
             else:
                 # NEW: Apply Turtle Token here (once per blind entry, before first new_turn)
-                print(f"DEBUG: GameState enter - Equipped charms: {[c['name'] for c in self.game.equipped_charms]}")
-                print(f"DEBUG: Base hands_left before Turtle: {self.game.hands_left}")
-                print(f"DEBUG: Disabled charms: {self.game.disabled_charms}")
-
-                turtle_bonus_applied = False
-                for idx, charm in enumerate(self.game.equipped_charms):
-                    if charm['type'] == 'hands_decay' and idx not in self.game.disabled_charms:
-                        rounds_passed = charm.get('rounds_passed', 0)
-                        hands_bonus = max(0, charm['start'] - (charm['decay'] * rounds_passed))
-                        self.game.hands_left += hands_bonus
-                        print(f"Turtle Token APPLIED: +{hands_bonus} hands (round {rounds_passed + 1}) — hands_left now {self.game.hands_left}")
-                        turtle_bonus_applied = True
-                        break
-                if not turtle_bonus_applied:
-                    print("DEBUG: No Turtle Token applied—no matching charm equipped or disabled")
-
+                # ... your turtle code ...
                 print(f"DEBUG: Final hands_left after enter: {self.game.hands_left}")
 
                 self.game.new_turn()
-        else:
-            self.game.new_turn()  # If has hand but not rolled? Rare, but handle
+        # FIXED: Removed else: new_turn() – rare case covered by fresh
         self.game.update_advantage_flag()  # Refresh after entering state
         
         # Safeguard reset for rolls
@@ -74,7 +73,7 @@ class GameState(State):
 
         # ADD: Force held reset after new_turn/roll
         self.game.held = [False] * NUM_DICE_IN_HAND
-        print(f"Debug: Forced held reset in enter - held = {self.game.held}")
+        # print(f"Debug: Forced held reset in enter - held = {self.game.held}")
         
         # Robust reset for Fate's Favor: Always on new blind entry (after shop/return)
         self.game.used_fates_favor_this_blind = False
@@ -82,7 +81,7 @@ class GameState(State):
         self.game.fates_advantage_value = None
         self.game.held_fates_advantage = False
         self.game.selecting_fates_die = False
-        print("Debug: Reset Fate's Favor for new blind")
+        # print("Debug: Reset Fate's Favor for new blind")
 
         self.game.buy_boon_target_index = -1
         self.game.buy_boon_up_rect = None
@@ -92,8 +91,11 @@ class GameState(State):
         # Reset Familiar's Foresight per blind
         self.game.selecting_bag_swap = False
         self.game.swap_use_left = 1  # Full use on new blind
+        self.game.swap_source_index = -1
+        self.game.selecting_bag_die = False 
 
-        self.show_instruction_popup = False  
+        self.show_instruction_popup = False 
+        
 
     def update(self, dt):
         # Handle animations/timers (e.g., break effects, temp messages)
@@ -115,7 +117,7 @@ class GameState(State):
                 self.game.original_center_value = self.game.rolls[2][1]  # Save original value
                 self.game.advantage_value = random.randint(1, 6)  # Roll separate advantage value
                 self.game.held_advantage = False
-                print("Debug: Saved original center value:", self.game.original_center_value, "Rolled advantage:", self.game.advantage_value)
+                # print("Debug: Saved original center value:", self.game.original_center_value, "Rolled advantage:", self.game.advantage_value)
         # Add more updates as needed (e.g., color cycling for rainbow)
 
     def draw(self):
@@ -123,6 +125,16 @@ class GameState(State):
         from screens import draw_game_screen
         draw_game_screen(self.game)  # Call without assignment—main elements drawn inside
         # No flip here if it's in main loop; add if needed: pygame.display.flip()
+
+        # Calc tray_rects for clicks (match screens.py positions)
+        tray_width = 2 * constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING
+        tray_x = max(self.game.width - (5 * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING) - constants.SMALL_DIE_SPACING + constants.BAG_PADDING * 2) - 20 - tray_width - 10, 10)  # Left of bag
+        tray_y = 50  # Match bag_y
+        self.tray_rects = []
+        for i in range(2):
+            slot_rect = pygame.Rect(tray_x + i * (constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING), tray_y, constants.TRAY_SLOT_SIZE, constants.TRAY_SLOT_SIZE)
+            self.tray_rects.append(slot_rect)
+        # print("DEBUG: game tray_rects set:", self.tray_rects)  # TEMP
 
         # NEW: Draw instruction popup overlay (after main screen, before animations/buttons for layering)
         if self.show_instruction_popup and self.game.temp_message is not None:
@@ -205,7 +217,7 @@ class GameState(State):
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 from states.pause import PauseMenuState  # Lazy import
-                print("Escape pressed in GameState - Pausing")  # Debug
+                # print("Escape pressed in GameState - Pausing")  # Debug
                 savegame.save_game(self.game)  # Save
                 self.game.previous_state = self  # Instance
                 self.game.state_machine.change_state(PauseMenuState(self.game))
@@ -232,16 +244,17 @@ class GameState(State):
                 if self.continue_rect and self.continue_rect.collidepoint(mouse_pos):
                     self.game.show_popup = False  # Existing dismiss
                     
-                    # NEW: Safeguard - if final boss win and not endless, redirect to prompt before shop
+                    # Safeguard - if final boss win and not endless, redirect to prompt before shop
                     if self.game.current_blind == 'Boss' and self.game.current_stake == 8 and not self.game.is_endless:
                         from states.end_prompt import EndPromptState  # type: ignore
                         end_prompt = EndPromptState(self.game)
                         self.game.state_machine.change_state(end_prompt)
                         return  # Stop - no shop transition
                     
-                    # Existing post-popup advancement (now only for non-final wins)
+                    # Existing post-popup advancement (non-final wins)
                     from states.shop import ShopState  # Lazy import
                     self.game.advance_blind()
+                    print(f"DEBUG: advance_blind called post-popup – rolls len: {len(self.game.rolls)}, bag len: {len(self.game.bag)}")  # TEMP
                     self.game.generate_shop()
                     self.game.state_machine.change_state(ShopState(self.game))
                     return
@@ -265,7 +278,7 @@ class GameState(State):
                 self.game.buy_boon_confirm_rect = None
                 self.game.temp_message = "Buy Boon confirmed!"
                 self.game.temp_message_start = time.time()
-                print("DEBUG: Buy Boon confirmed early; used up")
+                # print("DEBUG: Buy Boon confirmed early; used up")
                 return
 
             # Dice clicks (always check all, including center 3rd die first)
@@ -287,7 +300,7 @@ class GameState(State):
                         if self.game.held[i]:
                             self.game.held[i] = False  # Mutual exclusion
                         self.game.update_hand_text()
-                        print(f"Debug: Fate's Favor activated on die {i}, value: {self.game.fates_advantage_value}")
+                        # print(f"Debug: Fate's Favor activated on die {i}, value: {self.game.fates_advantage_value}")
                         break
                     else:
                         if self.game.is_discard_phase:
@@ -297,7 +310,7 @@ class GameState(State):
                             # ADDED: Exclusion for center die (i==2)
                             if i == 2 and self.game.held[2]:
                                 self.game.held_advantage = False  # Unhold advantage if original held
-                            print(f"Debug: Toggled die {i} - held[{i}] = {self.game.held[i]}")  # Debug for 3rd die
+                            # print(f"Debug: Toggled die {i} - held[{i}] = {self.game.held[i]}")  # Debug for 3rd die
                         break  # Stop after handling one die click
 
             # Advantage choice clicks (after main dice, so original center is always checked first)
@@ -306,13 +319,13 @@ class GameState(State):
                     self.game.held_advantage = not self.game.held_advantage  # Toggle advantage
                     if self.game.held_advantage and self.game.held[2]:
                         self.game.held[2] = False  # Unhold original if advantage held
-                    print("Debug: Toggled advantage - held_advantage =", self.game.held_advantage, "held[2] =", self.game.held[2])
+                    # print("Debug: Toggled advantage - held_advantage =", self.game.held_advantage, "held[2] =", self.game.held[2])
                     self.game.update_hand_text()  # Refresh preview score
                 elif self.game.center_die_rect and self.game.center_die_rect.collidepoint(mouse_pos):
                     self.game.held[2] = not self.game.held[2]  # Toggle original
                     if self.game.held[2] and self.game.held_advantage:
                         self.game.held_advantage = False  # Unhold advantage if original held
-                    print("Debug: Toggled original - held[2] =", self.game.held[2], "held_advantage =", self.game.held_advantage)
+                    # print("Debug: Toggled original - held[2] =", self.game.held[2], "held_advantage =", self.game.held_advantage)
                     self.game.update_hand_text()  # Refresh preview score
             
             
@@ -324,7 +337,7 @@ class GameState(State):
                     if self.game.held_fates_advantage and self.game.held[self.game.fates_advantage_index]:
                         self.game.held[self.game.fates_advantage_index] = False
                     self.game.update_hand_text()
-                    print(f"Debug: Toggled Fate's advantage - held_fates_advantage = {self.game.held_fates_advantage}, held[{self.game.fates_advantage_index}] = {self.game.held[self.game.fates_advantage_index]}")
+                    # print(f"Debug: Toggled Fate's advantage - held_fates_advantage = {self.game.held_fates_advantage}, held[{self.game.fates_advantage_index}] = {self.game.held[self.game.fates_advantage_index]}")
                 # No optional original here—handled in toggle_hold below
 
             # Luchador instant sell block (early in MOUSEBUTTONDOWN, after mouse_pos)
@@ -343,7 +356,7 @@ class GameState(State):
                     self.game.luchador_disable_active = True
                     self.game.temp_message = "Luchador Lens sold! Boss will be disabled next boss round."
                     self.game.temp_message_start = time.time()
-                    print(f"DEBUG: Luchador flag set from mid-game")
+                    # print(f"DEBUG: Luchador flag set from mid-game")
                     return   
             
             # NEW: Familiar's Foresight swap logic (discard phase only)
@@ -361,7 +374,7 @@ class GameState(State):
                         self.game.swap_source_index = i
                         self.game.temp_message = "Select bag die to swap with."
                         self.show_instruction_popup = True  # Show popup for bag select
-                        print(f"DEBUG: Selected hand die {i} for swap")
+                        # print(f"DEBUG: Selected hand die {i} for swap")
                         return  # Early return to prevent other clicks
 
             # Separate block for bag selection (after hand picked)
@@ -387,7 +400,7 @@ class GameState(State):
                         self.game.refresh_bag()
                         self.update_die_rects()
                         self.game.update_hand_text()
-                        print(f"DEBUG: Swapped die {self.game.swap_source_index} with bag {j}; uses left: {self.game.swap_use_left}")
+                        # print(f"DEBUG: Swapped die {self.game.swap_source_index} with bag {j}; uses left: {self.game.swap_use_left}")
                         return
             
             # NEW: Buy Boon die selection (roll phase only)
@@ -419,8 +432,8 @@ class GameState(State):
                         confirm_x = die_rect.x + (die_rect.width - confirm_width) // 2
                         confirm_y = up_y - confirm_height - 10  # Above up arrow
                         self.game.buy_boon_confirm_rect = pygame.Rect(confirm_x, confirm_y, confirm_width, confirm_height)
-                        
-                        print(f"DEBUG: Selected die {i} for Buy Boon shifts; shifts left: {self.game.buy_boon_shifts_left}")
+
+                        # print(f"DEBUG: Selected die {i} for Buy Boon shifts; shifts left: {self.game.buy_boon_shifts_left}")
                         return  # Early return
 
             # NEW: Arrow clicks (anytime arrows active)
@@ -435,7 +448,7 @@ class GameState(State):
                         self.game.coins -= 2
                         self.game.buy_boon_shifts_left -= 1
                         self.game.update_hand_text()
-                        print(f"DEBUG: Shifted up die {i} to {new_value}; coins: {self.game.coins}, shifts left: {self.game.buy_boon_shifts_left}")
+                        # print(f"DEBUG: Shifted up die {i} to {new_value}; coins: {self.game.coins}, shifts left: {self.game.buy_boon_shifts_left}")
                         if self.game.buy_boon_shifts_left == 0:
                             self.game.used_buy_boon_this_turn = True
                             self.game.buy_boon_target_index = -1  # Done
@@ -459,7 +472,7 @@ class GameState(State):
                         confirm_x = die_rect.x + (die_rect.width - confirm_width) // 2
                         confirm_y = die_rect.y + die_rect.height + 10
                         self.game.disadvantage_confirm_rect = pygame.Rect(confirm_x, confirm_y, confirm_width, confirm_height)
-                        print(f"DEBUG: Selected die {i} for Disadvantage")
+                        # print(f"DEBUG: Selected die {i} for Disadvantage")
                         return
 
             # NEW: Confirm click
@@ -474,7 +487,7 @@ class GameState(State):
                 self.game.temp_message = f"Die disadvantaged to {new_value}! +0.5 mult."
                 self.game.temp_message_start = time.time()
                 self.game.update_hand_text()
-                print(f"DEBUG: Disadvantage applied to die {i}: {current_value} → {new_value}")
+                # print(f"DEBUG: Disadvantage applied to die {i}: {current_value} → {new_value}")
                 return
     
             # NEW: Whirlwind Wild selection (roll phase only)
@@ -494,7 +507,7 @@ class GameState(State):
                         self.game.temp_message_start = time.time()
                         self.game.update_hand_text()
                         self.game.sfx_channel.play(self.game.roll_sound)  # Optional SFX
-                        print(f"DEBUG: Whirlwind free rerolled die {i} to {new_value}")
+                        # print(f"DEBUG: Whirlwind free rerolled die {i} to {new_value}")
                         return
 
             if self.game.buy_boon_down_rect and self.game.buy_boon_down_rect.collidepoint(mouse_pos):
@@ -506,7 +519,7 @@ class GameState(State):
                     self.game.coins -= 2
                     self.game.buy_boon_shifts_left -= 1
                     self.game.update_hand_text()
-                    print(f"DEBUG: Shifted down die {i} to {new_value}; coins: {self.game.coins}, shifts left: {self.game.buy_boon_shifts_left}")
+                    # print(f"DEBUG: Shifted down die {i} to {new_value}; coins: {self.game.coins}, shifts left: {self.game.buy_boon_shifts_left}")
                     if self.game.buy_boon_shifts_left == 0:
                         self.game.used_buy_boon_this_turn = True
                         self.game.buy_boon_target_index = -1
@@ -535,7 +548,7 @@ class GameState(State):
                     charm = self.game.equipped_charms[i]  # Define charm inside rect check
                     if charm['name'] == "Fate's Favor" and i not in self.game.disabled_charms and not self.game.used_fates_favor_this_blind and not self.game.is_discard_phase:
                         self.game.selecting_fates_die = True
-                        print("Debug: Entered Fate's Favor selection mode")
+                        # print("Debug: Entered Fate's Favor selection mode")
                         break  # No drag if activating
                     # NEW: Familiar's activation
                     elif charm['name'] == "Familiar's Foresight" and i not in self.game.disabled_charms and self.game.is_discard_phase:
@@ -543,12 +556,12 @@ class GameState(State):
                             self.game.selecting_bag_swap = True
                             self.game.temp_message = "Select hand die to swap."
                             self.show_instruction_popup = True
-                            print("DEBUG: Familiar's Foresight activated—select hand die")
+                            # print("DEBUG: Familiar's Foresight activated—select hand die")
                             break
                         else:
                             self.game.temp_message = "No uses left!"
                             self.show_instruction_popup = False  # Ensure no popup
-                            print("DEBUG: Familiar's Foresight no uses—skipped")
+                            # print("DEBUG: Familiar's Foresight no uses—skipped")
                             break
                     # New: Buy Boon
                     elif charm['name'] == "Buy Boon" and i not in self.game.disabled_charms and not self.game.used_buy_boon_this_turn and not self.game.is_discard_phase:
@@ -559,36 +572,43 @@ class GameState(State):
                         self.game.selecting_buy_boon_die = True
                         self.game.temp_message = "Select hand die to shift (2 coins per +/-1, max 2 shifts)"
                         self.show_instruction_popup = True
-                        print("DEBUG: Buy Boon activated—select die")
+                        # print("DEBUG: Buy Boon activated—select die")
                         break
                     elif charm['name'] == "Disadvantage Dice" and i not in self.game.disabled_charms and not self.game.used_disadvantage_this_turn and not self.game.is_discard_phase:
                         self.game.selecting_disadvantage_die = True
                         self.game.temp_message = "Select die to disadvantage (-1 value, +0.5 mult)"
                         self.show_instruction_popup = True
-                        print("DEBUG: Disadvantage Dice activated—select die")
+                        #print("DEBUG: Disadvantage Dice activated—select die")
                         break
                     elif charm['name'] == "Whirlwind Wild" and i not in self.game.disabled_charms and not self.game.used_whirlwind_this_blind and not self.game.is_discard_phase:
                         # Check for Rainbow charge
-                        print(f"DEBUG: Whirlwind clicked - disabled? {i in self.game.disabled_charms}, used? {self.game.used_whirlwind_this_blind}, discard phase? {self.game.is_discard_phase}")
+                        # print(f"DEBUG: Whirlwind clicked - disabled? {i in self.game.disabled_charms}, used? {self.game.used_whirlwind_this_blind}, discard phase? {self.game.is_discard_phase}")
                         has_rainbow_charge = any(die['color'] == 'Rainbow' for die, _ in self.game.rolls)
-                        print(f"DEBUG: Rainbow charge available? {has_rainbow_charge} (rolls: {[die['color'] for die, _ in self.game.rolls]})")
+                        # print(f"DEBUG: Rainbow charge available? {has_rainbow_charge} (rolls: {[die['color'] for die, _ in self.game.rolls]})")
                         if has_rainbow_charge:
                             self.game.selecting_whirlwind_die = True
                             self.game.temp_message = "Select die for free reroll (Rainbow charge)"
                             self.show_instruction_popup = True
-                            print("DEBUG: Whirlwind Wild activated—select die")
+                            # print("DEBUG: Whirlwind Wild activated—select die")
                         else:
                             self.game.temp_message = "No Rainbow charge available!"
                             self.game.temp_message_start = time.time()
                         break
 
-            for i, tray_rect in enumerate(self.tray_rects):
-                if tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
+            # NEW: Tray click to use rune
+            # print("DEBUG: Checking tray click – tray_rects:", self.tray_rects)  # Add for debug
+            for i, tray_rect in enumerate(self.tray_rects or []):  # FIXED: or [] to avoid None
+                if tray_rect is not None and tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
+                    # print(f"DEBUG: Clicking tray slot {i}: {self.game.rune_tray[i]['name']}")  # Add
                     from states.rune import RuneUseState  # Lazy import
                     rune = self.game.rune_tray[i]
-                    # Prompt for die if max_dice > 0 (change to RuneUseState similar to Select)
-                    self.game.state_machine.change_state(RuneUseState(self.game, rune))  # New state stub
+                    self.game.state_machine.change_state(RuneUseState(self.game, rune))  # Transition
+                    self.game.previous_state = self
                     self.game.rune_tray[i] = None  # Remove after use
+                    # print("DEBUG: Transitioned to RuneUseState, removed from tray")  # Add
+                    break  # One at a time
+            # else:
+                # print("DEBUG: No valid tray click")  # Add if no match
 
         if event.type == pygame.MOUSEMOTION:
             if self.game.dragging_charm_index != -1:
@@ -657,7 +677,7 @@ class GameState(State):
             adv_size = DIE_SIZE * HELD_DIE_SCALE if self.game.held_fates_advantage else DIE_SIZE
             adv_offset = (DIE_SIZE - adv_size) / 2 if self.game.held_fates_advantage else 0
             self.game.fates_advantage_die_rect = pygame.Rect(x + adv_offset, adv_y + adv_offset, adv_size, adv_size)
-            print(f"Debug: Set fates_advantage_die_rect = {self.game.fates_advantage_die_rect}")  # Confirm set
+            # print(f"Debug: Set fates_advantage_die_rect = {self.game.fates_advantage_die_rect}")  # Confirm set
 
         # Bag dice rects (existing)
         self.game.bag_die_rects = []
