@@ -131,7 +131,7 @@ CHARMS_POOL = [
     {'name': 'Enhance Elixir', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.25 mult per enhancement on scored dice.', 'type': 'mult_per_enhance', 'value': 0.25},
     {'name': 'Discard Drake', 'rarity': 'Rare', 'cost': 6, 'desc': '+1 mult per discard used this round.', 'type': 'discard_mult', 'value': 1},
     {'name': 'Wild Warden', 'rarity': 'Common', 'cost': 3, 'desc': 'Rainbow dice gain +1 coin when wilding a mono.', 'type': 'coin_per_wild', 'value': 1},
-    {'name': 'Kind Keeper', 'rarity': 'Rare', 'cost': 5, 'desc': '4s count as wild for three/four of a kinds.', 'type': 'kind_wild', 'face': 4},
+    {'name': 'Kind Keeper', 'rarity': 'Rare', 'cost': 5, 'desc': '4s count as wild for three/four of a kinds.', 'type': 'wild_4'},  # Changed from 'kind_wild'
     {'name': 'Final Forge', 'rarity': 'Legendary', 'cost': 10, 'desc': '+3 mult on last hand if it includes an enhancement.', 'type': 'final_mult_conditional', 'value': 3},
     {'name': 'Buy Boon', 'rarity': 'Common', 'cost': 3, 'desc': 'Pay 2 coins per +/-1 shift to a die face once per turn (max 2 shifts).', 'type': 'face_buy_high', 'value': 1},  # Updated desc; value=1 for per-shift
     {'name': 'Echo Ember', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+2 coins per unused discard.', 'type': 'coin_per_discard', 'value': 2},
@@ -148,7 +148,7 @@ CHARMS_POOL = [
     {'name': 'Whirlwind Wild', 'rarity': 'Common', 'cost': 3, 'desc': 'Rainbows in hand grant free reroll on one die (once per blind).', 'type': 'rainbow_double'},
     {'name': 'Discard Dynamo', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.5 mult per discard used.', 'type': 'discard_mult', 'value': 0.5},
     {'name': 'Rune Recycler', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Reuse one rune per shop.', 'type': 'rune_reuse'},
-    {'name': 'Kind King', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Kings (6s) count as wild for kinds.', 'type': 'kind_wild', 'face': 6},
+    {'name': 'Kind King', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Kings (6s) count as wild for kinds.', 'type': 'wild_6'},  # Changed from 'kind_wild'
     {'name': 'Final Flourish', 'rarity': 'Legendary', 'cost': 10, 'desc': '+2 mult on last hand of round.', 'type': 'final_mult', 'value': 2},
     {'name': 'Dragon\'s Dice', 'rarity': 'Rare', 'cost': 7, 'desc': 'If all reds, +1 mult but risk burn (10% break on all dice).', 'type': 'color_risk_mult', 'color': 'Red', 'value': 1},
     {'name': 'Bardic Blade', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.5 mult per color in rainbow hand.', 'type': 'rainbow_mult', 'value': 0.5},

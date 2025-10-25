@@ -34,6 +34,11 @@ class ShopState(State):
             self.game.generate_shop()
         self.debug_panel_open = False  # Reset panel
         self.scroll_y = 0  # Reset scroll
+        # Fallback calc for debug_button_rect (if draw not run yet)
+        if DEBUG and DEBUG_MENU_IN_SHOP:
+            button_x = self.game.width - 150 - 50  # Above existing debug_rect (adjust if needed)
+            button_y = self.game.height - 50 - 60  # Above existing
+            self.debug_button_rect = pygame.Rect(button_x, button_y, 150, 50)
         if self.game.is_resuming:  # ADD: Load if resuming into shop
             savegame.load_game(self.game)
             self.game.is_resuming = False
@@ -148,8 +153,8 @@ class ShopState(State):
                             self.game.temp_message_start = time.time()
                         return
             
-            # Add this: Handle new debug menu button click
-            if DEBUG and DEBUG_MENU_IN_SHOP and self.debug_button_rect.collidepoint(mouse_pos):
+            # Handle debug menu button click
+            if DEBUG and DEBUG_MENU_IN_SHOP and self.debug_button_rect is not None and self.debug_button_rect.collidepoint(mouse_pos):
                 from states.debug import DebugMenuState  # Lazy import
                 self.game.state_machine.change_state(DebugMenuState(self.game))  # New state below
                 return

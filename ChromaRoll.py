@@ -324,6 +324,8 @@ class ChromaRollGame:
         self.round_locket_coins = 0
         self.round_base_lucky_coins = 0
 
+        self.is_last_hand = False
+
         # In __init__, after dedup CHARMS_POOL
         for c in data.CHARMS_POOL:
             if 'sell_value' not in c:
@@ -707,6 +709,7 @@ class ChromaRollGame:
         self.selecting_disadvantage_die = False
         self.disadvantage_target_index = -1
         self.disadvantage_confirm_rect = None
+        self.is_last_hand = (self.hands_left == 1)
 
         self.update_hand_text()  # Update initial hand text (now reflects Turtle bonus on first hand)
         # In new_turn():
@@ -1454,31 +1457,30 @@ class ChromaRollGame:
             values = [7 - v for v in values]
             sorted_values = sorted(values)
 
-        # Collect wild faces with safety check
-        wild_faces = set()
-        for charm in self.equipped_charms:
-            if charm['type'] in ('face_wild', 'kind_wild') and 'face' in charm:
-                wild_faces.add(charm['face'])
-            elif charm['type'] in ('face_wild', 'kind_wild'):
-                pass  # No print to avoid spam
+        # Wilds: Dedicated wild_4 (Keeper) and wild_6 (King) matching for kinds
 
-        # Adjust counts/max_count for wilds
-        wild_count = sum(1 for v in values if v in wild_faces)
-        wild_colors = [colors_list[i] for i, v in enumerate(values) if v in wild_faces]  # Ensure flat list of strings
-        if wild_count > 0:
-            non_wild_counts = {k: v for k, v in counts.items() if k not in wild_faces}
-            if non_wild_counts:
-                max_non_wild_key = max(non_wild_counts, key=lambda k: (non_wild_counts[k], k))
-                counts[max_non_wild_key] += wild_count
-                max_count = max(counts.values())
-                # Update groups to reflect wilds for color checks
-                groups[max_non_wild_key] = groups.get(max_non_wild_key, []) + wild_colors[:wild_count]
-                for wild_face in wild_faces:
-                    if wild_face in groups and wild_face != max_non_wild_key:
-                        groups[wild_face] = [c for c in groups[wild_face] if c not in wild_colors[:wild_count]]
-                        if not groups[wild_face]:
-                            del groups[wild_face]
-            pair_count = list(counts.values()).count(2)
+        # Base counts (full, before matching)
+        counts = {i: values.count(i) for i in set(values)}
+        max_count = max(counts.values()) if counts else 0
+        groups = {}
+        for (die, val) in held_rolls:
+            if val not in groups:
+                groups[val] = []
+            groups[val].append(die['color'])
+
+        # Apply per-type matching: Call separate functions for wild_4/wild_6
+        for idx, charm in enumerate(self.equipped_charms):
+            if idx in self.disabled_charms:
+                continue
+            if charm['type'] == 'wild_4':
+                counts, max_count = self.apply_wild_4(held_rolls, counts, max_count, groups, modifier_desc)
+            elif charm['type'] == 'wild_6':
+                counts, max_count = self.apply_wild_6(held_rolls, counts, max_count, groups, modifier_desc)
+
+        # Your rainbow/mono code here (uses updated groups)
+
+        # Final pair_count
+        pair_count = list(counts.values()).count(2)
 
         if max_count == 5:
             hand_type = "5 of a Kind"
@@ -1855,6 +1857,12 @@ class ChromaRollGame:
                     mult_add = charm['value']
                     charm_mult_add += mult_add
                     modifier_desc.append(f"{charm['name']} +{mult_add} (final hand)")
+            elif charm['type'] == 'final_mult_conditional':
+                has_enh = any(len(die.get('enhancements', [])) > 0 for die, _ in held_rolls)
+                if self.is_last_hand and has_enh:
+                    mult_add = charm['value']
+                    charm_mult_add += mult_add
+                    modifier_desc.append(f"{charm['name']} +{mult_add}")
             elif charm['type'] == 'face_buy_high':
                 # Stub: Pay 3 coins for +2 to a face; handle in event/turn logic
                 pass
@@ -1958,6 +1966,18 @@ class ChromaRollGame:
             if total_modifier >= 2.5:
                 modifier_desc.append("Multiplier Mute capped at +2.5")
 
+        retrigger_mult = 1.0
+        for idx, charm in enumerate(self.equipped_charms):
+            if idx in self.disabled_charms:
+                continue
+            if charm['type'] == 'face_retrigger':
+                face_count = sum(1 for _, v in held_rolls if v == charm['face'])
+                if face_count > 0:
+                    retrigger_mult *= 2  # x2 total (retrigger once)
+                    modifier_desc.append(f"{charm['name']} x2 (retrigger)")
+
+        
+
         # NEW: Append enhancement descs to main modifier_desc if any (before join)
         if enhancement_desc_parts:
             modifier_desc += enhancement_desc_parts
@@ -1965,7 +1985,47 @@ class ChromaRollGame:
         modifier_desc = ", ".join(modifier_desc) if modifier_desc else "None"
 
         final_score = int((base_score + charm_chips + rune_chips) * (1 + total_modifier))
+        final_score = int(final_score * retrigger_mult)
         return hand_type, base_score, modifier_desc, final_score, charm_chips, charm_color_mult_add
+
+    def apply_wild_4(self, held_rolls, counts, max_count, groups, modifier_desc):
+        """Kind Keeper: Each rolled 4 acts as a wild die that matches the highest non-wild group to extend kinds."""
+        wild_face = 4
+        wild_die_count = sum(1 for _, v in held_rolls if v == wild_face)
+        if wild_die_count > 0:
+            non_wild_counts = {k: v for k, v in counts.items() if k != wild_face}
+            if non_wild_counts:
+                highest_group = max(non_wild_counts, key=non_wild_counts.get)
+                counts[highest_group] += wild_die_count  # Add each wild to highest
+                max_count = max(counts.values())
+                # Match colors to group
+                wild_colors = [die['color'] for die, v in held_rolls if v == wild_face]
+                groups[highest_group] += wild_colors
+                # Remove original 4s group
+                if wild_face in groups:
+                    del groups[wild_face]
+                modifier_desc.append(f"{wild_die_count} Kind Keeper Wilds matched to {highest_group}s")
+        return counts, max_count
+
+    def apply_wild_6(self, held_rolls, counts, max_count, groups, modifier_desc):
+        """Kind King: Each rolled 6 acts as a wild die that matches the highest non-wild group to extend kinds."""
+        wild_face = 6
+        wild_die_count = sum(1 for _, v in held_rolls if v == wild_face)
+        if wild_die_count > 0:
+            non_wild_counts = {k: v for k, v in counts.items() if k != wild_face}
+            if non_wild_counts:
+                highest_group = max(non_wild_counts, key=non_wild_counts.get)
+                counts[highest_group] += wild_die_count  # Add each wild to highest
+                max_count = max(counts.values())
+                # Match colors to group
+                wild_colors = [die['color'] for die, v in held_rolls if v == wild_face]
+                groups[highest_group] += wild_colors
+                # Remove original 6s group
+                if wild_face in groups:
+                    del groups[wild_face]
+                modifier_desc.append(f"{wild_die_count} Kind King Wilds matched to {highest_group}s")
+        return counts, max_count
+
     def calculate_score(self):
         """Calculates and returns the final score."""
         _, _, _, final_score, _, _ = self.get_hand_type_and_score()
