@@ -418,7 +418,7 @@ class DebugDiceSelectForRune(State):
                         self.game.screen.blit(label_text, (text_x, text_y))
             
             if rect.collidepoint(mouse_pos):
-                enh_desc = ', '.join(ENH_DESC.get(e, e) for e in die['enhancements'])
+                enh_desc = ', '.join(ENH_DESC.get(e, e) for e in die.get('enhancements', []))
                 tooltips_to_draw.append((x, y + die_size + 10, f"{die['color']} Die - {enh_desc or 'None'}"))
             self.die_rects.append((rect, die))
 

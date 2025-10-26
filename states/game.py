@@ -110,15 +110,13 @@ class GameState(State):
                 self.game.temp_message = None  # Fade out complete
 
         # Trigger advantage roll after auto-roll in rolling phase (roll separate value, no overwrite)
-        if not self.game.is_discard_phase and not self.initial_auto_roll_done:
+        if not self.game.is_discard_phase and self.game.has_advantage and self.game.advantage_value is None:
             self.initial_auto_roll_done = True
             # Your auto-roll logic here (e.g., self.game.roll_dice())
-            if self.game.has_advantage and self.game.advantage_value is None:
-                self.game.original_center_value = self.game.rolls[2][1]  # Save original value
-                self.game.advantage_value = random.randint(1, 6)  # Roll separate advantage value
-                self.game.held_advantage = False
-                # print("Debug: Saved original center value:", self.game.original_center_value, "Rolled advantage:", self.game.advantage_value)
-        # Add more updates as needed (e.g., color cycling for rainbow)
+            self.game.original_center_value = self.game.rolls[2][1]  # Save original value
+            self.game.advantage_value = random.randint(1, 6)  # Roll separate advantage value
+            self.game.held_advantage = False
+            # print("Debug: Saved original center value:", self.game.original_center_value, "Rolled advantage:", self.game.advantage_value)
 
     def draw(self):
         self.game.screen.fill(THEME['background'])  # Clear relics and prevent stacking
@@ -240,6 +238,7 @@ class GameState(State):
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()  # Moved to the top to ensure it's always defined
+            self.update_die_rects()
             if self.game.show_popup:
                 if self.continue_rect and self.continue_rect.collidepoint(mouse_pos):
                     self.game.show_popup = False  # Existing dismiss
@@ -281,14 +280,8 @@ class GameState(State):
                 # print("DEBUG: Buy Boon confirmed early; used up")
                 return
 
-            # Dice clicks (always check all, including center 3rd die first)
-            for i in range(NUM_DICE_IN_HAND):
-                total_dice_width = NUM_DICE_IN_HAND * (DIE_SIZE + 20) - 20
-                start_x = (self.game.width - total_dice_width) // 2
-                x = start_x + i * (DIE_SIZE + 20)
-                size = DIE_SIZE * HELD_DIE_SCALE if self.game.held[i] else DIE_SIZE
-                offset = (DIE_SIZE - size) / 2 if self.game.held[i] else 0
-                die_rect = pygame.Rect(x + offset, self.game.height - DIE_SIZE - 100 + offset, size, size)
+            # Dice clicks (using visual hand_die_rects[i] for precise hits)
+            for i, die_rect in enumerate(self.game.hand_die_rects):
                 if die_rect.collidepoint(mouse_pos):
                     if self.game.selecting_fates_die:
                         # Activate Fate's Favor advantage on this die
@@ -313,20 +306,15 @@ class GameState(State):
                             # print(f"Debug: Toggled die {i} - held[{i}] = {self.game.held[i]}")  # Debug for 3rd die
                         break  # Stop after handling one die click
 
-            # Advantage choice clicks (after main dice, so original center is always checked first)
+            # Advantage choice clicks (only advantage die now; main loop handles 3rd die)
             if not self.game.is_discard_phase and self.game.has_advantage and self.game.advantage_value is not None:
                 if self.game.advantage_die_rect and self.game.advantage_die_rect.collidepoint(mouse_pos):
-                    self.game.held_advantage = not self.game.held_advantage  # Toggle advantage
+                    self.game.held_advantage = not self.game.held_advantage
                     if self.game.held_advantage and self.game.held[2]:
                         self.game.held[2] = False  # Unhold original if advantage held
-                    # print("Debug: Toggled advantage - held_advantage =", self.game.held_advantage, "held[2] =", self.game.held[2])
-                    self.game.update_hand_text()  # Refresh preview score
-                elif self.game.center_die_rect and self.game.center_die_rect.collidepoint(mouse_pos):
-                    self.game.held[2] = not self.game.held[2]  # Toggle original
-                    if self.game.held[2] and self.game.held_advantage:
-                        self.game.held_advantage = False  # Unhold advantage if original held
-                    # print("Debug: Toggled original - held[2] =", self.game.held[2], "held_advantage =", self.game.held_advantage)
-                    self.game.update_hand_text()  # Refresh preview score
+                    print(f"DEBUG: Toggled advantage die - held_advantage = {self.game.held_advantage}, held[2] = {self.game.held[2]}")  # TEMP
+                    self.game.update_hand_text()
+                # REMOVED: elif center_die_rect toggle (handled precisely in main loop above)
             
             
             # Fate's Favor advantage toggle
@@ -656,7 +644,7 @@ class GameState(State):
                     self.game.disabled_charms.append(self.game.dragging_charm_index)
                 
     def update_die_rects(self):
-        # Hand dice rects (from your draw_dice logic)
+        # Hand dice rects (unchanged)
         self.game.hand_die_rects = []
         for i in range(NUM_DICE_IN_HAND):
             total_dice_width = NUM_DICE_IN_HAND * (DIE_SIZE + 20) - 20
@@ -667,7 +655,24 @@ class GameState(State):
             rect = pygame.Rect(x + offset, self.game.height - DIE_SIZE - 100 + offset, size, size)
             self.game.hand_die_rects.append(rect)
 
-        # ADD: Set Fate's advantage rect if active (for clicking)
+        # NEW: Set center_die_rect (for consistency, though main loop uses hand_die_rects[2])
+        if self.game.hand_die_rects:
+            self.game.center_die_rect = self.game.hand_die_rects[2]
+
+        # NEW: Set advantage_die_rect (fresh for clicks)
+        if self.game.has_advantage and self.game.advantage_value is not None:
+            i = 2
+            total_dice_width = NUM_DICE_IN_HAND * (DIE_SIZE + 20) - 20
+            start_x = (self.game.width - total_dice_width) // 2
+            x = start_x + i * (DIE_SIZE + 20)
+            adv_y = (self.game.height - DIE_SIZE - 100) - DIE_SIZE - 10
+            adv_size = DIE_SIZE * HELD_DIE_SCALE if self.game.held_advantage else DIE_SIZE
+            adv_offset = (DIE_SIZE - adv_size) / 2 if self.game.held_advantage else 0
+            self.game.advantage_die_rect = pygame.Rect(x + adv_offset, adv_y + adv_offset, adv_size, adv_size)
+        else:
+            self.game.advantage_die_rect = None
+
+        # Fate's already set here (unchanged)
         if self.game.fates_advantage_index != -1 and self.game.fates_advantage_value is not None:
             i = self.game.fates_advantage_index
             total_dice_width = NUM_DICE_IN_HAND * (DIE_SIZE + 20) - 20

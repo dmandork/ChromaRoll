@@ -144,7 +144,7 @@ CHARMS_POOL = [
     {'name': 'Greedy Gambler', 'rarity': 'Common', 'cost': 3, 'desc': '+0.5 mult for Red dice scored.', 'type': 'color_mult', 'color': 'Red', 'value': 0.5},
     {'name': 'Retrigger Rune', 'rarity': 'Legendary', 'cost': 10, 'desc': 'Retrigger scoring on kinds.', 'type': 'retrigger', 'hands': 'kinds'},
     {'name': 'Economy Echo', 'rarity': 'Common', 'cost': 4, 'desc': '+1 coin per unused hand at round end.', 'type': 'coin_gen', 'value': 1},
-    {'name': 'Break Buffer', 'rarity': 'Rare', 'cost': 6, 'desc': 'Glass dice break only on 1.', 'type': 'break_reduce'},
+    {'name': 'Break Buffer', 'rarity': 'Rare', 'cost': 6, 'desc': 'Glass dice break only on 1,2,3 (33% chance if low value).', 'type': 'break_reduce'},
     {'name': 'Whirlwind Wild', 'rarity': 'Common', 'cost': 3, 'desc': 'Rainbows in hand grant free reroll on one die (once per blind).', 'type': 'rainbow_double'},
     {'name': 'Discard Dynamo', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.5 mult per discard used.', 'type': 'discard_mult', 'value': 0.5},
     {'name': 'Rune Recycler', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Reuse one rune per shop.', 'type': 'rune_reuse'},

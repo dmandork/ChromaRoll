@@ -701,6 +701,8 @@ class ChromaRollGame:
         self.turn_initialized = True
         self.rolls = [(die, 1) for die in self.hand]  # Start with value 1 (single pip)
         self.held = [False] * NUM_DICE_IN_HAND
+        self.held_advantage = False
+        self.advantage_value = None
         self.discard_selected = [False] * NUM_DICE_IN_HAND
         self.rerolls_left = MAX_REROLLS if not DEBUG else -1  # Reset to unlimited in debug
         self.rerolls_left_initial = self.rerolls_left
@@ -1154,17 +1156,22 @@ class ChromaRollGame:
                 glass_break_chance = charm['break_chance']
                 glass_break_penalty = charm['break_penalty']
 
-        # Main break loop:
-        for i, (die, _) in enumerate(self.rolls):
-            if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
-                print(f"DEBUG: Breaking die '{die['color']}' ID '{die['id']}' held {self.held[i]} RNG {random.random()}, full_bag now {len(self.full_bag)}")  # Keep for debug
-                self.sfx_channel.play(self.break_sound)
-                # FIXED: Temp - bag only
-                self.bag = [d for d in self.bag if d['id'] != die['id']]
-                # self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]  # Comment/remove
-                self.coins -= glass_break_penalty
-                self.broken_dice.append(i)
-                self.break_effect_start = time.time()
+        # Main break loop (with Break Buffer mod):
+        for i, (die, value) in enumerate(self.rolls):  # Use value here (scored face)
+            if die['color'] == 'Glass' and self.held[i]:
+                # NEW: Check for Break Buffer active (only on 1-3, 33% chance)
+                has_break_buffer = any(c['type'] == 'break_reduce' and idx not in self.disabled_charms for idx, c in enumerate(self.equipped_charms))
+                effective_chance = glass_break_chance if not has_break_buffer else (0.33 if value <= 3 else 0.0)
+                
+                if random.random() < effective_chance:
+                    print(f"DEBUG: Breaking die '{die['color']}' ID '{die['id']}' held {self.held[i]} RNG {random.random()}, full_bag now {len(self.full_bag)}")  # Keep for debug
+                    self.sfx_channel.play(self.break_sound)
+                    # FIXED: Temp - bag only
+                    self.bag = [d for d in self.bag if d['id'] != die['id']]
+                    # self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]  # Comment/remove
+                    self.coins -= glass_break_penalty
+                    self.broken_dice.append(i)
+                    self.break_effect_start = time.time()
 
         # Add Mime here
         has_mime = any(c['type'] == 'retrigger_held' for c in self.equipped_charms)
@@ -1178,32 +1185,37 @@ class ChromaRollGame:
             glass_count = sum(1 for i, (die, _) in enumerate(self.rolls) if die['color'] == 'Glass' and self.held[i])
             score *= (4 ** glass_count)
 
-            # Mime retrigger break loop (same):
-            for i, (die, value) in enumerate(self.rolls):
-                if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
-                    print(f"DEBUG: Mime Breaking die '{die['color']}' ID '{die['id']}'...")  # Debug
-                    self.sfx_channel.play(self.break_sound)
-                    self.bag = [d for d in self.bag if d['id'] != die['id']]
-                    # self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]  # Comment/remove
-                    self.coins -= glass_break_penalty
-                    self.broken_dice.append(i)
-                    self.break_effect_start = time.time()
+            # Mime retrigger break loop (same, with Break Buffer mod):
+            for i, (die, value) in enumerate(self.rolls):  # Use value here too
+                if die['color'] == 'Glass' and self.held[i]:
+                    # NEW: Reuse Break Buffer check (respects mod on retrigger)
+                    has_break_buffer = any(c['type'] == 'break_reduce' and idx not in self.disabled_charms for idx, c in enumerate(self.equipped_charms))
+                    effective_chance = glass_break_chance if not has_break_buffer else (0.33 if value <= 3 else 0.0)
+                    
+                    if random.random() < effective_chance:
+                        print(f"DEBUG: Mime Breaking die '{die['color']}' ID '{die['id']}'...")  # Debug
+                        self.sfx_channel.play(self.break_sound)
+                        self.bag = [d for d in self.bag if d['id'] != die['id']]
+                        # self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]  # Comment/remove
+                        self.coins -= glass_break_penalty
+                        self.broken_dice.append(i)
+                        self.break_effect_start = time.time()
 
-                # NEW: Synergy Scroll - Retrigger enhancements on held dice
-                synergy_equipped = any(charm['name'] == 'Synergy Scroll' and idx not in self.disabled_charms 
-                                    for idx, charm in enumerate(self.equipped_charms))
+            # NEW: Synergy Scroll - Retrigger enhancements on held dice
+            synergy_equipped = any(charm['name'] == 'Synergy Scroll' and idx not in self.disabled_charms 
+                                for idx, charm in enumerate(self.equipped_charms))
 
-                if synergy_equipped:
-                    synergy_score_delta = 0
-                    synergy_coin_delta = 0
-                    for i, (die, _) in enumerate(self.rolls):
-                        if self.held[i]:
-                            delta_score, delta_coins = self.apply_enhancement_retrigger(die, i)
-                            synergy_score_delta += delta_score
-                            synergy_coin_delta += delta_coins
-                        
-                    score += synergy_score_delta  # Add to this hand's score
-                    self.extra_coins += synergy_coin_delta  # Flows to total_coins/popup
+            if synergy_equipped:
+                synergy_score_delta = 0
+                synergy_coin_delta = 0
+                for i, (die, _) in enumerate(self.rolls):
+                    if self.held[i]:
+                        delta_score, delta_coins = self.apply_enhancement_retrigger(die, i)
+                        synergy_score_delta += delta_score
+                        synergy_coin_delta += delta_coins
+                
+                score += synergy_score_delta  # Add to this hand's score
+                self.extra_coins += synergy_coin_delta  # Flows to total_coins/popup
 
         self.hands_left -= 1
         print(f"DEBUG: full_bag before score hand{self.turn}: {len(self.full_bag)}")  # Per hand
@@ -1500,6 +1512,8 @@ class ChromaRollGame:
                 counts, max_count = self.apply_wild_4(held_rolls, counts, max_count, groups, modifier_desc)
             elif charm['type'] == 'wild_6':
                 counts, max_count = self.apply_wild_6(held_rolls, counts, max_count, groups, modifier_desc)
+            elif charm['type'] == 'face_wild':
+                counts, max_count = self.apply_face_wild(held_rolls, counts, max_count, groups, modifier_desc, charm['face'])
 
         # Your rainbow/mono code here (uses updated groups)
 
@@ -1872,10 +1886,12 @@ class ChromaRollGame:
                     charm_mult_add += mult_add
                     modifier_desc.append(f"{charm['name']} +{mult_add} ({self.discards_used_this_round} discards)")
             elif charm['type'] == 'coin_per_wild':
-                wild_count = sum(1 for die, _ in held_rolls if die['color'] == 'Rainbow' and len(set([d['color'] for d, _ in held_rolls if d['color'] != 'Rainbow'])) <= 1)
+                non_rainbow_colors = [die['color'] for die, _ in held_rolls if die['color'] != 'Rainbow']
+                is_mono_hand = len(set(non_rainbow_colors)) <= 1 if non_rainbow_colors else False
+                wild_count = sum(1 for die, _ in held_rolls if die['color'] == 'Rainbow' and is_mono_hand)
                 if not is_preview and wild_count > 0:
-                    charm_chips += charm['value'] * wild_count
-                    modifier_desc.append(f"{charm['name']} +{charm['value'] * wild_count} coins ({wild_count} wilds)")
+                    self.extra_coins += charm['value'] * wild_count  # Add to coins, not chips
+                    modifier_desc.append(f"{charm['name']} +{charm['value'] * wild_count} coins ({wild_count} wilds in mono)")
             elif charm['type'] == 'final_mult':
                 if self.hands_left == 1:  # Last hand of round
                     mult_add = charm['value']
@@ -2048,6 +2064,24 @@ class ChromaRollGame:
                 if wild_face in groups:
                     del groups[wild_face]
                 modifier_desc.append(f"{wild_die_count} Kind King Wilds matched to {highest_group}s")
+        return counts, max_count
+
+    def apply_face_wild(self, held_rolls, counts, max_count, groups, modifier_desc, wild_face):
+        """Face Forgery: Each rolled wild_face (e.g., 2) acts as a wild die that matches the highest non-wild group to extend kinds."""
+        wild_die_count = sum(1 for _, v in held_rolls if v == wild_face)
+        if wild_die_count > 0:
+            non_wild_counts = {k: v for k, v in counts.items() if k != wild_face}
+            if non_wild_counts:
+                highest_group = max(non_wild_counts, key=non_wild_counts.get)
+                counts[highest_group] += wild_die_count  # Add each wild to highest
+                max_count = max(counts.values())
+                # Match colors to group
+                wild_colors = [die['color'] for die, v in held_rolls if v == wild_face]
+                groups[highest_group] += wild_colors
+                # Remove original wild_face group
+                if wild_face in groups:
+                    del groups[wild_face]
+                modifier_desc.append(f"{wild_die_count} Face Forgery Wilds matched to {highest_group}s")
         return counts, max_count
 
     def calculate_score(self):

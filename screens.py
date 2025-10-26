@@ -280,9 +280,17 @@ def draw_game_screen(game):
                 discards_used = getattr(game, 'discards_used_this_round', 0)
                 mult_add = charm['value'] * discards_used
                 tooltip_text += f"\nPreview: +{mult_add:.1f} ({discards_used} discards)"
+            # In screens.py draw_shop_screen(), replace the Wild Warden tooltip block (around line 569):
             if charm['type'] == 'coin_per_wild':
-                wild_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die['color'] == 'Rainbow' and len(set([d['color'] for d, _ in [(dd, vv) for ii, (dd, vv) in enumerate(game.rolls) if game.held[ii] and dd['color'] != 'Rainbow']]) <= 1))
-                tooltip_text += f"\nPreview: +{charm['value'] * wild_count} coins ({wild_count} wilds)"
+                # Guard: Skip preview if no valid rolls/held (e.g., in shop, empty hand)
+                held_rolls = [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i] and d is not None]
+                if len(held_rolls) == 0:
+                    tooltip_text += "\nPreview: +1 coin per Rainbow in mono hand"
+                else:
+                    non_rainbow_colors = [die.get('color', '') for die, _ in held_rolls if die.get('color', '') != 'Rainbow']
+                    is_mono_hand = len(set(non_rainbow_colors)) <= 1 if non_rainbow_colors else False
+                    wild_count = sum(1 for die, _ in held_rolls if die.get('color', '') == 'Rainbow' and is_mono_hand)
+                    tooltip_text += f"\nPreview: +{charm['value'] * wild_count} coins ({wild_count} wilds in mono)"
             if charm['type'] == 'final_mult_conditional':
                 tooltip_text += "\nPreview: +3 mult on last hand with enhancement"
             if charm['type'] == 'face_buy_high':
@@ -566,15 +574,19 @@ def draw_shop_screen(game, skip_tooltips=False):
                 mult_add = charm['value'] * discards_used
                 tooltip_text += f"\nPreview: +{mult_add:.1f} ({discards_used} discards)"
             if charm['type'] == 'coin_per_wild':
-                wild_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die['color'] == 'Rainbow' and len(set([d['color'] for d, _ in [(dd, vv) for ii, (dd, vv) in enumerate(game.rolls) if game.held[ii] and dd['color'] != 'Rainbow']]) <= 1))
-                tooltip_text += f"\nPreview: +{charm['value'] * wild_count} coins ({wild_count} wilds)"
+                # Guard: Skip preview if no valid rolls/held (e.g., in shop, empty hand)
+                held_rolls = [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i] and d is not None]
+                if len(held_rolls) == 0:
+                    tooltip_text += "\nPreview: +1 coin per Rainbow in mono hand"
+                else:
+                    non_rainbow_colors = [die.get('color', '') for die, _ in held_rolls if die.get('color', '') != 'Rainbow']
+                    is_mono_hand = len(set(non_rainbow_colors)) <= 1 if non_rainbow_colors else False
+                    wild_count = sum(1 for die, _ in held_rolls if die.get('color', '') == 'Rainbow' and is_mono_hand)
+                    tooltip_text += f"\nPreview: +{charm['value'] * wild_count} coins ({wild_count} wilds in mono)"
             if charm['type'] == 'final_mult_conditional':
                 tooltip_text += "\nPreview: +3 mult on last hand with enhancement"
             if charm['type'] == 'face_buy_high':
                 tooltip_text += "\nPreview: +2 to a face (3 coins, once/turn)"
-            if charm['type'] == 'coin_per_wild':
-                wild_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die['color'] == 'Rainbow' and len(set([d['color'] for d, _ in [(dd, vv) for ii, (dd, vv) in enumerate(game.rolls) if game.held[ii] and dd['color'] != 'Rainbow']]) <= 1))
-                tooltip_text += f"\nPreview: +{charm['value'] * wild_count} coins ({wild_count} wilds)"
             if charm['type'] == 'final_mult_conditional':
                 tooltip_text += "\nPreview: +3 mult on last hand with enhancement"
             if charm['type'] == 'face_buy_high':
@@ -1102,9 +1114,7 @@ def draw_dice(game):
         if game.held[i]:
             pygame.draw.rect(game.screen, (0, 255, 0), rect, 2)
 
-        # Set center_die_rect for index 2
-        if i == 2:
-            game.center_die_rect = rect
+        
 
     # Draw advantage duplicate if in rolling phase (amulet)
     if not game.is_discard_phase and game.has_advantage and game.advantage_value is not None:
