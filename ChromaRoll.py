@@ -661,6 +661,7 @@ class ChromaRollGame:
         self.extra_coins = 0
         self.turn_initialized = False  # Reset for new round/turn
         self.bag[:] = [copy.deepcopy(d) for d in self.full_bag]  # Refill bag from owned template
+        print(f"DEBUG: Bag after refill in advance_blind: {len(self.bag)}")  # Should be 25
         if self.current_boss_effect and self.current_boss_effect['name'] == 'Charm Eclipse':
             self.disabled_charms = list(range(len(self.equipped_charms)))  # Ensure all current charms disabled
 
@@ -1000,6 +1001,7 @@ class ChromaRollGame:
                         self.coins += charm['value']  # +3
                         self.temp_message = f"Destroyed die for +{charm['value']} coins!"
                         self.temp_message_start = time.time()
+                        print(f"DEBUG: Trading Token destroy die ID {destroyed_die['id']} in hand{self.turn}, full_bag now {len(self.full_bag)}")
                         break  # Assume one charm
             # New: Grant extra reroll if Recycler equipped and discard used
             recycler_count = sum(1 for c in self.equipped_charms if c['type'] == 'reroll_recycler')
@@ -1152,18 +1154,15 @@ class ChromaRollGame:
                 glass_break_chance = charm['break_chance']
                 glass_break_penalty = charm['break_penalty']
 
-        # Handle Glass break chance (only for held Glass)
+        # Main break loop:
         for i, (die, _) in enumerate(self.rolls):
             if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
-                # NEW: Saving Throw check if equipped (use die value as save)
-                has_saving_throw = any(charm['type'] == 'break_save' and idx not in self.disabled_charms 
-                                    for idx, charm in enumerate(self.equipped_charms))
-                if has_saving_throw and value > 3:  # Success: skip break
-                    continue
+                print(f"DEBUG: Breaking die '{die['color']}' ID '{die['id']}' held {self.held[i]} RNG {random.random()}, full_bag now {len(self.full_bag)}")  # Keep for debug
                 self.sfx_channel.play(self.break_sound)
-                self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
+                # FIXED: Temp - bag only
                 self.bag = [d for d in self.bag if d['id'] != die['id']]
-                self.coins -= glass_break_penalty  # Penalty immediate, as it's a loss
+                # self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]  # Comment/remove
+                self.coins -= glass_break_penalty
                 self.broken_dice.append(i)
                 self.break_effect_start = time.time()
 
@@ -1179,17 +1178,13 @@ class ChromaRollGame:
             glass_count = sum(1 for i, (die, _) in enumerate(self.rolls) if die['color'] == 'Glass' and self.held[i])
             score *= (4 ** glass_count)
 
-            # Mime retrigger break loop
-            for i, (die, value) in enumerate(self.rolls):  # Changed _ to value
+            # Mime retrigger break loop (same):
+            for i, (die, value) in enumerate(self.rolls):
                 if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
-                    # NEW: Saving Throw check if equipped (use die value as save)
-                    has_saving_throw = any(charm['type'] == 'break_save' and idx not in self.disabled_charms 
-                                        for idx, charm in enumerate(self.equipped_charms))
-                    if has_saving_throw and value > 3:  # Now value is defined
-                        continue
+                    print(f"DEBUG: Mime Breaking die '{die['color']}' ID '{die['id']}'...")  # Debug
                     self.sfx_channel.play(self.break_sound)
-                    self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
                     self.bag = [d for d in self.bag if d['id'] != die['id']]
+                    # self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]  # Comment/remove
                     self.coins -= glass_break_penalty
                     self.broken_dice.append(i)
                     self.break_effect_start = time.time()
@@ -1211,6 +1206,7 @@ class ChromaRollGame:
                     self.extra_coins += synergy_coin_delta  # Flows to total_coins/popup
 
         self.hands_left -= 1
+        print(f"DEBUG: full_bag before score hand{self.turn}: {len(self.full_bag)}")  # Per hand
         self.hands_left = max(0, self.hands_left)  # Clamp to prevent negative# In new_turn (or blind_start hook), after setting hands_left
     
         if self.round_score >= self.get_blind_target():
@@ -2527,6 +2523,7 @@ class ChromaRollGame:
                 self.bag.remove(die)
                 if die in self.full_bag:
                     self.full_bag.remove(die)
+                    print(f"DEBUG: Sacrifice remove die ID {die['id']}, full_bag now {len(self.full_bag)}")
 
         elif name == 'Mystic Transmute Rune':
             if len(die_list) != 2:
@@ -2587,11 +2584,24 @@ class ChromaRollGame:
         self.temp_message = f"Applied {name}!" if not self.temp_message else self.temp_message
 
     def refresh_bag(self):
-        """Force update bag visuals after rune apply."""
-        # Update full_bag to match bag (if needed for persistence)
-        self.full_bag = [d for d in self.full_bag if d in self.bag] + [d for d in self.bag if d not in self.full_bag]  # Sync
+        """Force update bag visuals after rune apply; sync mods to full_bag without length loss."""
+        # FIXED: One-way sync: Update full_bag with bag mods (by ID), preserve length/add if needed
+        for mod_die in self.bag:  # Loop modded bag items
+            die_id = mod_die.get('id')
+            if die_id:  # Skip if no ID
+                matched = False
+                for full_idx, full_die in enumerate(self.full_bag):
+                    if full_die.get('id') == die_id:
+                        # Copy mods to full_bag (deep for nested lists like faces/enh)
+                        self.full_bag[full_idx] = copy.deepcopy(mod_die)
+                        matched = True
+                        break
+                if not matched:  # New item in bag? Add it (e.g., future rune add)
+                    self.full_bag.append(copy.deepcopy(mod_die))
+                    print(f"DEBUG: Added new die ID {die_id} to full_bag after rune")  # Optional
+        # No remove: Ignore "missing" on-screen rolls—full_bag stays 25
+        print(f"DEBUG: full_bag after one-way sync: {len(self.full_bag)} (mods propagated)")  # Optional debug
         # If in shop/game, force redraw (state will handle in next draw call)
-        #  print("Bag refreshed")  # Debug; remove later
 
     def run(self):
         """Main game loop."""
