@@ -152,8 +152,6 @@ class ChromaRollGame:
             'Flower Pot Prism': resource_path('assets/icons/flower-pot-prism-icon.png'),
             'Glass Globe': resource_path('assets/icons/glass-globe-icon.png'),
             'Obelisk Orb': resource_path('assets/icons/obelisk-orb-icon.png'),
-            'Brainstorm Bead': resource_path('assets/icons/brainstorm-bead-icon.png'),
-            'Blueprint Bag': resource_path('assets/icons/blueprint-bag-icon.png'),
             'Burglar Bag': resource_path('assets/icons/burglar-bag-icon.png'),
             'Steel Seal': resource_path('assets/icons/steel-seal-icon.png'),
             'Dusk Die': resource_path('assets/icons/dusk-die-icon.png'),
@@ -323,6 +321,8 @@ class ChromaRollGame:
         self.swap_source_index = -1
         self.selecting_bag_die = False
 
+        self.destroyed_dice = []  # NEW: Track removed dice for Needle revival (preserves color/enh)
+        
 
         # New for Gambler's Grimoire
         self.used_rune_cast_this_shop = False
@@ -497,6 +497,8 @@ class ChromaRollGame:
             self.sfx_channel.play(self.break_sound)
             self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
             self.bag = [d for d in self.bag if d['id'] != die['id']]
+            # NEW: Save to destroyed for Needle (copy preserves color/enh)
+            self.destroyed_dice.append(die.copy())
             self.coins -= glass_break_penalty
             self.broken_dice.append(i)
             self.break_effect_start = time.time()
@@ -622,6 +624,14 @@ class ChromaRollGame:
         self.boss_rainbow_color = None
         self.boss_shuffled_faces = {}
 
+        # NEW: Reset Spellbook Scribe flag per blind
+        if hasattr(self, '_scribe_used_this_blind'):
+            delattr(self, '_scribe_used_this_blind')
+
+        # NEW: Reset Necromancer's Needle flag per blind
+        if hasattr(self, '_needle_used_this_blind'):
+            delattr(self, '_needle_used_this_blind')
+
         # Generate preview if starting Small
         if self.current_blind == 'Small':
             self.upcoming_boss_effect = random.choice(data.BOSS_EFFECTS)  # Pre-generate for preview
@@ -690,6 +700,8 @@ class ChromaRollGame:
             else:
                 i += 1
 
+        self.cloak_used_this_game = False  # Set in init if needed
+
         # DEBUG: Final hands after all
         # print(f"DEBUG: Final hands_left after advance_blind: {self.hands_left}")
 
@@ -729,6 +741,14 @@ class ChromaRollGame:
         self.disadvantage_target_index = -1
         self.disadvantage_confirm_rect = None
         self.is_last_hand = (self.hands_left == 1)
+
+        # NEW: Sorcerer's Surge - Roll fixed mult per turn for kinds
+        for charm in self.equipped_charms:
+            if charm['type'] == 'surge_random':
+                charm['surge_mult'] = random.randint(charm['range'][0], charm['range'][1])  # 2-5
+                self.temp_message = f"Sorcerer's Surge: +{charm['surge_mult']}x on kinds this turn!"
+                self.temp_message_start = time.time()
+                break  # Assume one charm
 
         self.update_hand_text()  # Update initial hand text (now reflects Turtle bonus on first hand)
         # In new_turn():
@@ -888,6 +908,7 @@ class ChromaRollGame:
                     self.break_sound.set_volume(0.7)  # Louder for impact
                     self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]
                     self.bag = [d for d in self.bag if d['id'] != die['id']]
+                    self.destroyed_dice.append(die.copy())
                     self.coins -= glass_break_penalty
                     self.broken_dice.append(i)  # Add index for animation
                     self.break_effect_start = time.time()  # Start timer
@@ -962,8 +983,35 @@ class ChromaRollGame:
             elif self.hands_left > 0:
                 self.new_turn()  # Next hand in round
             else:
-                # Game over - transition to state
-                self.state_machine.change_state(GameOverState(self))
+                # NEW: Check Cloak on reroll exhaustion (parallel to score_and_new_turn)
+                print(f"DEBUG: Reroll loss check - rerolls_left={self.rerolls_left}")  # TEMP
+                cloak_active = any(charm['type'] == 'loss_prevent' and idx not in self.disabled_charms for idx, charm in enumerate(self.equipped_charms))
+                print(f"DEBUG: Cloak active on reroll fail? {cloak_active}")  # TEMP
+                if cloak_active and not getattr(self, 'cloak_used_this_game', False):
+                    print("DEBUG: Cloak triggered on reroll fail!")  # TEMP
+                    # Find and destroy Cloak
+                    for idx, charm in enumerate(self.equipped_charms):
+                        if charm['type'] == 'loss_prevent':
+                            del self.equipped_charms[idx]
+                            break
+                    # Repeat blind: Reset round vars + full refill
+                    # Repeat blind: Reset round vars + refill bag from template (preserve mods)
+                    self.round_score = 0
+                    self.hands_left = MAX_HANDS
+                    self.discards_left = MAX_DISCARDS
+                    self.extra_coins = 0
+                    self.rerolls_left = MAX_REROLLS  # Reset rerolls too
+                    # NEW: Refill current bag from modded template (no recreate)
+                    self.bag = [d.copy() for d in self.full_bag]  # Preserves enhancements/pouch extras
+                    self.temp_message = "Cloak of Cunning saved you! Repeating the blind."
+                    self.temp_message_start = time.time()
+                    self.cloak_used_this_game = True
+                    self.new_turn()  # Fresh hand
+                    print(f"DEBUG: Cloak reroll repeat - bag now={len(self.bag)}")  # TEMP
+                    return
+                else:
+                    # Game over - transition to state
+                    self.state_machine.change_state(GameOverState(self))
 
     def discard(self):
         """Discards selected dice and draws new ones from bag, replacing in same positions with value 1."""
@@ -1069,6 +1117,8 @@ class ChromaRollGame:
         # print("Computed score:", score, "(base:", base_score, "chips:", charm_chips, "modifier:", 1 + charm_mono_add)  # Add this debug to see components
         self.round_score += score
 
+        
+
         # NEW: Increment Ice Shard hands_played on score (per played hand, no reset)
         for charm in self.equipped_charms:
             if charm['name'] == 'Ice Shard':
@@ -1168,6 +1218,7 @@ class ChromaRollGame:
                     self.sfx_channel.play(self.break_sound)
                     # FIXED: Temp - bag only
                     self.bag = [d for d in self.bag if d['id'] != die['id']]
+                    self.destroyed_dice.append(die.copy())
                     # self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]  # Comment/remove
                     self.coins -= glass_break_penalty
                     self.broken_dice.append(i)
@@ -1196,6 +1247,7 @@ class ChromaRollGame:
                         print(f"DEBUG: Mime Breaking die '{die['color']}' ID '{die['id']}'...")  # Debug
                         self.sfx_channel.play(self.break_sound)
                         self.bag = [d for d in self.bag if d['id'] != die['id']]
+                        self.destroyed_dice.append(die.copy())
                         # self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]  # Comment/remove
                         self.coins -= glass_break_penalty
                         self.broken_dice.append(i)
@@ -1318,6 +1370,14 @@ class ChromaRollGame:
             if rune_gains_lines:
                 rune_block = "Rune Gains:\n" + "\n".join(rune_gains_lines) + "\n"
 
+            
+            # NEW: Echo Ember coins (unused discards at end)
+            echo_ember_bonus = 0
+            for charm in self.equipped_charms:
+                if charm['type'] == 'coin_per_discard' and idx not in self.disabled_charms:
+                    echo_ember_bonus += charm['value'] * self.discards_left  # Unused discards
+            echo_ember_line = f"Echo Coins: ${echo_ember_bonus}\n" if echo_ember_bonus > 0 else ""
+
             # NEW: Gift Glyph sell bonus (after rune gains, before popup)
             gift_bonus = 0
             for idx, charm in enumerate(self.equipped_charms):
@@ -1339,7 +1399,7 @@ class ChromaRollGame:
             coin_gen_line = f"Echo Coins: {coin_gen_dollars}\n" if coin_gen_bonus > 0 else ""
 
             # Total coins including accumulated Luck's Locket, base lucky, and runes
-            total_coins = remains_coins + interest + self.extra_coins + self.round_locket_coins + self.round_base_lucky_coins + total_rune_coins + coin_gen_bonus
+            total_coins = remains_coins + interest + self.extra_coins + self.round_locket_coins + self.round_base_lucky_coins + total_rune_coins + coin_gen_bonus + echo_ember_bonus
 
             total_dollars = '$' * abs(total_coins) if total_coins >= 0 else str(total_coins)
 
@@ -1395,14 +1455,40 @@ class ChromaRollGame:
                                 f"{luck_locket_line}"  # Luck's Locket accumulated
                                 f"{base_lucky_line}"  # Base 'Lucky' accumulated
                                 f"{rune_block}"  # NEW: Rune gains block
-                                f"{coin_gen_line}"  # Echo Coins from Coin Generation charms
+                                f"{coin_gen_line}"  # Coin Generation charms
+                                f"{echo_ember_line}"  # NEW: Echo Ember from unused discards
                                 f"Coins gained: {total_dollars}")
             self.show_popup = True
         elif self.hands_left > 0:
             self.new_turn()  # Next hand in round
         else:
-            # Game over - transition to state
-            self.state_machine.change_state(GameOverState(self))
+            # NEW: Cloak of Cunning - Prevent loss once per game, repeat blind
+            cloak_active = any(charm['type'] == 'loss_prevent' and idx not in self.disabled_charms for idx, charm in enumerate(self.equipped_charms))
+            if cloak_active and not getattr(self, 'cloak_used_this_game', False):
+                print("DEBUG: Cloak triggered on score fail!")  # TEMP
+                # Find and destroy Cloak
+                for idx, charm in enumerate(self.equipped_charms):
+                    if charm['type'] == 'loss_prevent':
+                        del self.equipped_charms[idx]
+                        break
+                # Repeat blind: Reset round vars + full refill
+                # Repeat blind: Reset round vars + refill bag from template (preserve mods)
+                self.round_score = 0
+                self.hands_left = MAX_HANDS
+                self.discards_left = MAX_DISCARDS
+                self.extra_coins = 0
+                self.rerolls_left = MAX_REROLLS  # Reset rerolls too
+                # NEW: Refill current bag from modded template (no recreate)
+                self.bag = [d.copy() for d in self.full_bag]  # Preserves enhancements/pouch extras
+                self.temp_message = "Cloak of Cunning saved you! Repeating the blind."
+                self.temp_message_start = time.time()
+                self.cloak_used_this_game = True
+                self.new_turn()  # Fresh hand
+                print(f"DEBUG: Cloak score repeat - bag now={len(self.bag)}")  # TEMP
+                return  # No over
+            else:
+                # Game over - transition to state
+                self.state_machine.change_state(GameOverState(self))
 
     def toggle_hold(self, index):
         """Toggles hold state for a die."""
@@ -1482,6 +1568,9 @@ class ChromaRollGame:
         base_score = 0
         base_modifier = 0.0
         modifier_desc = []  # List to collect descriptions, join later
+
+        # NEW: Init retrigger_mult early (before charm loop)
+        retrigger_mult = 1.0
 
         straights = [[1,2,3,4], [2,3,4,5], [3,4,5,6]]
         short_straights_small = [[1,2,3], [2,3,4], [3,4,5], [4,5,6]]
@@ -1842,6 +1931,27 @@ class ChromaRollGame:
                 if mult_add > 0:
                     charm_mult_add += mult_add
                     modifier_desc.append(f"{charm['name']} +{mult_add} ({self.stake_milestones} milestones)")
+            elif charm['type'] == 'surge_random':
+                if hand_type in ['3 of a Kind', '4 of a Kind', '5 of a Kind']:
+                    surge_mult = charm.get('surge_mult', 0)  # Stored per turn; 0 if none
+                    if surge_mult > 0:
+                        charm_mult_add += surge_mult  # +2-5 (not -1)
+                        modifier_desc.append(f"{charm['name']} +{surge_mult}x (this turn's surge)")
+            elif charm['type'] == 'rainbow_mult':
+                unique_colors = len(set(colors_list))  # Total unique in hand
+                if is_rainbow and unique_colors > 1:
+                    mult_add = charm['value'] * (unique_colors - 1)  # +0.5 per extra color (beyond 1)
+                    charm_mult_add += mult_add
+                    modifier_desc.append(f"{charm['name']} +{mult_add:.1f} ({unique_colors} colors)")
+            elif charm['type'] == 'coin_per_color':
+                green_count = sum(1 for die, _ in held_rolls if die['color'] == charm['color'])
+                if not is_preview and green_count > 0:
+                    self.extra_coins += green_count  # +1 per green (value=1 implicit)
+                    modifier_desc.append(f"{charm['name']} +{green_count} coins ({green_count} {charm['color']})")
+            elif charm['type'] == 'retrigger' and 'hands' in charm and 'kinds' in charm['hands']:
+                if hand_type in ['3 of a Kind', '4 of a Kind', '5 of a Kind']:
+                    retrigger_mult *= 2  # x2 total for kinds
+                    modifier_desc.append(f"{charm['name']} x2 (kinds retrigger)")
             elif charm['type'] == 'advantage_choice':
             # Stub: Requires roll logic outside scoring (e.g., in roll phase)
             # For now, no in-score effect; handle in roll method
@@ -1909,7 +2019,6 @@ class ChromaRollGame:
             elif charm['type'] == 'coin_per_discard':
                 discards_left = getattr(self, 'discards_left', 0)
                 if not is_preview and discards_left > 0:
-                    charm_chips += charm['value'] * discards_left
                     modifier_desc.append(f"{charm['name']} +{charm['value'] * discards_left} coins ({discards_left} discards)")
             elif charm['type'] == 'risk_mult':
                 mult_add = charm['value']  # +0.5 mult overall
@@ -1919,14 +2028,25 @@ class ChromaRollGame:
             elif charm['type'] == 'loss_prevent':
                 # Stub: Prevent loss once per game; handle in game over logic
                 pass
-            elif charm['type'] == 'rune_scribe':
-                # Stub: Scribe rune on magic 3; handle in scoring or turn start
-                if not is_preview and any(value == 3 for _, value in held_rolls):
-                    # Logic to add to rune tray
-                    pass
             elif charm['type'] == 'revive_die':
-                # Stub: 50% chance to revive a die; handle in break or turn end
-                pass
+                if not is_preview and self.destroyed_dice and not getattr(self, '_needle_used_this_blind', False) and random.random() < charm['chance']:
+                    revived_die = random.choice(self.destroyed_dice).copy()  # Random from destroyed, preserve color/enh
+                    self.full_bag.append(revived_die)  # Back to template
+                    self.bag.append(revived_die)  # Back to current bag
+                    self.destroyed_dice.remove(revived_die)  # Remove from destroyed
+                    self._needle_used_this_blind = True  # 1 per blind
+                    modifier_desc.append(f"{charm['name']}: Revived {revived_die['color']} die!")
+                elif not is_preview and not self.destroyed_dice:
+                    modifier_desc.append(f"{charm['name']}: No destroyed dice to revive.")
+            elif charm['type'] == 'rune_scribe':
+                has_magic_3 = any(v in charm['faces'] for _, v in held_rolls)  # Check for 3 in held
+                if has_magic_3 and not is_preview and not getattr(self, '_scribe_used_this_blind', False):
+                    random_rune = random.choice(data.MYSTIC_RUNES).copy()
+                    if self.add_to_rune_tray(random_rune):
+                        self._scribe_used_this_blind = True  # One per blind
+                        modifier_desc.append(f"{charm['name']}: Scribed {random_rune['name']} to tray!")
+                    else:
+                        modifier_desc.append(f"{charm['name']}: Tray full, skipped scribe.")
             elif charm['type'] == 'discard_destroy_coin':
                 # Stub: Destroy 1 die for 3 coins on first discard; handle in discard phase
                 pass
@@ -1940,7 +2060,6 @@ class ChromaRollGame:
                     modifier_desc.append(f"{charm['name']} +{charm['value']} (final discard)")
             elif charm['type'] == 'score_per_coin':
                 charm_chips += charm['value'] * self.coins
-            # In the charm if-elif chain (e.g., after 'mult_per_milestone'):
             elif charm['type'] == 'crit_bonus':
                 if all(value == 6 for _, value in held_rolls):
                     mult_add = charm['value'] - 1  # e.g., +5 for value=6 (since base 1.0)
@@ -2006,7 +2125,7 @@ class ChromaRollGame:
             if total_modifier >= 2.5:
                 modifier_desc.append("Multiplier Mute capped at +2.5")
 
-        retrigger_mult = 1.0
+        # NEW: Init retrigger_mult early (before charm loop)
         for idx, charm in enumerate(self.equipped_charms):
             if idx in self.disabled_charms:
                 continue
@@ -2287,6 +2406,8 @@ class ChromaRollGame:
         self.coins = 999999 if DEBUG else 0
         self.turn_initialized = False  # Reset for new round/turn
         self.current_stake = 1
+        self.cloak_used_this_game = False  # NEW: Reset on full restart
+        self.destroyed_dice = []  # NEW: Clear on full restart
         self.current_blind = 'Small'
         self.round_score = 0
         self.hands_left = MAX_HANDS
@@ -2558,6 +2679,8 @@ class ChromaRollGame:
                 if die in self.full_bag:
                     self.full_bag.remove(die)
                     print(f"DEBUG: Sacrifice remove die ID {die['id']}, full_bag now {len(self.full_bag)}")
+                # NEW: Save to destroyed for Needle
+                self.destroyed_dice.append(die.copy())
 
         elif name == 'Mystic Transmute Rune':
             if len(die_list) != 2:

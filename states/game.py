@@ -66,6 +66,16 @@ class GameState(State):
                 self.game.new_turn()
         # FIXED: Removed else: new_turn() – rare case covered by fresh
         self.game.update_advantage_flag()  # Refresh after entering state
+
+        # NEW: Burglar Bag - +3 hands but lose all discards on blind start
+        # NEW: Burglar Bag - +3 hands but lose all discards on blind start
+        burglar_active = any(charm['type'] == 'burglar_bonus' and charm.get('lose_discards', False) for charm in self.game.equipped_charms if self.game.equipped_charms.index(charm) not in self.game.disabled_charms)
+        if burglar_active:
+            self.game.hands_left += 3  # +value (hardcoded; or loop for multi)
+            self.game.discards_left = 0  # Lose all
+            self.game.temp_message = "Burglar Bag: +3 hands, but no discards this blind!"
+            self.game.temp_message_start = time.time()
+            print(f"DEBUG: Burglar Bag applied - hands={self.game.hands_left}, discards={self.game.discards_left}")  # TEMP
         
         # Safeguard reset for rolls
         if len(self.game.rolls) != 5:
