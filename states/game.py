@@ -67,7 +67,20 @@ class GameState(State):
         # FIXED: Removed else: new_turn() – rare case covered by fresh
         self.game.update_advantage_flag()  # Refresh after entering state
 
-        # NEW: Burglar Bag - +3 hands but lose all discards on blind start
+        # Turtle Token - Apply net (start - decay) on blind entry
+        for idx, charm in enumerate(self.game.equipped_charms):
+            if charm['type'] == 'hands_decay' and idx not in self.game.disabled_charms:
+                rounds_passed = charm.get('rounds_passed', 0)
+                net_bonus = charm['start'] - (rounds_passed * charm['decay'])  # e.g., 5 - (1*1)=4
+                if net_bonus > 0:
+                    self.game.hands_left += net_bonus
+                self.game.hands_left = max(constants.MAX_HANDS, self.game.hands_left)  # NEW: Floor at base 4
+                if net_bonus < charm['start']:  # NEW: Msg only if decay applied
+                    self.game.temp_message = f"Turtle Token: Hands adjusted to {self.game.hands_left} (passed {rounds_passed})"
+                    self.game.temp_message_start = time.time()
+                break  # Assume one charm
+
+        
         # NEW: Burglar Bag - +3 hands but lose all discards on blind start
         burglar_active = any(charm['type'] == 'burglar_bonus' and charm.get('lose_discards', False) for charm in self.game.equipped_charms if self.game.equipped_charms.index(charm) not in self.game.disabled_charms)
         if burglar_active:
@@ -602,7 +615,16 @@ class GameState(State):
                     rune = self.game.rune_tray[i]
                     self.game.state_machine.change_state(RuneUseState(self.game, rune))  # Transition
                     self.game.previous_state = self
-                    self.game.rune_tray[i] = None  # Remove after use
+                    # NEW: Rune Recycler - Reuse after use (add to next shop choices)
+                    if any(charm['type'] == 'rune_reuse' and idx not in self.game.disabled_charms for idx, charm in enumerate(self.game.equipped_charms)) and not getattr(self.game, '_recycler_used_this_shop', False):
+                        # Mark for next shop (flag prevents spam)
+                        self.game._recycler_reuse_pending = rune.copy()  # Pending rune
+                        self.game._recycler_used_this_shop = True
+                        self.game.temp_message = f"Rune Recycler: {rune['name']} queued for reuse in shop!"
+                        self.game.temp_message_start = time.time()
+                    # FIXED: Skip removal if reused rune (persist for Recycler)
+                    if not getattr(rune, 'reused', False):
+                        self.game.rune_tray[i] = None  # Remove after use
                     # print("DEBUG: Transitioned to RuneUseState, removed from tray")  # Add
                     break  # One at a time
             # else:

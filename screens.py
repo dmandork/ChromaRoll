@@ -482,21 +482,22 @@ def draw_shop_screen(game, skip_tooltips=False):
     bag_y = 50
     bag_rect = pygame.Rect(bag_x, bag_y, bag_width, bag_height)
 
-    # New: Tray underneath continue (use multipliers_button_rect as proxy; adjust if actual continue differs)
-    multipliers_button_rect = pygame.Rect(game.width - constants.MULTIPLIERS_BUTTON_SIZE - 10, game.height - constants.MULTIPLIERS_BUTTON_SIZE - 100, constants.MULTIPLIERS_BUTTON_SIZE, constants.MULTIPLIERS_BUTTON_SIZE)  # From your code
-    continue_rect = multipliers_button_rect  # Proxy; replace with actual continue_rect if defined
+    # NEW: Tray top-right under coins/above continue (dynamic right-align, visible)
     tray_width = 2 * constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING
-    tray_x = continue_rect.centerx - tray_width // 2  # Center under
-    tray_y = continue_rect.bottom + 10  # Below
-    tray_y = min(tray_y, game.height - constants.TRAY_SLOT_SIZE - 10)  # Clamp to bottom
+    tray_x = 660  # FIXED: Right-align to hit clicks ~914 (adjust -10 if too right)
+    tray_y = 120  # Your preferred
+    tray_rects = []  # Instance var for handle_event
     for i in range(2):
         slot_rect = pygame.Rect(tray_x + i * (constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING), tray_y, constants.TRAY_SLOT_SIZE, constants.TRAY_SLOT_SIZE)
+        # Draw slot (gray bg, border)
         pygame.draw.rect(game.screen, (150, 150, 150), slot_rect, border_radius=5)
         if game.rune_tray[i]:
-            text = game.tiny_font.render(f"#{game.rune_tray[i].get('id', i+1)}", True, constants.THEME['text'])
+            text = game.tiny_font.render(game.rune_tray[i]['name'][:3], True, constants.THEME['text'])  # Short name/ID
             game.screen.blit(text, (slot_rect.centerx - text.get_width()//2, slot_rect.centery - text.get_height()//2))
         else:
-            pygame.draw.rect(game.screen, (255, 0, 0), slot_rect, width=2)  # Temp red debug (remove after)
+            pygame.draw.rect(game.screen, (255, 0, 0), slot_rect, width=2)  # Red outline for empty
+        tray_rects.append(slot_rect)
+    print("DEBUG: shop tray_rects set:", tray_rects)  # TEMP - confirm x~900+
 
     # Define large panel for purchasables (shop charms and packs, expanded for future additions)
     panel_width = int(game.width * 0.9)  # 90% width for more space
@@ -675,13 +676,16 @@ def draw_shop_screen(game, skip_tooltips=False):
     game.screen.blit(pack_title, (panel_x + inner_padding, shop_charms_y + constants.CHARM_BOX_HEIGHT + 20))  # Below shop charms
     pack_y = shop_charms_y + constants.CHARM_BOX_HEIGHT + 50 # Space below charms
     pack_rects = []
-    pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9] # Append rune pack costs
+    pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9, 0]  # FIXED: Append 0 for Recycler pack_idx=9
     pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5] # Append rune pack choices
     pack_names = [
         "Basic Prism (1 of 2)", "Standard Prism (1 of 3)", "Premium Prism (1 of 5)",
         "Dice Pack (1 of 3)", "Dice Pack (1 of 4)", "Special Dice Pack (1 of 3)",
-        "Basic Rune Pack (1 of 3)", "Mega Rune Pack (1 of 5)", "Super Rune Pack (2 of 5)"
+        "Basic Rune Pack (1 of 3)", "Mega Rune Pack (1 of 5)", "Super Rune Pack (2 of 5)",
+        "Reused Rune (Free)"  # NEW: For pack_idx=9 (Recycler)
     ] # Append rune pack names
+    pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5, 1]  # FIXED: Append 1 for single reused rune
+    pack_select_num = [1, 1, 1, 1, 1, 1, 1, 1, 2, 1]  # FIXED: Append 1 for single
     pack_x_start = panel_x + inner_padding # Left-aligned
     pack_x = pack_x_start
     for pack_idx in game.available_packs:
@@ -698,6 +702,12 @@ def draw_shop_screen(game, skip_tooltips=False):
             pygame.draw.rect(game.screen, constants.BAG_COLOR, pack_rect, border_radius=constants.BAG_BORDER_RADIUS)
             text = game.small_font.render(f"Rune Pack ${pack_costs[pack_idx]}", True, constants.THEME['text'])
             game.screen.blit(text, (pack_rect.centerx - text.get_width()//2, pack_rect.centery))
+        # NEW: Draw reused rune (pack_idx=9)
+        elif pack_idx == 9:
+            reused_rune = game.pack_choices[-1]  # Last in choices
+            pygame.draw.rect(game.screen, (150, 150, 150), pack_rect, border_radius=5)  # Gray box
+            text = game.small_font.render(reused_rune['name'][:10], True, constants.THEME['text'])  # Short name
+            game.screen.blit(text, (pack_rect.centerx - text.get_width()//2, pack_rect.centery - text.get_height()//2))
         if not skip_tooltips and pack_rect.collidepoint(mouse_pos):
             tooltip_text = f"{pack_names[pack_idx]}\nCost: {pack_costs[pack_idx]}"
             tooltip_y = pack_rect.y + 80 + 5
@@ -753,7 +763,7 @@ def draw_shop_screen(game, skip_tooltips=False):
     continue_rect = pygame.Rect(continue_x, continue_y, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
     draw_custom_button(game, continue_rect, "Continue", is_hover=continue_rect.collidepoint(mouse_pos))  # No is_red for positive action
 
-    return continue_rect, sell_rects, buy_rects, equipped_rects, shop_rects, pack_rects, reroll_rect
+    return continue_rect, sell_rects, buy_rects, equipped_rects, shop_rects, pack_rects, reroll_rect, tray_rects
 
 def draw_blinds_screen(game):
     """Draws the blinds selection screen with three boxes for all blinds, horizontally."""

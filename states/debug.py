@@ -168,6 +168,9 @@ class DebugCharmState(State):
             for rect, charm in self.charm_rects:
                 if rect.collidepoint(mouse_pos) and len(self.game.equipped_charms) < self.game.max_charms * 2:
                     self.game.equipped_charms.append(copy.deepcopy(charm))
+                    # NEW: Guard for Rune Recycler (skip reuse on first shop after debug equip)
+                    if charm['type'] == 'rune_reuse':
+                        self.game._recycler_equipped_this_shop = True  # Flag for enter skip
                     self.game.temp_message = f"Added {charm['name']}!"
                     self.game.state_machine.change_state(DebugMenuState(self.game))
                     break

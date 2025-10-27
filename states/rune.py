@@ -201,14 +201,29 @@ class RuneSelectState(State):
                 rune = self.game.pack_choices[self.selected_rune_index]
                 if None in self.game.rune_tray:  # Room check
                     slot = self.game.rune_tray.index(None)
+                    print(f"DEBUG: Holding {rune['name']} to tray slot {slot}")  # TEMP
                     self.game.rune_tray[slot] = rune
-                    self.game.pack_choices.pop(self.selected_rune_index)  # Remove from choices
-                    self.selected_rune_index = -1  # Reset after pop
-                    self.applied_count += 1  # Count hold as select
+                    self.game.pack_choices.pop(self.selected_rune_index)  # Pop from choices
+                    self.selected_rune_index = -1  # Reset
+                    self.applied_count += 1  # Increment
                     self.selected_die_indices = []
-                    self.random_dice = random.sample(self.game.bag, min(8, len(self.game.bag)))  # Refresh after hold
-                    if self.applied_count >= self.game.pack_select_count:
+                    print(f"DEBUG: Hold applied={self.applied_count}, total select={self.game.pack_select_count}, choices left={len(self.game.pack_choices)}")  # TEMP
+                    self.game.temp_message = f"Held {rune['name']} to tray! ({self.applied_count}/{self.game.pack_select_count})"  # Progress msg
+                    self.game.temp_message_start = time.time()
+                    # FIXED: Transition after hold (re-enter only if multi)
+                    if self.applied_count < self.game.pack_select_count:
+                        # Re-enter with full reset (refreshes UI/choices)
+                        new_state = RuneSelectState(self.game)
+                        new_state.applied_count = self.applied_count  # Carry over count
+                        new_state.selected_rune_index = -1  # Force reset
+                        new_state.selected_die_indices = []
+                        self.game.state_machine.change_state(new_state)
+                    else:
                         self.game.state_machine.change_state(ShopState(self.game))
+                else:
+                    print("DEBUG: Hold failed - tray full")  # TEMP
+                    self.game.temp_message = "Tray full - cannot hold rune!"
+                    self.game.temp_message_start = time.time()
 
             if self.skip_rect.collidepoint(mouse_pos):
                 self.game.pack_choices = []  # Discard

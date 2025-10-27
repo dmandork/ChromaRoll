@@ -312,7 +312,7 @@ class ChromaRollGame:
         self.disadvantage_target_index = -1  # Selected die
         self.disadvantage_confirm_rect = None  # Confirm button
 
-        self.used_whirlwind_this_blind = False  # Per blind (resets in advance_blind)
+        self.used_whirlwind_this_blind = False  # Per blind (resets in advance blind)
         self.selecting_whirlwind_die = False  # Selection mode
         self.whirlwind_target_index = -1  # Selected die for free reroll
 
@@ -445,6 +445,7 @@ class ChromaRollGame:
         self.permanent_score_bonus = 0  # (for Square scaling—add charm['value'] on condition met)
         self.discards_used_this_round = 0  # Track for Discard Drake/Acrobat Amulet
         self.rerolls_left_initial = 3
+        self.final_discard_mult = 0  # NEW: For Acrobat Amulet (+2 on last discard)
         self.hand_play_counts = {ht: 0 for ht in data.HAND_TYPES}  # Track counts per hand type
 
     def update_advantage_flag(self):
@@ -623,6 +624,9 @@ class ChromaRollGame:
         self.boss_reroll_count = 0
         self.boss_rainbow_color = None
         self.boss_shuffled_faces = {}
+
+        # NEW: Reset Acrobat Amulet flag per blind
+        self.final_discard_mult = 0
 
         # NEW: Reset Spellbook Scribe flag per blind
         if hasattr(self, '_scribe_used_this_blind'):
@@ -1039,6 +1043,13 @@ class ChromaRollGame:
             self.held = [False] * NUM_DICE_IN_HAND
             self.discard_selected = [False] * NUM_DICE_IN_HAND
             self.discards_left -= 1
+            self.discard_used_this_round = True
+            # NEW: Acrobat Amulet - +2 mult if this was the final discard
+            if self.discards_left == 0:
+                self.final_discard_mult = 2
+                self.temp_message = "Acrobat Amulet: +2 mult on next score (final discard)!"
+                self.temp_message_start = time.time()
+            self.update_hand_text()
             self.discard_used_this_round = True
             # Trading Token: Destroy 1 die for coins on first discard
             if self.first_discard_this_turn and selected_count == 1:
@@ -2098,6 +2109,11 @@ class ChromaRollGame:
 
         total_modifier = base_modifier + charm_color_mult_add + rune_mult_add + charm_mult_add
 
+        # NEW: Acrobat Amulet - Apply final discard mult if set
+        total_modifier += self.final_discard_mult
+        if self.final_discard_mult > 0:
+            modifier_desc.append(f"Acrobat Amulet +{self.final_discard_mult}")
+
         if hand_type in self.hand_multipliers:
             mult_add = self.hand_multipliers[hand_type] - 1
             total_modifier += mult_add
@@ -2449,6 +2465,11 @@ class ChromaRollGame:
         self.hand_multipliers = {ht: 1.0 for ht in data.HAND_TYPES}  # Reset to base 1.0 for all types
         # Add any other vars to reset (e.g., multipliers_hover=False)
         self.tutorial_step = 0; self.tutorial_mode = False; self.tutorial_completed = False; self.unlocks = {}
+        # NEW: Reset Turtle rounds_passed on full restart
+        for charm in self.equipped_charms:
+            if charm['type'] == 'hands_decay':
+                charm['rounds_passed'] = 0
+                break
 
     def apply_pouch(self, pouch):
         """Applies the selected pouch's bonuses to the game state."""

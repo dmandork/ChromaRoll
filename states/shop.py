@@ -11,6 +11,7 @@ from utils import draw_rounded_element, resource_path, wrap_text  # For UI/butto
 from screens import draw_shop_screen, draw_custom_button, draw_tooltip  # For main shop drawing/buttons
 from data import CHARMS_POOL  # For charm generation/packs
 from states.base import State
+from states.rune import RuneUseState, RuneSelectState  # FIXED: Lazy import at top of handle_event (for IDE/Pylance)
 
 class ShopState(State):
     def __init__(self, game):
@@ -48,7 +49,7 @@ class ShopState(State):
         # print("Debug: Reset Gambler's Grimoire for new shop")
         # NEW: Homebrew Hazard random event if equipped
         has_homebrew = any(charm['type'] == 'random_event' and idx not in self.game.disabled_charms 
-                   for idx, charm in enumerate(self.game.equipped_charms))
+                for idx, charm in enumerate(self.game.equipped_charms))
         if has_homebrew and random.random() < 1/6:
             # Success: +1 bonus charm (free common/rare pick)
             available_pool = [c for c in data.CHARMS_POOL 
@@ -64,7 +65,18 @@ class ShopState(State):
             else:
                 self.game.temp_message = "Homebrew success... but no charms available!"
                 self.game.temp_message_start = time.time()
-    # No penalty branch—pure upside
+        # NEW: Add pending Recycler rune to this shop's choices (if queued from prior use)
+        if hasattr(self.game, '_recycler_reuse_pending'):
+            print("DEBUG: Recycler pending found - adding to shop")  # TEMP
+            pending_rune = self.game._recycler_reuse_pending
+            pending_rune['cost'] = 0
+            pending_rune['reused'] = True
+            self.game.pack_choices.append(pending_rune)
+            self.game.available_packs.append(9)  # Special index
+            delattr(self.game, '_recycler_reuse_pending')  # Clear
+            self.game.temp_message = f"Rune Recycler: {pending_rune['name']} available in shop!"
+            self.game.temp_message_start = time.time()
+            print("DEBUG: Recycler added to pack_choices/available_packs")  # TEMP
 
     def update(self, dt):
         pass  # Expand for animations if needed
@@ -72,22 +84,15 @@ class ShopState(State):
     def draw(self):
         self.game.screen.fill(THEME['background'])  # Clear relics
         # Draw shop, but pass debug_panel_open to skip tooltips when panel is open
-        self.continue_rect, self.sell_rects, self.buy_rects, self.equipped_rects, self.shop_rects, self.pack_rects, self.reroll_rect = draw_shop_screen(self.game, skip_tooltips=self.debug_panel_open)
+        self.continue_rect, self.sell_rects, self.buy_rects, self.equipped_rects, self.shop_rects, self.pack_rects, self.reroll_rect, self.tray_rects = draw_shop_screen(self.game, skip_tooltips=self.debug_panel_open)  # FIXED: Unpack 8th as self.tray_rects
         
         # Calc bag_width for tray pos (match screens.py)
         columns = 5
         rows = math.ceil(len(self.game.bag) / columns) if self.game.bag else 1
         bag_width = columns * (SMALL_DIE_SIZE + SMALL_DIE_SPACING) - SMALL_DIE_SPACING + BAG_PADDING * 2
 
-        # Calc tray_rects for clicks (match screens.py)
-        tray_width = 2 * TRAY_SLOT_SIZE + TRAY_SLOT_SPACING
-        tray_x = self.game.width - bag_width - 20 - tray_width - 10  # Left of bag
-        tray_y = 50
-        self.tray_rects = []
-        for i in range(2):
-            slot_rect = pygame.Rect(tray_x + i * (TRAY_SLOT_SIZE + TRAY_SLOT_SPACING), tray_y, TRAY_SLOT_SIZE, TRAY_SLOT_SIZE)
-            self.tray_rects.append(slot_rect)
-        # print("DEBUG: shop tray_rects set:", self.tray_rects)  # TEMP
+        # Calc tray_rects for clicks (match screens.py) - FIXED: No recalc, use from unpack
+        # print("DEBUG: shop self.tray_rects from unpack:", self.tray_rects)  # TEMP - confirm new rects
 
         # Debug button (bottom-right to avoid prism packs)
         if DEBUG:
@@ -95,7 +100,7 @@ class ShopState(State):
             button_y = self.game.height - DEBUG_BUTTON_SIZE[1] - 50
             self.debug_rect = pygame.Rect(button_x, button_y, *DEBUG_BUTTON_SIZE)
             draw_custom_button(self.game, self.debug_rect, DEBUG_BUTTON_TEXT, 
-                              is_hover=self.debug_rect.collidepoint(pygame.mouse.get_pos()))
+                            is_hover=self.debug_rect.collidepoint(pygame.mouse.get_pos()))
             
             # Draw debug panel if open
             if self.debug_panel_open:
@@ -111,6 +116,7 @@ class ShopState(State):
 
     def handle_event(self, event):
         from states.blinds import BlindsState  # Lazy import here - loads only when method runs
+        from states.rune import RuneUseState  # FIXED: Lazy import at top of handle_event (for IDE/Pylance)
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 from states.pause import PauseMenuState  # Lazy import
@@ -211,6 +217,12 @@ class ShopState(State):
                         # NEW: Init local_turns on equip (start at 1 for off-cycle first hand)
                         if charm['name'] == 'Loyalty Luck':
                             charm['local_turns'] = 1  # Start at 1 (Next in 5 turns)
+                        # NEW: Turtle Token - Add initial +5 hands on equip
+                        elif charm['name'] == 'Turtle Token':
+                            self.game.hands_left += charm['start']  # +5
+                            charm['rounds_passed'] = 0  # Init counter
+                            self.game.temp_message = f"Turtle Token: +{charm['start']} hands (decays -1 per round)!"
+                            self.game.temp_message_start = time.time()
                         self.game.coins -= cost
                         if self.game.current_boss_effect and self.game.current_boss_effect['name'] == 'Charm Eclipse':
                             self.game.disabled_charms = list(range(len(self.game.equipped_charms)))
@@ -237,6 +249,19 @@ class ShopState(State):
                             # Optional: Feedback (e.g., sound or message)
                             # self.game.play_sound('buy')  # If you have audio
                             return  # Exit early, no cost
+                    
+                    # NEW: Handle Rune Recycler reused rune (index 9)
+                    elif pack_idx == 9:
+                        reused_rune = self.game.pack_choices[-1]  # Last in choices (the reused one)
+                        if self.game.rune_tray.count(None) > 0:  # Tray slot free
+                            self.game.add_to_rune_tray(reused_rune)  # Back to tray
+                            self.game.pack_choices.pop()  # Remove from choices
+                            self.game.available_packs.remove(9)
+                            self.game.temp_message = f"Reused {reused_rune['name']} to tray!"
+                        else:
+                            self.game.temp_message = "Tray full—reused rune discarded."
+                        self.game.temp_message_start = time.time()
+                        return  # Exit, no cost
                     
                     # Existing pack buy logic continues here... (no cost check for -1, so use if instead of elif)
                     if pack_idx != -1:  # Skip cost check for Grimoire
@@ -267,86 +292,98 @@ class ShopState(State):
                                 self.game.state_machine.change_state(RuneSelectState(self.game))
                                 self.game.available_packs.remove(pack_idx)
                     return
-                
+                    
+                # Reroll
+                if self.reroll_rect and self.reroll_rect.collidepoint(mouse_pos):
+                    self.game.reroll_shop()
+                    return
 
-            # Reroll
-            if self.reroll_rect and self.reroll_rect.collidepoint(mouse_pos):
-                self.game.reroll_shop()
-                return
-
-            # Charm drag start
-            for i in range(len(self.game.equipped_charms)):
-                x = 50 + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
-                y = 150
-                rect = pygame.Rect(x, y, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
-                if rect.collidepoint(mouse_pos):
-                    self.game.dragging_charm_index = i
-                    self.game.dragging_shop = True
-                    self.game.drag_offset_x = mouse_pos[0] - x
-                    self.game.drag_offset_y = mouse_pos[1] - y
-                    break
-
-            # New: Tray click to use rune
-            print("DEBUG: Checking shop tray click – tray_rects:", self.tray_rects)  # Add
-            for i, tray_rect in enumerate(self.tray_rects or []):
-                if tray_rect is not None and tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
-                    print(f"DEBUG: Clicking shop tray slot {i}: {self.game.rune_tray[i]['name']}")  # Add
-                    from states.rune import RuneUseState  # Lazy import
-                    rune = self.game.rune_tray[i]
-                    self.game.previous_state = self  # Store for back
-                    self.game.state_machine.change_state(RuneUseState(self.game, rune))
-                    self.game.previous_state = self
-                    self.game.rune_tray[i] = None  # Remove
-                    print("DEBUG: Shop tray transitioned, removed")  # Add
-                    break
-
-        if event.type == pygame.MOUSEBUTTONUP:
-            if self.game.dragging_charm_index != -1:
-                mouse_pos = pygame.mouse.get_pos()
-                target_index = -1
+                # Charm drag start
                 for i in range(len(self.game.equipped_charms)):
                     x = 50 + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
                     y = 150
                     rect = pygame.Rect(x, y, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
                     if rect.collidepoint(mouse_pos):
-                        target_index = i
+                        self.game.dragging_charm_index = i
+                        self.game.dragging_shop = True
+                        self.game.drag_offset_x = mouse_pos[0] - x
+                        self.game.drag_offset_y = mouse_pos[1] - y
                         break
-                if target_index != -1 and target_index != self.game.dragging_charm_index:
-                    self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
-                        self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
-                self.game.dragging_charm_index = -1
-                self.game.dragging_shop = False
 
-        if event.type == pygame.MOUSEWHEEL and DEBUG and self.debug_panel_open:
-            icons_per_row = 4
-            row_height = 100 + 50  # Match draw_debug_panel
-            num_rows = (len(data.CHARMS_POOL) + icons_per_row - 1) // icons_per_row
-            total_content_height = num_rows * row_height + 70
-            scroll_speed = 50
-            self.scroll_y -= event.y * scroll_speed
-            max_scroll = max(0, total_content_height - DEBUG_PANEL_HEIGHT)
-            self.scroll_y = max(0, min(self.scroll_y, max_scroll))
+                # New: Tray click to use rune
+                print("DEBUG: Checking shop tray click – self.tray_rects:", self.tray_rects)  # TEMP
+                mouse_pos = pygame.mouse.get_pos()  # Ensure fresh
+                print(f"DEBUG: Mouse pos on click: {mouse_pos}")  # TEMP
+                for i, tray_rect in enumerate(self.tray_rects or []):  # FIXED: or [] to avoid None
+                    print(f"DEBUG: Slot {i} rect: {tray_rect}, rune: {self.game.rune_tray[i]}")  # TEMP
+                    if tray_rect is not None and tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
+                        print(f"DEBUG: Clicking shop tray slot {i}: {self.game.rune_tray[i]['name']}")  # TEMP
+                        from states.rune import RuneUseState  # Lazy import
+                        rune = self.game.rune_tray[i]
+                        self.game.previous_state = self  # Store for back
+                        self.game.state_machine.change_state(RuneUseState(self.game, rune))  # Transition
+                        # NEW: Rune Recycler - Queue reuse after use (add to next shop choices)
+                        recycler_active = any(charm['type'] == 'rune_reuse' and idx not in self.game.disabled_charms for idx, charm in enumerate(self.game.equipped_charms))
+                        if recycler_active and not getattr(self.game, '_recycler_used_this_shop', False):
+                            self.game._recycler_reuse_pending = rune.copy()  # Queue for next shop
+                            self.game._recycler_used_this_shop = True  # Flag for this shop
+                            self.game.temp_message = f"Rune Recycler: {rune['name']} queued for reuse in next shop!"
+                            self.game.temp_message_start = time.time()
+                        # FIXED: Skip removal if reused rune (persist for Recycler)
+                        if not getattr(rune, 'reused', False):
+                            self.game.rune_tray[i] = None  # Remove after use
+                        print("DEBUG: Shop tray transitioned, removed from tray")  # TEMP
+                        break  # One at a time
+                else:
+                    print("DEBUG: No valid tray click (miss or empty)")  # TEMP - if loop ends
 
-        if event.type == pygame.MOUSEMOTION:
-            if self.game.dragging_charm_index != -1:
-                pass  # Dragging handled in draw_shop_screen
+            if event.type == pygame.MOUSEBUTTONUP:
+                if self.game.dragging_charm_index != -1:
+                    mouse_pos = pygame.mouse.get_pos()
+                    target_index = -1
+                    for i in range(len(self.game.equipped_charms)):
+                        x = 50 + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
+                        y = 150
+                        rect = pygame.Rect(x, y, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
+                        if rect.collidepoint(mouse_pos):
+                            target_index = i
+                            break
+                    if target_index != -1 and target_index != self.game.dragging_charm_index:
+                        self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
+                            self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
+                    self.game.dragging_charm_index = -1
+                    self.game.dragging_shop = False
 
-        if event.type == pygame.MOUSEBUTTONUP:
-            if self.game.dragging_charm_index != -1:
-                mouse_pos = pygame.mouse.get_pos()
-                target_index = -1
-                for i in range(len(self.game.equipped_charms)):
-                    x = 50 + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
-                    y = 150
-                    rect = pygame.Rect(x, y, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
-                    if rect.collidepoint(mouse_pos):
-                        target_index = i
-                        break
-                if target_index != -1 and target_index != self.game.dragging_charm_index:
-                    self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
-                        self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
-                self.game.dragging_charm_index = -1
-                self.game.dragging_shop = False
+            if event.type == pygame.MOUSEWHEEL and DEBUG and self.debug_panel_open:
+                icons_per_row = 4
+                row_height = 100 + 50  # Match draw_debug_panel
+                num_rows = (len(data.CHARMS_POOL) + icons_per_row - 1) // icons_per_row
+                total_content_height = num_rows * row_height + 70
+                scroll_speed = 50
+                self.scroll_y -= event.y * scroll_speed
+                max_scroll = max(0, total_content_height - DEBUG_PANEL_HEIGHT)
+                self.scroll_y = max(0, min(self.scroll_y, max_scroll))
+
+            if event.type == pygame.MOUSEMOTION:
+                if self.game.dragging_charm_index != -1:
+                    pass  # Dragging handled in draw_shop_screen
+
+            if event.type == pygame.MOUSEBUTTONUP:
+                if self.game.dragging_charm_index != -1:
+                    mouse_pos = pygame.mouse.get_pos()
+                    target_index = -1
+                    for i in range(len(self.game.equipped_charms)):
+                        x = 50 + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
+                        y = 150
+                        rect = pygame.Rect(x, y, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
+                        if rect.collidepoint(mouse_pos):
+                            target_index = i
+                            break
+                    if target_index != -1 and target_index != self.game.dragging_charm_index:
+                        self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
+                            self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
+                    self.game.dragging_charm_index = -1
+                    self.game.dragging_shop = False
 
     def draw_debug_panel(self):
         """Draws the debug panel with improved spacing and text readability."""
