@@ -36,20 +36,43 @@ class GameState(State):
     def enter(self):
         print(f"DEBUG: GameState enter – is_resuming: {self.game.is_resuming}, last_state_was_rune: {self.game.last_state_was_rune}, rolls len: {len(self.game.rolls)}, bag len: {len(self.game.bag)}")  # TEMP
         # FIXED: Skip only if from rune (not fresh/resume)
-        if self.game.last_state_was_rune:
-            print("DEBUG: From rune state – skipping init pull")  # TEMP
+        if self.game.last_state_was_rune:  # Game entry - preserve hand, skip init
+            print("DEBUG: From game rune – skipping init pull")  # TEMP
             self.game.last_state_was_rune = False
-            self.game.has_rolled = True  # FIXED: Preserve to skip block
+            self.game.has_rolled = True
+            return
+        if self.game.from_shop_rune_use:  # Shop entry - force fresh pull
+            print("DEBUG: From shop rune – forcing fresh pull")  # TEMP
+            self.game.from_shop_rune_use = False
+            self.game.has_rolled = False  # Reset to pull
+            self.game.new_turn()  # Force dice
             return
         if self.game.is_resuming:
             print("DEBUG: Resuming – skipping init pull")  # Your debug
             self.game.is_resuming = False
-            self.game.has_rolled = True  # FIXED: Preserve to skip block
-            # FIXED: Force pull on resume if no rolls (load empty)
+            self.game.has_rolled = True
             if len(self.game.rolls) == 0:
                 print("DEBUG: Resume empty rolls – forcing pull")  # TEMP
                 self.game.new_turn()
             return
+        
+        # NEW: Marble Mystic - Add Stone enh to random bag die on blind start
+        mystic_active = any(charm['type'] == 'enhance_add' and charm.get('enh', 'Stone') == 'Stone' and idx not in self.game.disabled_charms for idx, charm in enumerate(self.game.equipped_charms))
+        if mystic_active and self.game.bag:
+            random_die = random.choice(self.game.bag).copy()  # Random from bag
+            if 'enhancements' not in random_die:
+                random_die['enhancements'] = []
+            random_die['enhancements'].append('Stone')  # Add enh
+            self.game.bag = [d for d in self.game.bag if d['id'] != random_die['id']] + [random_die]  # Replace
+            self.game.full_bag = [d for d in self.game.full_bag if d['id'] != random_die['id']] + [random_die]  # Sync template
+            self.game.temp_message = f"Marble Mystic: Stone enh added to {random_die['color']} die!"
+            self.game.temp_message_start = time.time()
+            print(f"DEBUG: Marble Mystic added Stone to {random_die['color']} die (ID: {random_die['id']})")  # TEMP
+        else:
+            if mystic_active and not self.game.bag:
+                self.game.temp_message = "Marble Mystic: Bag empty, skipped enh add."
+                self.game.temp_message_start = time.time()
+
         # FIXED: Fresh entry from blinds – always pull if empty
         if len(self.game.rolls) == 0:
             print("DEBUG: Fresh entry – forcing new_turn/pull")  # TEMP
@@ -92,7 +115,7 @@ class GameState(State):
         
         # Safeguard reset for rolls
         if len(self.game.rolls) != 5:
-            self.game.rolls = [(None, False) for _ in range(5)]
+            self.game.rolls = [(None, 0) for _ in range(5)]
 
         # ADD: Force held reset after new_turn/roll
         self.game.held = [False] * NUM_DICE_IN_HAND
@@ -607,28 +630,23 @@ class GameState(State):
                         break
 
             # NEW: Tray click to use rune
-            # print("DEBUG: Checking tray click – tray_rects:", self.tray_rects)  # Add for debug
-            for i, tray_rect in enumerate(self.tray_rects or []):  # FIXED: or [] to avoid None
+            for i, tray_rect in enumerate(self.tray_rects or []):
                 if tray_rect is not None and tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
-                    # print(f"DEBUG: Clicking tray slot {i}: {self.game.rune_tray[i]['name']}")  # Add
                     from states.rune import RuneUseState  # Lazy import
                     rune = self.game.rune_tray[i]
                     self.game.state_machine.change_state(RuneUseState(self.game, rune))  # Transition
                     self.game.previous_state = self
-                    # NEW: Rune Recycler - Reuse after use (add to next shop choices)
-                    if any(charm['type'] == 'rune_reuse' and idx not in self.game.disabled_charms for idx, charm in enumerate(self.game.equipped_charms)) and not getattr(self.game, '_recycler_used_this_shop', False):
-                        # Mark for next shop (flag prevents spam)
-                        self.game._recycler_reuse_pending = rune.copy()  # Pending rune
-                        self.game._recycler_used_this_shop = True
-                        self.game.temp_message = f"Rune Recycler: {rune['name']} queued for reuse in shop!"
+                    # NEW: Rune Recycler - Queue reuse after use (for next shop) - only if not flagged
+                    recycler_active = any(charm['type'] == 'rune_reuse' and idx not in self.game.disabled_charms for idx, charm in enumerate(self.game.equipped_charms))
+                    if recycler_active and not getattr(self.game, '_recycler_used_this_blind', False):  # FIXED: Per blind flag
+                        self.game._recycler_reuse_pending = rune.copy()  # Queue for next shop
+                        self.game._recycler_used_this_blind = True  # FIXED: Blind flag (not shop)
+                        self.game.temp_message = f"Rune Recycler: {rune['name']} queued for reuse in next shop!"
                         self.game.temp_message_start = time.time()
                     # FIXED: Skip removal if reused rune (persist for Recycler)
                     if not getattr(rune, 'reused', False):
                         self.game.rune_tray[i] = None  # Remove after use
-                    # print("DEBUG: Transitioned to RuneUseState, removed from tray")  # Add
-                    break  # One at a time
-            # else:
-                # print("DEBUG: No valid tray click")  # Add if no match
+                    break
 
         if event.type == pygame.MOUSEMOTION:
             if self.game.dragging_charm_index != -1:

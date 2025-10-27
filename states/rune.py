@@ -11,6 +11,7 @@ from constants import *  # THEME, CHARM_BOX_WIDTH, CHARM_SPACING, BUTTON_WIDTH, 
 class RuneSelectState(State):
     def __init__(self, game):
         super().__init__(game)
+        print(f"DEBUG: RuneUseState init - tray before: {game.rune_tray}")  # TEMP - confirm no wipe
         self.selected_rune_index = -1
         self.selected_die_indices = []  # List for multi-select
         self.random_dice = random.sample(self.game.bag, min(8, len(self.game.bag)))  # 8 random for mod
@@ -346,15 +347,16 @@ class RuneUseState(State):
                 print(f"DEBUG: Confirm rune {self.rune['name']} with {len(dies)} dice")  # TEMP
                 self.game.apply_rune_effect(self.rune, dies)
                 # FIXED: Always change_state, set resuming for enter skip
-                self.game.last_state_was_rune = True  # FIXED: New flag
+                self.game.last_state_was_rune = True  # Game entry flag
                 previous = self.game.previous_state
                 if previous is None:
                     from states.game import GameState
                     previous = GameState(self.game)
                 self.game.state_machine.change_state(previous)
-                print("DEBUG: Rune applied, changed state with last_state_was_rune=True")  # TEMP
+                self.game.last_state_was_rune = False  # FIXED: Reset after transition
+                self.game.from_shop_rune_use = False  # FIXED: Reset after transition
+                print("DEBUG: Rune applied, changed state with flags reset")  # TEMP
                 return
-
             # Cancel (same)
             if self.cancel_rect.collidepoint(mouse_pos):
                 # FIXED: Always change_state, set resuming

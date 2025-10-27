@@ -423,31 +423,33 @@ def draw_game_screen(game):
     # Render tooltips based on hovered state
     if game.hovered_hand_die is not None:
         i = game.hovered_hand_die
-        die, _ = game.rolls[i]  # Get die dict
-        desc = ''
-        if 'enhancements' in die and die['enhancements']:
-            for enh in die['enhancements']:
-                desc += f"{enh}: {ENH_DESC.get(enh, 'Unknown effect')}\n"
-        bonus = die.get('score_bonus', 0)
-        if bonus > 0:
-            desc += f"+{bonus} Score Bonus\n"
-        if desc:
-            die_rect = game.hand_die_rects[i]
-            draw_tooltip(game, die_rect.x, die_rect.y + die_rect.height + 10, desc.strip())  # Below die for visibility
+        if i < len(game.rolls):  # FIXED: Guard against stale hover/index error
+            die, _ = game.rolls[i]  # Get die dict
+            desc = ''
+            if 'enhancements' in die and die['enhancements']:
+                for enh in die['enhancements']:
+                    desc += f"{enh}: {ENH_DESC.get(enh, 'Unknown effect')}\n"
+            bonus = die.get('score_bonus', 0)
+            if bonus > 0:
+                desc += f"+{bonus} Score Bonus\n"
+            if desc:
+                die_rect = game.hand_die_rects[i]
+                draw_tooltip(game, die_rect.x, die_rect.y + die_rect.height + 10, desc.strip())  # Below die for visibility
 
     if game.hovered_bag_die is not None:
         j = game.hovered_bag_die
-        die = game.bag[j]
-        desc = ''
-        if 'enhancements' in die and die['enhancements']:
-            for enh in die['enhancements']:
-                desc += f"{enh}: {ENH_DESC.get(enh, 'Unknown effect')}\n"
-        bonus = die.get('score_bonus', 0)
-        if bonus > 0:
-            desc += f"+{bonus} Score Bonus\n"
-        if desc:
-            bag_rect = game.bag_die_rects[j]
-            draw_tooltip(game, bag_rect.x, bag_rect.y + bag_rect.height + 10, desc.strip())
+        if j < len(game.bag):  # FIXED: Guard against stale hover/index error
+            die = game.bag[j]
+            desc = ''
+            if 'enhancements' in die and die['enhancements']:
+                for enh in die['enhancements']:
+                    desc += f"{enh}: {ENH_DESC.get(enh, 'Unknown effect')}\n"
+            bonus = die.get('score_bonus', 0)
+            if bonus > 0:
+                desc += f"+{bonus} Score Bonus\n"
+            if desc:
+                bag_rect = game.bag_die_rects[j]
+                draw_tooltip(game, bag_rect.x, bag_rect.y + bag_rect.height + 10, desc.strip())
 
 
 def draw_shop_screen(game, skip_tooltips=False):
@@ -497,7 +499,7 @@ def draw_shop_screen(game, skip_tooltips=False):
         else:
             pygame.draw.rect(game.screen, (255, 0, 0), slot_rect, width=2)  # Red outline for empty
         tray_rects.append(slot_rect)
-    print("DEBUG: shop tray_rects set:", tray_rects)  # TEMP - confirm x~900+
+    # print("DEBUG: shop tray_rects set:", tray_rects)  # TEMP - confirm x~900+
 
     # Define large panel for purchasables (shop charms and packs, expanded for future additions)
     panel_width = int(game.width * 0.9)  # 90% width for more space

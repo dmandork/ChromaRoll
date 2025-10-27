@@ -311,30 +311,23 @@ class ChromaRollGame:
         self.selecting_disadvantage_die = False  # Selection mode
         self.disadvantage_target_index = -1  # Selected die
         self.disadvantage_confirm_rect = None  # Confirm button
-
         self.used_whirlwind_this_blind = False  # Per blind (resets in advance blind)
         self.selecting_whirlwind_die = False  # Selection mode
         self.whirlwind_target_index = -1  # Selected die for free reroll
-
         self.selecting_bag_swap = False
         self.swap_use_left = 1
         self.swap_source_index = -1
         self.selecting_bag_die = False
-
         self.destroyed_dice = []  # NEW: Track removed dice for Needle revival (preserves color/enh)
         
-
         # New for Gambler's Grimoire
         self.used_rune_cast_this_shop = False
-
         self.round_locket_coins = 0
         self.round_base_lucky_coins = 0
-
         self.is_last_hand = False
-
         self.first_discard_this_turn = True
-
         self.last_state_was_rune = False
+        self.from_shop_rune_use = False  # NEW: Flag for shop rune entry (force fresh pull)
 
         # In __init__, after dedup CHARMS_POOL
         for c in data.CHARMS_POOL:
@@ -635,6 +628,10 @@ class ChromaRollGame:
         # NEW: Reset Necromancer's Needle flag per blind
         if hasattr(self, '_needle_used_this_blind'):
             delattr(self, '_needle_used_this_blind')
+
+        # NEW: Reset Rune Recycler flag per blind (allows 1 per shop cycle)
+        if hasattr(self, '_recycler_used_this_blind'):
+            delattr(self, '_recycler_used_this_blind')
 
         # Generate preview if starting Small
         if self.current_blind == 'Small':

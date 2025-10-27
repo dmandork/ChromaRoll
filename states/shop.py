@@ -67,16 +67,14 @@ class ShopState(State):
                 self.game.temp_message_start = time.time()
         # NEW: Add pending Recycler rune to this shop's choices (if queued from prior use)
         if hasattr(self.game, '_recycler_reuse_pending'):
-            print("DEBUG: Recycler pending found - adding to shop")  # TEMP
             pending_rune = self.game._recycler_reuse_pending
             pending_rune['cost'] = 0
             pending_rune['reused'] = True
             self.game.pack_choices.append(pending_rune)
             self.game.available_packs.append(9)  # Special index
-            delattr(self.game, '_recycler_reuse_pending')  # Clear
+            delattr(self.game, '_recycler_reuse_pending')  # Clear pending
             self.game.temp_message = f"Rune Recycler: {pending_rune['name']} available in shop!"
             self.game.temp_message_start = time.time()
-            print("DEBUG: Recycler added to pack_choices/available_packs")  # TEMP
 
     def update(self, dt):
         pass  # Expand for animations if needed
@@ -258,8 +256,14 @@ class ShopState(State):
                             self.game.pack_choices.pop()  # Remove from choices
                             self.game.available_packs.remove(9)
                             self.game.temp_message = f"Reused {reused_rune['name']} to tray!"
+                            # FIXED: Clear flag after successful buy (allows next queue in tray use)
+                            if hasattr(self.game, '_recycler_used_this_shop'):
+                                delattr(self.game, '_recycler_used_this_shop')
                         else:
                             self.game.temp_message = "Tray full—reused rune discarded."
+                            # FIXED: Clear flag on fail too (allows next queue)
+                            if hasattr(self.game, '_recycler_used_this_shop'):
+                                delattr(self.game, '_recycler_used_this_shop')
                         self.game.temp_message_start = time.time()
                         return  # Exit, no cost
                     
@@ -311,31 +315,23 @@ class ShopState(State):
                         break
 
                 # New: Tray click to use rune
-                print("DEBUG: Checking shop tray click – self.tray_rects:", self.tray_rects)  # TEMP
-                mouse_pos = pygame.mouse.get_pos()  # Ensure fresh
-                print(f"DEBUG: Mouse pos on click: {mouse_pos}")  # TEMP
-                for i, tray_rect in enumerate(self.tray_rects or []):  # FIXED: or [] to avoid None
-                    print(f"DEBUG: Slot {i} rect: {tray_rect}, rune: {self.game.rune_tray[i]}")  # TEMP
+                for i, tray_rect in enumerate(self.tray_rects or []):
                     if tray_rect is not None and tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
-                        print(f"DEBUG: Clicking shop tray slot {i}: {self.game.rune_tray[i]['name']}")  # TEMP
                         from states.rune import RuneUseState  # Lazy import
                         rune = self.game.rune_tray[i]
-                        self.game.previous_state = self  # Store for back
                         self.game.state_machine.change_state(RuneUseState(self.game, rune))  # Transition
-                        # NEW: Rune Recycler - Queue reuse after use (add to next shop choices)
+                        self.game.previous_state = self
+                        # NEW: Rune Recycler - Queue reuse after use (for next shop) - only if not flagged
                         recycler_active = any(charm['type'] == 'rune_reuse' and idx not in self.game.disabled_charms for idx, charm in enumerate(self.game.equipped_charms))
-                        if recycler_active and not getattr(self.game, '_recycler_used_this_shop', False):
+                        if recycler_active and not getattr(self.game, '_recycler_used_this_blind', False):  # FIXED: Per blind flag
                             self.game._recycler_reuse_pending = rune.copy()  # Queue for next shop
-                            self.game._recycler_used_this_shop = True  # Flag for this shop
+                            self.game._recycler_used_this_blind = True  # FIXED: Blind flag (not shop)
                             self.game.temp_message = f"Rune Recycler: {rune['name']} queued for reuse in next shop!"
                             self.game.temp_message_start = time.time()
                         # FIXED: Skip removal if reused rune (persist for Recycler)
                         if not getattr(rune, 'reused', False):
                             self.game.rune_tray[i] = None  # Remove after use
-                        print("DEBUG: Shop tray transitioned, removed from tray")  # TEMP
-                        break  # One at a time
-                else:
-                    print("DEBUG: No valid tray click (miss or empty)")  # TEMP - if loop ends
+                        break
 
             if event.type == pygame.MOUSEBUTTONUP:
                 if self.game.dragging_charm_index != -1:
