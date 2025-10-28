@@ -208,9 +208,9 @@ class ShopState(State):
                 if buy_rect.collidepoint(mouse_pos):
                     charm = self.game.shop_charms.pop(i)
                     cost = charm['cost']
-                    has_debt = any(c['type'] == 'negative_coins' for c in self.game.equipped_charms)
-                    min_coins = -5 if has_debt else 0
-                    if len(self.game.equipped_charms) < self.game.max_charms and self.game.coins - cost >= min_coins:
+                    debt_active = any(c['type'] == 'negative_coins' and idx not in self.game.disabled_charms for idx, c in enumerate(self.game.equipped_charms))
+                    debt_limit = -20 if debt_active else 0
+                    if len(self.game.equipped_charms) < self.game.max_charms and self.game.coins - cost >= debt_limit:
                         self.game.equipped_charms.append(charm)  # After append
                         # NEW: Init local_turns on equip (start at 1 for off-cycle first hand)
                         if charm['name'] == 'Loyalty Luck':
@@ -224,8 +224,11 @@ class ShopState(State):
                         self.game.coins -= cost
                         if self.game.current_boss_effect and self.game.current_boss_effect['name'] == 'Charm Eclipse':
                             self.game.disabled_charms = list(range(len(self.game.equipped_charms)))
+                        self.game.temp_message = f"Bought {charm['name']} for {charm['cost']} coins."  # FIXED: self.game
+                        # print("DEBUG: Debt allowed negative buy")
                     else:
                         self.game.shop_charms.insert(i, charm)
+                        self.game.temp_message = "Not enough coins!"  # FIXED: self.game
                     return
 
             # Pack buys
@@ -291,7 +294,7 @@ class ShopState(State):
                                 from states.rune import RuneSelectState  # Lazy import
                                 rune_pack = data.RUNE_PACKS[pack_idx - 6]  # Map to 0-2 index
                                 self.game.pack_choices = random.sample(data.MYSTIC_RUNES, pack_choices_num[pack_idx])
-                                self.game.pack_select_count = pack_select_num[pack_idx]  # Track how many to select
+                                self.game.pack_select_count = pack_choices_num[pack_idx]  # Track how many to select
                                 self.game.selected_runes = []  # For multi-select/holding
                                 self.game.state_machine.change_state(RuneSelectState(self.game))
                                 self.game.available_packs.remove(pack_idx)

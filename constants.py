@@ -2,10 +2,10 @@ import pygame  # Required for key constants like K_SPACE
 import data
 
 # Debug flag: Set to True to force specific colors for testing (overrides random draw) and enable unlimited rerolls
-DEBUG = False
+DEBUG = True
 # Debug toggles (enable/disable specific features)
 DEBUG_INFINITE_COINS = True
-DEBUG_UNLIMITED_REROLLS = False
+DEBUG_UNLIMITED_REROLLS = True
 DEBUG_FORCE_BAG_COLORS = False  # Turn off for rune tests
 DEBUG_MENU_IN_SHOP = True  # Show debug button in shop
 DEBUG_COLORS = ['Red', 'Blue', 'Green', 'Purple', 'Yellow']  # Example: All different colors for rainbow testing

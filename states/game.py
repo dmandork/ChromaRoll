@@ -34,6 +34,7 @@ class GameState(State):
 
     # In states/game.py, GameState.enter method (add after existing resets, before new_turn call)
     def enter(self):
+        print(f"DEBUG: Equipped charms in GameState.enter: {[c['name'] for c in self.game.equipped_charms]}")
         print(f"DEBUG: GameState enter – is_resuming: {self.game.is_resuming}, last_state_was_rune: {self.game.last_state_was_rune}, rolls len: {len(self.game.rolls)}, bag len: {len(self.game.bag)}")  # TEMP
         # FIXED: Skip only if from rune (not fresh/resume)
         if self.game.last_state_was_rune:  # Game entry - preserve hand, skip init
@@ -555,6 +556,29 @@ class GameState(State):
                         self.game.sfx_channel.play(self.game.roll_sound)  # Optional SFX
                         # print(f"DEBUG: Whirlwind free rerolled die {i} to {new_value}")
                         return
+
+            # NEW: UNO Draw 2 charm click (gain 2 extra rerolls, once per blind)
+            print(f"DEBUG: Mouse click at {mouse_pos} - UNO rect exists? {self.game.uno_charm_rect is not None}")
+            if self.game.uno_charm_rect and self.game.uno_charm_rect.collidepoint(mouse_pos):
+                print(f"DEBUG: UNO rect HIT! Flag: {self.game.used_uno_this_blind}, Rerolls before: {self.game.rerolls_left}")
+                if not self.game.used_uno_this_blind:  # Once-per-blind guard
+                    self.game.rerolls_left += 2
+                    self.game.used_uno_this_blind = True
+                    self.game.temp_message = f"UNO Draw 2! +2 rerolls (now {self.game.rerolls_left})."
+                    self.game.temp_message_start = time.time()
+                    self.game.update_hand_text()  # Refresh UI counter
+                    if hasattr(self.game, 'charm_sound') and self.game.charm_sound:
+                        self.game.sfx_channel.play(self.game.charm_sound)  # Optional SFX
+                    print(f"DEBUG: UNO effect applied - Rerolls now: {self.game.rerolls_left}, Flag set True")
+                    return
+                else:
+                    # Optional: Flash a "used" hint (or just silent fail)
+                    self.game.temp_message = "UNO already used this blind!"
+                    self.game.temp_message_start = time.time()
+                    print("DEBUG: UNO blocked - flag already True")
+                    return
+            else:
+                print("DEBUG: UNO rect MISS or None")  # If here, collision fail
 
             if self.game.buy_boon_down_rect and self.game.buy_boon_down_rect.collidepoint(mouse_pos):
                 if self.game.buy_boon_shifts_left > 0 and self.game.coins >= 2:

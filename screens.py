@@ -248,6 +248,11 @@ def draw_game_screen(game):
             if charm['name'] == 'Lucky Labyrinth':
                 permanent_bonus = charm.get('permanent_bonus', 0.0)
                 tooltip_text += f"\nPermanent Mult: +{permanent_bonus:.1f}"
+            # NEW: Set rect for UNO if equipped
+            if charm['name'] == 'UNO Draw 2':
+                game.uno_charm_rect = rect
+                print(f"DEBUG: UNO rect set at {rect} (slot {i})")  # Confirm per frame (remove after)
+            draw_charm_die(game, rect, charm, index=i) # Draw directly with frame, icon, and grayscale if disabled
             # ADDED: Append Life Milestone modifier
             if charm['name'] == 'Life Milestone':
                 mult_add = charm['value'] * getattr(game, 'stake_milestones', 0)

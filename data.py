@@ -102,7 +102,7 @@ CHARMS_POOL = [
     {'name': 'Stencil Charm', 'rarity': 'Legendary', 'cost': 7, 'desc': '+0.5 mult per empty charm slot.', 'type': 'empty_slot_mult', 'value': 0.5},
     {'name': 'Four Fingers Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Small Straights can be made with 3 dice; Large with 4.', 'type': 'short_straight'},
     {'name': 'Mime Charm', 'rarity': 'Rare', 'cost': 6, 'desc': 'Retrigger effects of held dice (e.g., double Gold coins, Glass mult/break chance).', 'type': 'retrigger_held'},
-    {'name': 'Debt Charm', 'rarity': 'Common', 'cost': 2, 'desc': 'Allows going into negative coins for shop buys (up to -5).', 'type': 'negative_coins', 'limit': -5},
+    {'name': 'Debt Charm', 'rarity': 'Common', 'cost': 2, 'desc': 'Allows going into negative coins for shop buys (up to -20).', 'type': 'negative_coins', 'limit': -20},
     {'name': 'Dagger Charm', 'rarity': 'Legendary', 'cost': 10, 'desc': 'When blind starts, sacrifice a charm to the right and add 0.1 mult per its cost permanently. (Max +5 mult)', 'type': 'sacrifice_mult'},
     {'name': 'Golden Touch Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+2 coins per Gold die held in score (stacks with base effect).', 'type': 'extra_coin_bonus', 'color': 'Gold', 'value': 2},
     {'name': 'Silver Lining Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+2 coins per Silver die not held in score (stacks with base effect).', 'type': 'extra_coin_bonus', 'color': 'Silver', 'value': 2},

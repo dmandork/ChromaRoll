@@ -278,6 +278,8 @@ class ChromaRollGame:
         self.is_final_discard = False     # For Acrobat Amulet
         self.used_reroll_advantage = False  # For Fate's Favor
         self.rune_cast_used = False       # For Gambler's Grimoire
+        self.used_uno_this_blind = False  # For UNO Draw 2
+        self.uno_charm_rect = None  # Rect for UNO Draw 2 charm icon
 
         self.held_advantage = False  # Separate hold for advantage die
         self.has_advantage = False
@@ -673,10 +675,10 @@ class ChromaRollGame:
         self.whirlwind_target_index = -1
         self.hands_left = MAX_HANDS
         self.discards_left = MAX_DISCARDS
+        self.used_uno_this_blind = False  # Reset for new blind
         self.extra_coins = 0
         self.turn_initialized = False  # Reset for new round/turn
         # In advance_blind (ChromaRoll.py ~line 1620, after other resets)
-        self.used_uno_draw_this_blind = False  # NEW: Reset for new blind
         self.bag[:] = [copy.deepcopy(d) for d in self.full_bag]  # Refill bag from owned template
         print(f"DEBUG: Bag after refill in advance_blind: {len(self.bag)}")  # Should be 25
         if self.current_boss_effect and self.current_boss_effect['name'] == 'Charm Eclipse':
@@ -743,6 +745,7 @@ class ChromaRollGame:
         #  print("DEBUG: Calling new_turn - pulling dice")  # Log to see when triggered
         self.hand = self.draw_hand()
         self.turn_initialized = True
+        self.rerolls_left = MAX_REROLLS
         self.rolls = [(die, 1) for die in self.hand]  # Start with value 1 (single pip)
         self.held = [False] * NUM_DICE_IN_HAND
         self.held_advantage = False
@@ -1129,6 +1132,8 @@ class ChromaRollGame:
     def score_and_new_turn(self):
         """Manually scores and starts a new turn."""
         hand_type, base_score, modifier_desc, final_score, charm_chips, charm_mono_add = self.get_hand_type_and_score(is_preview=False)
+        # ALWAYS reset rerolls here—moved outside debug for normal play
+        
         if self.show_popup:
             return  # Block actions during popup
         
@@ -2374,6 +2379,13 @@ class ChromaRollGame:
                     else:
                         turns_left = every - (local_turn % every)
                         tooltip_text += f"\nNext in {turns_left} turns"
+
+                # NEW: Set rect for UNO if equipped
+                if charm['name'] == 'UNO Draw 2':
+                    self.uno_charm_rect = rect
+                    print(f"DEBUG: UNO rect set at {rect} (slot {i})")  # Confirm set
+                
+                
                 
                 if i in self.disabled_charms:
                     tooltip_text += " (Disabled this round by Boss Effect)"
