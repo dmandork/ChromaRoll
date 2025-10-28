@@ -176,7 +176,7 @@ class ChromaRollGame:
             'Acrobat Amulet': resource_path('assets/icons/acrobat-amulet-icon.png'),
             'Monopoly Mortgage': resource_path('assets/icons/monopoly-mortgage-icon.png'),
             'Life Milestone': resource_path('assets/icons/life-milestone-icon.png'),
-            'UNO Uno': resource_path('assets/icons/uno-uno-icon.png'),
+            'UNO Draw 2': resource_path('assets/icons/uno-uno-icon.png'),
             'UNO Skip': resource_path('assets/icons/uno-skip-icon.png')
         }
 
@@ -327,6 +327,7 @@ class ChromaRollGame:
         self.is_last_hand = False
         self.first_discard_this_turn = True
         self.last_state_was_rune = False
+        self.uno_skip_used = False  # NEW: Init for UNO Skip (one-time boss skip flag)
         self.from_shop_rune_use = False  # NEW: Flag for shop rune entry (force fresh pull)
 
         # In __init__, after dedup CHARMS_POOL
@@ -343,7 +344,8 @@ class ChromaRollGame:
         self.rolls = []  # Current rolls: list of (die, value)
         self.held = [False] * NUM_DICE_IN_HAND  # Track held dice
         self.discard_selected = [False] * NUM_DICE_IN_HAND  # Track selected for discard
-        self.rerolls_left = -1 if DEBUG and DEBUG_UNLIMITED_REROLLS else MAX_REROLLS  # Rerolls per turn (-1 for unlimited in debug)
+        self.rerolls_left = MAX_REROLLS if not DEBUG_UNLIMITED_REROLLS else -1  # FIXED: Custom flag
+        self.rerolls_left_initial = self.rerolls_left
         self.discards_left = MAX_DISCARDS  # Discards per round
         self.discard_used_this_round = False  # Track if discard was used in the current hand's discard phase
         self.first_discard_this_turn = True
@@ -357,7 +359,9 @@ class ChromaRollGame:
         if DEBUG and DEBUG_INFINITE_COINS:
             self.coins = 999999  # Infinite coins for debug (large value to simulate infinity without breaking int ops)
         self.round_score = 0  # Score for current blind/round
+        self.confirmed_hands_this_round = 0
         self.current_stake = 1  # Current stake level
+        self.next_blind_number = 1
         self.current_blind = 'Small'  # Current blind: Small, Big, Boss
         self.game_state = 'splash'  # Start with splash instead of 'blinds'
         self.splash_start_time = 0  # Timestamp for anim start
@@ -671,6 +675,8 @@ class ChromaRollGame:
         self.discards_left = MAX_DISCARDS
         self.extra_coins = 0
         self.turn_initialized = False  # Reset for new round/turn
+        # In advance_blind (ChromaRoll.py ~line 1620, after other resets)
+        self.used_uno_draw_this_blind = False  # NEW: Reset for new blind
         self.bag[:] = [copy.deepcopy(d) for d in self.full_bag]  # Refill bag from owned template
         print(f"DEBUG: Bag after refill in advance_blind: {len(self.bag)}")  # Should be 25
         if self.current_boss_effect and self.current_boss_effect['name'] == 'Charm Eclipse':
@@ -703,6 +709,31 @@ class ChromaRollGame:
 
         self.cloak_used_this_game = False  # Set in init if needed
 
+        # NEW: Rune Recycler - Reuse one random tray rune per shop (once per shop flag)
+        recycler_active = any(charm['type'] == 'rune_reuse' and idx not in self.disabled_charms for idx, charm in enumerate(self.equipped_charms))  # FIXED: self.disabled_charms
+        if recycler_active and any(self.rune_tray) and not getattr(self, '_recycler_used_this_shop', False):
+            # Pick random non-None rune
+            non_none_runes = [r for r in self.rune_tray if r is not None]
+            if non_none_runes:
+                reused_rune = random.choice(non_none_runes).copy()
+                # Remove from tray by reference (find slot)
+                for slot, rune in enumerate(self.rune_tray):
+                    if rune is reused_rune:  # Exact match (better than name for dups)
+                        self.rune_tray[slot] = None
+                        break
+                # Add as special pack (index 9, after rune packs 6-8)
+                reused_rune['cost'] = 0  # Free reuse
+                self.pack_choices.append(reused_rune)
+                self.available_packs.append(9)  # Special index for draw (handle in pack_rects buy)
+                self.temp_message = f"Rune Recycler: Reused {reused_rune['name']} in shop!"
+                self.temp_message_start = time.time()
+                self._recycler_used_this_shop = True  # Set flag for this shop
+            else:
+                print("DEBUG: Rune Recycler - tray empty, skipped")  # TEMP
+        else:
+            if getattr(self, '_recycler_used_this_shop', False):
+                delattr(self, '_recycler_used_this_shop')  # Reset flag on next shop
+
         # DEBUG: Final hands after all
         # print(f"DEBUG: Final hands_left after advance_blind: {self.hands_left}")
 
@@ -717,8 +748,6 @@ class ChromaRollGame:
         self.held_advantage = False
         self.advantage_value = None
         self.discard_selected = [False] * NUM_DICE_IN_HAND
-        self.rerolls_left = MAX_REROLLS if not DEBUG else -1  # Reset to unlimited in debug
-        self.rerolls_left_initial = self.rerolls_left
         self.confirmed_hands_this_round = 0
         self.lucky_triggers = 0  # Reset to 0 each new turn/hand
         self.turn += 1
@@ -858,7 +887,7 @@ class ChromaRollGame:
                 self.advantage_value = random.randint(1, 6)
                 # print("Debug: Rerolled advantage value:", self.advantage_value)
 
-            if not DEBUG:
+            if not DEBUG_UNLIMITED_REROLLS:  # FIXED: Custom flag
                 self.rerolls_left -= 1
             self.update_hand_text()  # Update after reroll
             self.boss_reroll_count += 1  # Track for Break Surge
@@ -1279,7 +1308,8 @@ class ChromaRollGame:
 
         self.hands_left -= 1
         print(f"DEBUG: full_bag before score hand{self.turn}: {len(self.full_bag)}")  # Per hand
-        self.hands_left = max(0, self.hands_left)  # Clamp to prevent negative# In new_turn (or blind_start hook), after setting hands_left
+        self.hands_left = max(0, self.hands_left)  # Clamp to prevent negative (after decrement)
+        # Note: Turtle decay applied in GameState.enter (blind start hook) for net adjustment
     
         if self.round_score >= self.get_blind_target():
             # Compute dynamic interest max from charms
@@ -2417,6 +2447,8 @@ class ChromaRollGame:
     def reset_game(self):
         # Existing resets (e.g., coins=0, stake=1, blind='Small', etc.)
         self.coins = 999999 if DEBUG else 0
+        # NEW: Reset UNO Skip flag on full restart (one per run)
+        self.uno_skip_used = False
         self.turn_initialized = False  # Reset for new round/turn
         self.current_stake = 1
         self.cloak_used_this_game = False  # NEW: Reset on full restart

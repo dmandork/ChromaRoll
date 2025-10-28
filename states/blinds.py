@@ -70,6 +70,22 @@ class BlindsState(State):
             self.game.upcoming_boss_effect = dummy_disabled
             print("DEBUG: Luchador flag applied to upcoming boss")
 
+        # NEW: UNO Skip - Skip one boss blind per run (guaranteed, not blind 8)
+        skip_active = any(charm['type'] == 'boss_skip' and idx not in self.game.disabled_charms for idx, charm in enumerate(self.game.equipped_charms))
+        if skip_active and not self.game.uno_skip_used and self.game.current_blind == 'Boss':
+            # FIXED: Advance stake and set to next small blind (instead of 'normal')
+            self.game.current_stake += 1
+            self.game.current_blind = 'Small'
+            self.game.uno_skip_used = True
+            self.game.temp_message = "UNO Skip activated! Skipped boss blind. (Used up!)"
+            self.game.temp_message_start = time.time()
+            print("DEBUG: UNO Skip triggered in Blinds enter - advanced stake, set to Small")  # TEMP
+        else:
+            if skip_active and self.game.uno_skip_used:
+                print("DEBUG: UNO Skip used up, skipping")  # TEMP
+            elif skip_active and self.game.current_stake * 3 == 24:  # FIXED: Block final boss (stake 8 = blind 24)
+                print("DEBUG: UNO Skip blocked on final boss")  # TEMP
+
     def update(self, dt):
         pass
 

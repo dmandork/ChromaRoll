@@ -436,6 +436,13 @@ def draw_game_screen(game):
                 die_rect = game.hand_die_rects[i]
                 draw_tooltip(game, die_rect.x, die_rect.y + die_rect.height + 10, desc.strip())  # Below die for visibility
 
+    game.equipped_charm_rects = []
+    for i, charm in enumerate(game.equipped_charms):
+        x = 50 + i * (constants.CHARM_BOX_WIDTH + constants.CHARM_SPACING)
+        y = 150
+        rect = pygame.Rect(x, y, constants.CHARM_BOX_WIDTH, constants.CHARM_BOX_HEIGHT)
+        game.equipped_charm_rects.append(rect)
+
     if game.hovered_bag_die is not None:
         j = game.hovered_bag_die
         if j < len(game.bag):  # FIXED: Guard against stale hover/index error
@@ -611,6 +618,8 @@ def draw_shop_screen(game, skip_tooltips=False):
                 tooltip_text += "\nPreview: +3 per discarded color die"
             if charm['type'] == 'mult_final_discard':
                 tooltip_text += "\nPreview: +2 mult on final discard"
+            if charm['type'] == 'boss_skip' and game.uno_skip_used:
+                tooltip_text += " (exhausted)"
             equipped_hover = (x, y + constants.CHARM_BOX_HEIGHT + 5, tooltip_text)
     
     # Draw dragged charm in shop

@@ -374,6 +374,18 @@ class GameState(State):
                     # print(f"Debug: Toggled Fate's advantage - held_fates_advantage = {self.game.held_fates_advantage}, held[{self.game.fates_advantage_index}] = {self.game.held[self.game.fates_advantage_index]}")
                 # No optional original here—handled in toggle_hold below
 
+            # NEW: UNO Draw 2 - Click equipped charm to gain 2 extra rerolls (once per blind)
+            for i, charm_rect in enumerate(self.game.equipped_charm_rects):
+                if charm_rect.collidepoint(mouse_pos):
+                    charm = self.game.equipped_charms[i]
+                    if charm['type'] == 'extra_reroll' and not self.game.used_uno_draw_this_blind and not self.game.is_discard_phase:
+                        self.game.rerolls_left += charm['value']  # +2
+                        self.game.used_uno_draw_this_blind = True
+                        self.game.temp_message = f"UNO Draw 2: +{charm['value']} extra rerolls! (Used up this blind)"
+                        self.game.temp_message_start = time.time()
+                        print(f"DEBUG: UNO Draw 2 activated - rerolls now {self.game.rerolls_left}")  # TEMP
+                    break  # One charm per click
+
             # Luchador instant sell block (early in MOUSEBUTTONDOWN, after mouse_pos)
             for i, charm in enumerate(self.game.equipped_charms):
                 x = 50 + i * (constants.CHARM_SIZE + 10)

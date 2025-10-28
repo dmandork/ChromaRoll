@@ -185,7 +185,7 @@ CHARMS_POOL = [
     {'name': 'Trading Token', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'If first discard is 1 die, destroy it for 3 coins.', 'type': 'discard_destroy_coin', 'value': 3},
     {'name': 'Castle Cube', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+3 score per discarded color die. Color changes per round.', 'type': 'score_per_discard_color', 'value': 3},
     {'name': 'Acrobat Amulet', 'rarity': 'Rare', 'cost': 6, 'desc': '+2 mult on final discard of round.', 'type': 'mult_final_discard', 'value': 2},
-    {'name': 'UNO Uno', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Wild: Change one die color to any for scoring.', 'type': 'color_wild', 'value': 1},
+    {'name': 'UNO Draw 2', 'rarity': 'Legendary', 'cost': 9, 'desc': 'Gain 2 extra rerolls once per blind.', 'type': 'extra_reroll', 'value': 2},
     {'name': 'UNO Skip', 'rarity': 'Rare', 'cost': 6, 'desc': 'Skip one boss effect per run.', 'type': 'boss_skip', 'value': 1},
     {'name': 'Monopoly Mortgage', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Sell a charm for double coins but lock it for one round.', 'type': 'sell_double_lock', 'value': 2},
     {'name': 'Life Milestone', 'rarity': 'Legendary', 'cost': 9, 'desc': '+0.5 mult per stake milestone reached.', 'type': 'mult_per_milestone', 'value': 0.5}
