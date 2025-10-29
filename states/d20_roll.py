@@ -60,7 +60,8 @@ class D20RollState(State):
                 desc_text = self.small_font.render(desc, True, THEME['text'])
                 self.game.screen.blit(desc_text, (self.game.width // 2 - desc_text.get_width() // 2, self.d20_rect.bottom + 20))
 
-        # Done button (after reveal)
+        # Done button (after reveal) - FIXED: Guard hasattr
+        self.accept_rect = None  # Reset each draw
         if self.phase == 'done':
             button_rect = pygame.Rect(self.game.width // 2 - 100, self.game.height - 100, 200, 50)
             pygame.draw.rect(self.game.screen, (100, 100, 100), button_rect)
@@ -71,9 +72,11 @@ class D20RollState(State):
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and self.phase == 'done':
             if hasattr(self, 'accept_rect') and self.accept_rect.collidepoint(event.pos):
-                # Proceed to intensified GameState
+                # NEW: Flag for GameState enter (force pull + buff apply)
+                self.game.from_d20_intensify = True  # Temp flag
                 from states.game import GameState
                 self.game.state_machine.change_state(GameState(self.game))
+                # Clear flag post-transition (in GameState enter, after use)
 
     def get_outcome(self, roll):
         # Tier lookup (from data.py - add the dict below)
@@ -83,6 +86,28 @@ class D20RollState(State):
 
     def apply_downside(self):
         if self.outcome:
-            self.game.target_mult = self.outcome['downside']['target_mult']  # e.g., 1.5 for +50%
-            # Add other downsides (e.g., self.game.disable_hand = random.choice(HAND_TYPES))
-            self.game.intensified_buff = self.outcome['buff']  # Store for win trigger
+            # Base target mult
+            self.game.target_mult = self.outcome['downside'].get('target_mult', 1.0)
+            
+            # Fusion twist (assume self.game.fused_color set elsewhere; fallback random)
+            fused = getattr(self.game, 'fused_color', None)
+            if fused:
+                # Override randoms with fused (e.g., dimmed_color = fused)
+                if 'dimmed_color' in self.outcome['downside']:
+                    self.outcome['downside']['dimmed_color'] = fused
+                # Similar for disabled_type/locked_die (e.g., lock a fused-color die)
+            
+            # Store flags for this blind (use intensified_ prefix to scope)
+            self.game.intensified_disabled_type = self.outcome['downside'].get('disabled_type')
+            self.game.intensified_dimmed_color = self.outcome['downside'].get('dimmed_color')
+            self.game.intensified_locked_die_idx = self.outcome['downside'].get('locked_die_idx', -1)
+            self.game.intensified_global_color_mult = self.outcome['downside'].get('global_color_mult', 1.0)
+            
+            # Store buff for win reward
+            self.game.intensified_buff = self.outcome['buff']
+            
+            # Temp message for feedback
+            self.game.temp_message = f"{self.outcome['name']}: {self.outcome['desc']}"
+            self.game.temp_message_start = time.time()
+            
+            print(f"DEBUG: Applied {self.outcome['name']} - target_mult: {self.game.target_mult}, disabled: {self.game.intensified_disabled_type}")

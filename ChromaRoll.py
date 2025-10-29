@@ -595,6 +595,11 @@ class ChromaRollGame:
             endless_bonus = 1 + 0.15 * (stake - 8)
             target *= endless_bonus
         
+        # NEW: Apply D20 target_mult if set (intensify downside, e.g., x1.5)
+        if hasattr(self, 'target_mult') and self.target_mult != 1.0:
+            target *= self.target_mult
+            print(f"DEBUG: Intensified target: base {int(target / self.target_mult)} -> {int(target)} (x{self.target_mult})")  # TEMP
+        
         return int(math.ceil(target))
     
     def get_stencil_mult(self):
@@ -639,6 +644,30 @@ class ChromaRollGame:
         # NEW: Reset Rune Recycler flag per blind (allows 1 per shop cycle)
         if hasattr(self, '_recycler_used_this_blind'):
             delattr(self, '_recycler_used_this_blind')
+
+        # NEW: Clear intensify states
+        for attr in ['intensified_disabled_type', 'intensified_dimmed_color', 'intensified_locked_die_idx', 'intensified_global_color_mult', 'target_mult']:
+            if hasattr(self, attr):
+                delattr(self, attr)
+        if hasattr(self, 'temp_intensify_mult'):
+            del self.temp_intensify_mult
+
+        # In advance_blind (after resets)
+        if hasattr(self, 'pending_buff_mult'):
+            self.temp_intensify_mult = self.pending_buff_mult  # Carry to next
+            self.intensify_buff_duration -= 1
+            if self.intensify_buff_duration <= 0:
+                del self.pending_buff_mult
+                del self.intensify_buff_duration
+
+        # NEW: Clear D20 intensify state post-blind
+        if hasattr(self, 'target_mult'):
+            del self.target_mult
+        if hasattr(self, 'temp_intensify_mult'):
+            del self.temp_intensify_mult
+        if hasattr(self, 'from_d20_intensify'):
+            del self.from_d20_intensify
+        self.intensified_buff = None  # Already cleared in enter, but safety
 
         # Generate preview if starting Small
         if self.current_blind == 'Small':
@@ -1465,6 +1494,31 @@ class ChromaRollGame:
             self.lucky_triggers = 0
             self.blind_won = True  # Set win flag if not already
 
+            # In win block (after self.coins += total_coins)
+            if hasattr(self, 'intensified_buff') and self.intensified_buff:
+                buff = self.intensified_buff
+                # Apply immediate (e.g., coins)
+                self.coins += buff.get('coins', 0)
+                # Queue pack for next shop
+                if buff.get('free_pack'):
+                    self.pending_free_pack = buff['free_pack']  # Add to defaults; consume in generate_shop
+                # Temp mults (store for next blind/hand)
+                if 'mult_this' in buff:
+                    self.temp_intensify_mult = buff['mult_this']  # Apply in calculate_score
+                if 'mult_next' in buff:
+                    self.pending_buff_mult = buff['mult_next']  # Set in advance_blind
+                if 'mult_next_2' in buff:
+                    self.pending_buff_mult = buff['mult_next_2']
+                    self.intensify_buff_duration = 2  # Counter; decrement in advance_blind
+                if buff.get('achievement_progress'):
+                    self.achievement_progress += buff['achievement_progress']  # Unlock logic elsewhere
+                if buff.get('extra_discard'):
+                    self.discards_left += buff['extra_discard']
+                if buff.get('extra_reroll'):
+                    self.rerolls_left += buff['extra_reroll']
+                del self.intensified_buff  # Clear
+                print(f"DEBUG: Rewarded {self.outcome['name']} buff: {buff}")
+
             # NEW: Increment Turtle rounds_passed on round win (early, to avoid exits; for next enter)
             # print("DEBUG: Win block reached—checking Turtle increment")
             turtle_incremented = False
@@ -1534,13 +1588,14 @@ class ChromaRollGame:
                 # Game over - transition to state
                 self.state_machine.change_state(GameOverState(self))
 
-        # In score_and_new_turn, on win (after round_score >= target)
-        if hasattr(self, 'intensified_buff'):
+        if hasattr(self, 'intensified_buff') and self.intensified_buff is not None:
             buff = self.intensified_buff
-            self.mult += buff.get('mult', 0) # e.g., +2x
-            self.coins += buff.get('coins', 0)
-            # Add pack/achievement/discards/etc. (e.g., if 'pack': add add)
-            del self.intensified_buff  # Clear
+            self.mult += buff.get('mult', 0)  # e.g., +2x
+            # Add other buff effects (e.g., self.coins += buff.get('coins', 0))
+            print(f"DEBUG: Applied intensified buff: {buff}")  # TEMP: Confirm on use
+            del self.intensified_buff  # Clear after apply
+        else:
+            print("DEBUG: No intensified buff to apply")  # TEMP: Confirm skip
 
     def toggle_hold(self, index):
         """Toggles hold state for a die."""
@@ -2202,6 +2257,17 @@ class ChromaRollGame:
 
         final_score = int((base_score + charm_chips + rune_chips) * (1 + total_modifier))
         final_score = int(final_score * retrigger_mult)
+
+        # NEW: Apply D20 intensify buff if flagged (temp per-hand mult)
+        if hasattr(self, 'temp_intensify_mult') and self.temp_intensify_mult != 1.0:
+            final_score = int(final_score * self.temp_intensify_mult)
+            # Add to modifier_desc if preview=False (real score)
+            if not is_preview:
+                modifier_desc += f" (Intensify x{self.temp_intensify_mult:.1f})"
+            # Clear after apply (next hand won't have it)
+            del self.temp_intensify_mult
+            print(f"DEBUG: Applied intensify buff: {final_score} (x{self.temp_intensify_mult:.1f})")  # TEMP
+
         return hand_type, base_score, modifier_desc, final_score, charm_chips, charm_color_mult_add
 
     def apply_wild_4(self, held_rolls, counts, max_count, groups, modifier_desc):
@@ -2566,6 +2632,11 @@ class ChromaRollGame:
         weights = [1]*6 + [1, 0.8, 0.3]  # Lower for Super
         self.available_packs = random.choices(all_packs, weights=weights, k=2 + any(tag['name'] == 'Voucher Tag' for tag in self.active_tags))  # Extra if Voucher Tag
         # Map indices to packs, e.g., if pack_id in [6,7,8]: self.pack_choices = random.sample(data.MYSTIC_RUNES, pack['choices'])
+
+        # In generate_shop (after self.available_packs = ...)
+        if hasattr(self, 'pending_free_pack'):
+            self.available_packs.append(0 if self.pending_free_pack == 'prism' else 3)  # Basic Prism or Dice
+            del self.pending_free_pack
         
         # Filter pool to exclude owned (as before)
         available_pool = [c for c in data.CHARMS_POOL if c['name'] not in [e['name'] for e in self.equipped_charms]]

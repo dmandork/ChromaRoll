@@ -23,6 +23,11 @@ DEBUG_CHARM_LIST_SPACING = 30  # Increased from 10 to 30 for more room
 DEBUG_CHARM_TEXT_PADDING = 10  # Padding between charm box and text
 DEBUG_CHARM_ROW_HEIGHT = 200  # Total height per row (box + text + padding)
 
+HAND_TYPES = [
+    'Pair', '2 Pair', '3 of a Kind', '4 of a Kind', '5 of a Kind',
+    'Full House', 'Small Straight', 'Large Straight'
+] 
+
 # Define constants
 COLORS = {'Red': (255, 0, 0), 'Blue': (0, 0, 255), 'Green': (0, 255, 0),
           'Purple': (128, 0, 128), 'Yellow': (255, 255, 0),
@@ -142,7 +147,7 @@ UI_PANEL_WIDTH = 150
 UI_PANEL_HEIGHT = 140  # Increased for coins
 MULTIPLIERS_BUTTON_SIZE = 50
 MULTIPLIERS_PANEL_WIDTH = 175
-MULTIPLIERS_PANEL_HEIGHT = len(data.HAND_TYPES) * 25 + 20
+MULTIPLIERS_PANEL_HEIGHT = len(HAND_TYPES) * 25 + 20  # Now self-contained
 PACK_BOX_SIZE = 60
 SMALL_ICON_DIE_SIZE = 15
 COLOR_CYCLE = list(COLORS.keys())

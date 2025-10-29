@@ -1,5 +1,7 @@
 # data.py
 # Game data: lists, dicts for charms, pouches, bosses, etc.
+from constants import HAND_TYPES,BASE_COLORS
+import random
 
 HAND_TYPES = ['Pair', '2 Pair', '3 of a Kind', '4 of a Kind', '5 of a Kind', 'Full House', 'Small Straight', 'Large Straight']
 
@@ -270,9 +272,34 @@ ENH_EFFECTS = {
 }
 
 D20_OUTCOMES = [
-    {'min': 1, 'max': 4, 'outcome': {'name': 'Prism Fracture', 'desc': '+50% target, disable hand type; success: +2x mult + Prism pack', 'downside': {'target_mult': 1.5, 'disable_hand': True}, 'buff': {'mult': 2.0, 'pack': 'Prism'}}},
-    {'min': 5, 'max': 8, 'outcome': {'name': 'Hue Dimming', 'desc': '+25% target, -20% random color score; success: +2x mult +20 coins', 'downside': {'target_mult': 1.25, 'color_debuff': 0.8}, 'buff': {'mult': 2.0, 'coins': 20}}},
-    {'min': 9, 'max': 12, 'outcome': {'name': 'Roll Harmony', 'desc': '+8% target, stabilize 1 reroll; success: +1.5x mult +1 discard', 'downside': {'target_mult': 1.08, 'stabilize_reroll': 1}, 'buff': {'mult': 1.5, 'discard': 1}}},
-    {'min': 13, 'max': 16, 'outcome': {'name': 'Roll Flow', 'desc': '-12% target, +1 reroll + advantage on 1 die; success: +2.5x mult + full discard (5)', 'downside': {'target_mult': 0.88, 'extra_reroll': 1, 'advantage_die': 1}, 'buff': {'mult': 2.5, 'full_discard': 5}}},
-    {'min': 17, 'max': 20, 'outcome': {'name': 'Chroma Radiance', 'desc': '-25% target, +30% all colors score; success: +4x mult (next 2) +50 coins + achievement', 'downside': {'target_mult': 0.75, 'color_buff': 1.3}, 'buff': {'mult': 4.0, 'mult_duration': 2, 'coins': 50, 'achievement': True}}},
+    # 1-4: Crit Fail
+    {'min': 1, 'max': 4, 'outcome': {
+        'name': 'Prism Fracture', 'desc': 'High risk: +50% target, disable 1 hand type this blind.',
+        'downside': {'target_mult': 1.5, 'disabled_type': random.choice(HAND_TYPES)},  # e.g., 'Small Straight'
+        'buff': {'mult_next': 2.0, 'free_pack': 'prism'}  # Reward on win
+    }},
+    # 5-8: Challenging
+    {'min': 5, 'max': 8, 'outcome': {
+        'name': 'Hue Dimming', 'desc': 'Moderate: +25% target, -20% on random color this blind.',
+        'downside': {'target_mult': 1.25, 'dimmed_color_mult': 0.8, 'dimmed_color': random.choice(BASE_COLORS)},
+        'buff': {'mult_next_hand': 2.0, 'coins': 20}
+    }},
+    # 9-12: Neutral
+    {'min': 9, 'max': 12, 'outcome': {
+        'name': 'Roll Harmony', 'desc': 'Balanced: +8% target, lock 1 die (no reroll) this blind.',
+        'downside': {'target_mult': 1.08, 'locked_die_idx': random.randint(0, 4)},
+        'buff': {'mult_this': 1.5, 'extra_discard': 1}
+    }},
+    # 13-16: Favorable
+    {'min': 13, 'max': 16, 'outcome': {
+        'name': 'Roll Flow', 'desc': 'Ease: -12% target, +1 reroll + advantage on 1 die this blind.',
+        'downside': {'target_mult': 0.88},  # Negative = ease
+        'buff': {'mult_this': 2.5, 'extra_discard': 5, 'extra_reroll': 1}  # Free full discard
+    }},
+    # 17-20: Crit Success
+    {'min': 17, 'max': 20, 'outcome': {
+        'name': 'Chroma Radiance', 'desc': 'Big win: -25% target, +30% all colors this blind.',
+        'downside': {'target_mult': 0.75, 'global_color_mult': 1.3},
+        'buff': {'mult_next_2': 4.0, 'coins': 50, 'achievement_progress': 1}  # e.g., toward unlock
+    }}
 ]
