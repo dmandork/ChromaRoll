@@ -42,6 +42,11 @@ class GameState(State):
             self.game.last_state_was_rune = False
             self.game.has_rolled = True
             return
+        # NEW: Carry pending buff to this blind's first hand (e.g., Hue Dimming 2x)
+        if hasattr(self.game, 'pending_buff_mult') and self.game.pending_buff_mult != 1.0:
+            self.game.temp_intensify_mult = self.game.pending_buff_mult
+            print(f"DEBUG: Applied carried buff to first hand: x{self.game.temp_intensify_mult}")  # TEMP
+            del self.game.pending_buff_mult  # Consume
         if self.game.from_shop_rune_use:  # Shop entry - force fresh pull
             print("DEBUG: From shop rune – forcing fresh pull")  # TEMP
             self.game.from_shop_rune_use = False
@@ -353,6 +358,22 @@ class GameState(State):
                             # print(f"Debug: Toggled die {i} - held[{i}] = {self.game.held[i]}")  # Debug for 3rd die
                         break  # Stop after handling one die click
 
+            # NEW: Roll Flow advantage selection (roll phase only, first hand)
+            if not self.game.is_discard_phase and hasattr(self.game, 'selecting_advantage_die') and self.game.selecting_advantage_die:
+                for i in range(NUM_DICE_IN_HAND):
+                    die_rect = self.game.hand_die_rects[i]
+                    if die_rect.collidepoint(mouse_pos):
+                        # Spawn advantage copy above (reuse Amulet logic)
+                        self.game.has_advantage = True
+                        self.game.advantage_value = random.randint(1, 6)
+                        self.game.held_advantage = False  # Start unheld
+                        self.game.fates_advantage_index = i  # Reuse for pos (or new flag)
+                        self.game.selecting_advantage_die = False  # Exit mode
+                        self.game.temp_message = f"Advantage on die {i+1}! Choose to hold."
+                        self.game.temp_message_start = time.time()
+                        print(f"DEBUG: Selected die {i} for Roll Flow advantage: {self.game.advantage_value}")
+                        break
+
             # Advantage choice clicks (only advantage die now; main loop handles 3rd die)
             if not self.game.is_discard_phase and self.game.has_advantage and self.game.advantage_value is not None:
                 if self.game.advantage_die_rect and self.game.advantage_die_rect.collidepoint(mouse_pos):
@@ -558,7 +579,7 @@ class GameState(State):
                         return
 
             # NEW: UNO Draw 2 charm click (gain 2 extra rerolls, once per blind)
-            print(f"DEBUG: Mouse click at {mouse_pos} - UNO rect exists? {self.game.uno_charm_rect is not None}")
+            # print(f"DEBUG: Mouse click at {mouse_pos} - UNO rect exists? {self.game.uno_charm_rect is not None}")
             if self.game.uno_charm_rect and self.game.uno_charm_rect.collidepoint(mouse_pos):
                 print(f"DEBUG: UNO rect HIT! Flag: {self.game.used_uno_this_blind}, Rerolls before: {self.game.rerolls_left}")
                 if not self.game.used_uno_this_blind:  # Once-per-blind guard
@@ -577,8 +598,8 @@ class GameState(State):
                     self.game.temp_message_start = time.time()
                     print("DEBUG: UNO blocked - flag already True")
                     return
-            else:
-                print("DEBUG: UNO rect MISS or None")  # If here, collision fail
+            # else:
+                # print("DEBUG: UNO rect MISS or None")  # If here, collision fail
 
             if self.game.buy_boon_down_rect and self.game.buy_boon_down_rect.collidepoint(mouse_pos):
                 if self.game.buy_boon_shifts_left > 0 and self.game.coins >= 2:

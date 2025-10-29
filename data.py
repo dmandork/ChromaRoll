@@ -284,22 +284,22 @@ D20_OUTCOMES = [
         'downside': {'target_mult': 1.25, 'dimmed_color_mult': 0.8, 'dimmed_color': random.choice(BASE_COLORS)},
         'buff': {'mult_next_hand': 2.0, 'coins': 20}
     }},
-    # 9-12: Neutral
+    # 9-12: Neutral 
     {'min': 9, 'max': 12, 'outcome': {
-        'name': 'Roll Harmony', 'desc': 'Balanced: +8% target, lock 1 die (no reroll) this blind.',
+        'name': 'Roll Harmony', 'desc': 'Balanced: +8% target, lock 1 die this blind.',
         'downside': {'target_mult': 1.08, 'locked_die_idx': random.randint(0, 4)},
-        'buff': {'mult_this': 1.5, 'extra_discard': 1}
+        'buff': {'mult_this': 1.5, 'extra_discard': 1}  # +1 extra discard on win
     }},
     # 13-16: Favorable
     {'min': 13, 'max': 16, 'outcome': {
         'name': 'Roll Flow', 'desc': 'Ease: -12% target, +1 reroll + advantage on 1 die this blind.',
         'downside': {'target_mult': 0.88},  # Negative = ease
-        'buff': {'mult_this': 2.5, 'extra_discard': 5, 'extra_reroll': 1}  # Free full discard
+        'buff': {'mult_this': 2.5, 'extra_discard': 5, 'extra_reroll': 1}  # +1 reroll on win
     }},
     # 17-20: Crit Success
     {'min': 17, 'max': 20, 'outcome': {
         'name': 'Chroma Radiance', 'desc': 'Big win: -25% target, +30% all colors this blind.',
         'downside': {'target_mult': 0.75, 'global_color_mult': 1.3},
-        'buff': {'mult_next_2': 4.0, 'coins': 50, 'achievement_progress': 1}  # e.g., toward unlock
+        'buff': {'mult_next_2': 4.0, 'coins': 50}  # Dropped achievement; add back later if wanted
     }}
 ]

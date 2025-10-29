@@ -361,6 +361,7 @@ class ChromaRollGame:
         if DEBUG and DEBUG_INFINITE_COINS:
             self.coins = 999999  # Infinite coins for debug (large value to simulate infinity without breaking int ops)
         self.round_score = 0  # Score for current blind/round
+        self.achievement_progress = 0  # FUTURE: Track for unlocks; ignore for now
         self.confirmed_hands_this_round = 0
         self.current_stake = 1  # Current stake level
         self.next_blind_number = 1
@@ -598,7 +599,7 @@ class ChromaRollGame:
         # NEW: Apply D20 target_mult if set (intensify downside, e.g., x1.5)
         if hasattr(self, 'target_mult') and self.target_mult != 1.0:
             target *= self.target_mult
-            print(f"DEBUG: Intensified target: base {int(target / self.target_mult)} -> {int(target)} (x{self.target_mult})")  # TEMP
+            # print(f"DEBUG: Intensified target: base {int(target / self.target_mult)} -> {int(target)} (x{self.target_mult})")  # TEMP
         
         return int(math.ceil(target))
     
@@ -766,6 +767,11 @@ class ChromaRollGame:
             if getattr(self, '_recycler_used_this_shop', False):
                 delattr(self, '_recycler_used_this_shop')  # Reset flag on next shop
 
+        # NEW: Preserve pending buffs across blinds (for "next 2")
+        if hasattr(self, 'pending_buff_mult'):
+            # Keep for next; decrement duration if multi-blind (e.g., for Crit Success)
+            pass  # Already queued
+
         # DEBUG: Final hands after all
         # print(f"DEBUG: Final hands_left after advance_blind: {self.hands_left}")
 
@@ -897,6 +903,9 @@ class ChromaRollGame:
             for frame in range(ANIMATION_FRAMES):
                 for i in range(len(self.rolls)):
                     if not self.held[i]:
+                        # NEW: Skip locked die (Roll Harmony)
+                        if hasattr(self, 'intensified_locked_die_idx') and i == self.intensified_locked_die_idx:
+                            continue  # No roll, stays original value
                         die_temp = self.rolls[i][0]  # Temp var for the die
                         faces = self.boss_shuffled_faces.get(die_temp['id'], die_temp['faces']) if self.current_blind == 'Boss' and self.current_boss_effect and self.current_boss_effect['name'] == 'Face Shuffle' else die_temp['faces']
                         self.rolls[i] = (die_temp, random.choice(faces))
@@ -911,6 +920,8 @@ class ChromaRollGame:
             # Final actual roll (the last frame is the real one)
             for i in range(len(self.rolls)):
                 if not self.held[i]:
+                    if hasattr(self, 'intensified_locked_die_idx') and i == self.intensified_locked_die_idx:
+                        continue
                     die = self.rolls[i][0]
                     faces = self.boss_shuffled_faces.get(die['id'], die['faces']) if self.current_blind == 'Boss' and self.current_boss_effect and self.current_boss_effect['name'] == 'Face Shuffle' else die['faces']
                     self.rolls[i] = (die, random.choice(faces))
@@ -1075,6 +1086,11 @@ class ChromaRollGame:
                 else:
                     # Game over - transition to state
                     self.state_machine.change_state(GameOverState(self))
+
+
+                if hasattr(self, 'intensified_locked_die_idx') and self.intensified_locked_die_idx >= 0:
+                    self.temp_message = f"Die {self.intensified_locked_die_idx + 1} locked—no reroll!"
+                    self.temp_message_start = time.time()
 
     def discard(self):
         """Discards selected dice and draws new ones from bag, replacing in same positions with value 1."""
@@ -1494,6 +1510,10 @@ class ChromaRollGame:
             self.lucky_triggers = 0
             self.blind_won = True  # Set win flag if not already
 
+            if buff.get('extra_reroll'):
+                self.rerolls_left += buff['extra_reroll']
+                print(f"DEBUG: Added {buff['extra_reroll']} reroll(s) from {buff.get('name', 'Unknown')}")  # TEMP
+
             # In win block (after self.coins += total_coins)
             if hasattr(self, 'intensified_buff') and self.intensified_buff:
                 buff = self.intensified_buff
@@ -1504,20 +1524,22 @@ class ChromaRollGame:
                     self.pending_free_pack = buff['free_pack']  # Add to defaults; consume in generate_shop
                 # Temp mults (store for next blind/hand)
                 if 'mult_this' in buff:
-                    self.temp_intensify_mult = buff['mult_this']  # Apply in calculate_score
+                    self.temp_intensified_mult = buff['mult_this']  # Apply in calculate_score
                 if 'mult_next' in buff:
                     self.pending_buff_mult = buff['mult_next']  # Set in advance_blind
                 if 'mult_next_2' in buff:
                     self.pending_buff_mult = buff['mult_next_2']
                     self.intensify_buff_duration = 2  # Counter; decrement in advance_blind
-                if buff.get('achievement_progress'):
-                    self.achievement_progress += buff['achievement_progress']  # Unlock logic elsewhere
+                # NEW: Queue "next hand" (e.g., Hue Dimming 2x on first hand of next blind)
+                if 'mult_next_hand' in buff:
+                    self.pending_buff_mult = buff['mult_next_hand']  # e.g., 2.0; overrides if multiple
                 if buff.get('extra_discard'):
-                    self.discards_left += buff['extra_discard']
+                    self.discards_left += buff.get('extra_discard')
                 if buff.get('extra_reroll'):
-                    self.rerolls_left += buff['extra_reroll']
+                    self.rerolls_left += buff.get('extra_reroll')
+                    print(f"DEBUG: Added {buff['extra_reroll']} reroll(s) from {buff.get('name', 'Unknown')}")  # TEMP
                 del self.intensified_buff  # Clear
-                print(f"DEBUG: Rewarded {self.outcome['name']} buff: {buff}")
+                print(f"DEBUG: Rewarded {buff.get('name', 'Unknown')}: {buff}")  # TEMP: Safe name access
 
             # NEW: Increment Turtle rounds_passed on round win (early, to avoid exits; for next enter)
             # print("DEBUG: Win block reached—checking Turtle increment")
@@ -1638,6 +1660,34 @@ class ChromaRollGame:
         held_rolls = [(die, value) for i, (die, value) in enumerate(self.rolls) if self.held[i]]
         if not held_rolls:
             return "Nothing", 0, "None", 0, 0, 0.0
+        
+        # NEW: Save original values for type detection (dimmed nerfs score only, not hand_type)
+        original_rolls = held_rolls[:]  # Copy for counts/type
+
+        # Apply dimmed color -20% to *score contribution only* (keep type intact)
+        dimmed_adjust = 1.0  # Default full
+        if hasattr(self, 'intensified_dimmed_color') and self.intensified_dimmed_color:
+            dimmed_mult = 0.8  # -20%
+            dimmed_count = 0
+            for i in range(len(held_rolls)):
+                die, value = held_rolls[i]
+                if die['color'] == self.intensified_dimmed_color:
+                    new_value = value * dimmed_mult  # e.g., 1 * 0.8 = 0.8 (keep for score)
+                    held_rolls[i] = (die, new_value)
+                    dimmed_count += 1
+                    dimmed_adjust = dimmed_mult  # Track for desc
+            if dimmed_count > 0:
+                modifier_desc = f"Dimmed {self.intensified_dimmed_color} x{dimmed_count}: x{dimmed_adjust:.1f} score"  # e.g., "Dimmed Green x1: x0.8 score"
+        
+        # NEW: Apply global color mult if intensified (tier 5 +30% all dice values this blind)
+        if hasattr(self, 'intensified_global_color_mult') and self.intensified_global_color_mult != 1.0:
+            for i in range(len(held_rolls)):
+                die, value = held_rolls[i]
+                new_value = int(value * self.intensified_global_color_mult)  # e.g., 4 * 1.3 = 5 (rounds up for drama)
+                held_rolls[i] = (die, new_value)
+            # Add to modifiers (drama!)
+            if not is_preview:
+                modifier_desc += f" (Radiance: x{self.intensified_global_color_mult:.1f} all values)"
 
         # If advantage held, add it as an extra entry with advantage_value (independent of original)
         if self.has_advantage and self.held_advantage:
@@ -1660,7 +1710,7 @@ class ChromaRollGame:
         values = [value for die, value in held_rolls]
         colors_list = [die['color'] for die, value in held_rolls]
         sorted_values = sorted(values)
-        counts = {i: values.count(i) for i in set(values)}
+        counts = {i: values.count(i) for i in set(values)}  # Use original values for counts/hand_type
         max_count = max(counts.values()) if counts else 0
         pair_count = list(counts.values()).count(2)
 
@@ -2197,6 +2247,13 @@ class ChromaRollGame:
             
                 pass
 
+        if hasattr(self, 'intensified_disabled_type') and self.intensified_disabled_type:
+            if hand_type == self.intensified_disabled_type:
+                base_score = 0
+                modifier_desc = f"Blocked {hand_type}: 0 score—adapt!"
+                # Force final to 0 (overrides mults)
+                final_score = 0
+
         # Sum per-die bonuses for scored dice
         for die, _ in held_rolls:
             bonus = die.get('score_bonus', 0)
@@ -2258,15 +2315,14 @@ class ChromaRollGame:
         final_score = int((base_score + charm_chips + rune_chips) * (1 + total_modifier))
         final_score = int(final_score * retrigger_mult)
 
-        # NEW: Apply D20 intensify buff if flagged (temp per-hand mult)
-        if hasattr(self, 'temp_intensify_mult') and self.temp_intensify_mult != 1.0:
-            final_score = int(final_score * self.temp_intensify_mult)
-            # Add to modifier_desc if preview=False (real score)
+        
+
+        # NEW: Apply dimmed to final (scale base/chips by avg dimmed mult if any)
+        if hasattr(self, 'intensified_dimmed_color') and dimmed_adjust != 1.0:
+            dimmed_scale = dimmed_adjust ** (dimmed_count / len(original_rolls))  # e.g., 1 dimmed in 5 = slight overall nerf
+            final_score = int(final_score * dimmed_scale)
             if not is_preview:
-                modifier_desc += f" (Intensify x{self.temp_intensify_mult:.1f})"
-            # Clear after apply (next hand won't have it)
-            del self.temp_intensify_mult
-            print(f"DEBUG: Applied intensify buff: {final_score} (x{self.temp_intensify_mult:.1f})")  # TEMP
+                modifier_desc += f" ({dimmed_count}/{len(original_rolls)} dimmed: -{int((1 - dimmed_scale) * 100)}% total)"
 
         return hand_type, base_score, modifier_desc, final_score, charm_chips, charm_color_mult_add
 
@@ -2348,6 +2404,19 @@ class ChromaRollGame:
                 hand_type, base_score, modifier_desc, final_score, charm_chips, charm_mono_add = self.get_hand_type_and_score(is_preview=True)
                 self.current_hand_text = f"Current Hand: {hand_type} ({base_score} base + {charm_chips} charms) = {final_score} total"
                 self.current_modifier_text = f"Modifiers: {modifier_desc}"
+
+                # FIXED: Persistent block reminder (tier 1: Show on every hand_text till blind end)
+                if hasattr(self, 'intensified_disabled_type') and self.intensified_disabled_type:
+                    self.current_hand_text = f"BLOCKED: {self.intensified_disabled_type} — " + self.current_hand_text
+                    # NEW: Warn if this hand matches (existing logic)
+                    if hand_type == self.intensified_disabled_type:
+                        self.current_hand_text += f" (0 score—adapt!)"
+
+                # NEW: Warn if dimmed affects this hand (e.g., "Dimmed Red: -20%!")
+                if hasattr(self, 'intensified_dimmed_color') and self.intensified_dimmed_color:
+                    affected = any(die['color'] == self.intensified_dimmed_color for die, _ in held_rolls)
+                    if affected:
+                        self.current_hand_text += f" — Dimmed {self.intensified_dimmed_color}: -20% values!"
 
                 # Build modifier parts (existing logic, but after single call)
                 modifier_parts = []
@@ -2458,7 +2527,7 @@ class ChromaRollGame:
                 # NEW: Set rect for UNO if equipped
                 if charm['name'] == 'UNO Draw 2':
                     self.uno_charm_rect = rect
-                    print(f"DEBUG: UNO rect set at {rect} (slot {i})")  # Confirm set
+                    # print(f"DEBUG: UNO rect set at {rect} (slot {i})")  # Confirm set
                 
                 
                 
