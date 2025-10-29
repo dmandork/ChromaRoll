@@ -268,3 +268,11 @@ ENH_EFFECTS = {
     'Judgement': {},  # Charm creation; maybe +charm value if tracked
     'Silver': {'coin_value': 1}  # On not held; adjust for held context
 }
+
+D20_OUTCOMES = [
+    {'min': 1, 'max': 4, 'outcome': {'name': 'Prism Fracture', 'desc': '+50% target, disable hand type; success: +2x mult + Prism pack', 'downside': {'target_mult': 1.5, 'disable_hand': True}, 'buff': {'mult': 2.0, 'pack': 'Prism'}}},
+    {'min': 5, 'max': 8, 'outcome': {'name': 'Hue Dimming', 'desc': '+25% target, -20% random color score; success: +2x mult +20 coins', 'downside': {'target_mult': 1.25, 'color_debuff': 0.8}, 'buff': {'mult': 2.0, 'coins': 20}}},
+    {'min': 9, 'max': 12, 'outcome': {'name': 'Roll Harmony', 'desc': '+8% target, stabilize 1 reroll; success: +1.5x mult +1 discard', 'downside': {'target_mult': 1.08, 'stabilize_reroll': 1}, 'buff': {'mult': 1.5, 'discard': 1}}},
+    {'min': 13, 'max': 16, 'outcome': {'name': 'Roll Flow', 'desc': '-12% target, +1 reroll + advantage on 1 die; success: +2.5x mult + full discard (5)', 'downside': {'target_mult': 0.88, 'extra_reroll': 1, 'advantage_die': 1}, 'buff': {'mult': 2.5, 'full_discard': 5}}},
+    {'min': 17, 'max': 20, 'outcome': {'name': 'Chroma Radiance', 'desc': '-25% target, +30% all colors score; success: +4x mult (next 2) +50 coins + achievement', 'downside': {'target_mult': 0.75, 'color_buff': 1.3}, 'buff': {'mult': 4.0, 'mult_duration': 2, 'coins': 50, 'achievement': True}}},
+]

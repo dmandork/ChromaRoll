@@ -783,25 +783,25 @@ def draw_shop_screen(game, skip_tooltips=False):
 
 def draw_blinds_screen(game):
     """Draws the blinds selection screen with three boxes for all blinds, horizontally."""
-    mouse_pos = pygame.mouse.get_pos()  # For hover
+    mouse_pos = pygame.mouse.get_pos() # For hover
     game.screen.fill(constants.THEME['background'])
     title_text = game.font.render(f"Stake {game.current_stake}", True, (constants.THEME['text']))
     game.screen.blit(title_text, (game.width // 2 - title_text.get_width() // 2, game.height // 10))
     if game.upcoming_boss_effect is None:
         game.upcoming_boss_effect = random.choice(data.BOSS_EFFECTS)  # Fallback generate if not set
-
     # In shop or load logic
     game.update_advantage_flag()
-
     blind_order = ['Small', 'Big', 'Boss']
     box_width, box_height = 150, 100
-    box_spacing = 50  # Spacing between blind boxes (pixels)
+    box_spacing = 50 # Spacing between blind boxes (pixels)
     total_blinds_width = 3 * box_width + 2 * box_spacing
     start_x = (game.width - total_blinds_width) // 2
     start_y = game.height // 3
+    blind_rects = []  # NEW: List to return the rects for clicks
     for i, blind in enumerate(blind_order):
         x = start_x + i * (box_width + box_spacing)
         rect = pygame.Rect(x, start_y, box_width, box_height)
+        blind_rects.append(rect)  # NEW: Collect for return
         pygame.draw.rect(game.screen, (100, 100, 100), rect)
         # Highlight current blind
         if blind == game.current_blind:
@@ -810,22 +810,21 @@ def draw_blinds_screen(game):
         game.screen.blit(blind_text, (rect.x + (box_width - blind_text.get_width()) // 2, rect.y + 20))
         target_text = game.small_font.render(f"Score: {int(game.get_blind_target(game.current_stake, blind))}", True, (constants.THEME['text']))
         game.screen.blit(target_text, (rect.x + (box_width - target_text.get_width()) // 2, rect.y + 50))
-
         # Preview for Boss
         if blind == 'Boss':
             if game.current_boss_effect and game.current_boss_effect['name'] == 'DISABLED':
                 boss_name = "DISABLED"
                 boss_desc = "Boss effect disabled by Luchador Lens!"
-                boss_color = constants.THEME['disabled']  # Gray
+                boss_color = constants.THEME['disabled'] # Gray
             elif game.upcoming_boss_effect:
                 boss_name = game.upcoming_boss_effect['name']
                 boss_desc = game.upcoming_boss_effect['desc']
-                boss_color = (255, 0, 0)  # Red
+                boss_color = (255, 0, 0) # Red
             else:
-                boss_name = "Random"  # Fallback for no effect
+                boss_name = "Random" # Fallback for no effect
                 boss_desc = "Boss effect TBD"
                 boss_color = (255, 0, 0)
-            
+           
             effect_str = f"{boss_name} - {boss_desc}"
             # Your existing wrap logic...
             lines = []
@@ -838,61 +837,63 @@ def draw_blinds_screen(game):
                 else:
                     current_line += word + " "
             lines.append(current_line.strip())
-            
+           
             y_offset = rect.y + box_height + 10
             for line in lines:
                 effect_text = game.small_font.render(line, True, boss_color)
                 game.screen.blit(effect_text, (rect.x + (box_width - effect_text.get_width()) // 2, y_offset))
                 y_offset += effect_text.get_height() + 5
-
-        elif blind == 'Boss':  # Fallback if no effect (e.g., bug)
+        elif blind == 'Boss': # Fallback if no effect (e.g., bug)
             fallback_text = game.small_font.render("Effect: Random", True, (255, 0, 0))
             game.screen.blit(fallback_text, (rect.x + (box_width - fallback_text.get_width()) // 2, rect.y + box_height + 10))
-
     coins_text = game.small_font.render(f"Coins: {game.coins}", True, (constants.THEME['text']))
     game.screen.blit(coins_text, (game.width // 2 - coins_text.get_width() // 2, game.height // 10 + 50))
-
-    continue_rect = None  # Define all returns upfront
+    continue_rect = None # Define all returns upfront
     debug_button_rect = None
     up_rect = None
     down_rect = None
     debug_jump_rect = None
-    
+    intensify_rect = None  # NEW: Single return for intensify button
+   
     # Draw continue button (always)
     continue_rect = pygame.Rect(game.width // 2 - constants.BUTTON_WIDTH // 2, game.height // 2 + 100, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
-    pygame.draw.rect(game.screen, constants.THEME['button_bg'], continue_rect)
+    pygame.draw.rect(game.screen, (100, 100, 100), continue_rect)
     continue_text = game.font.render("Continue", True, constants.THEME['text'])
     game.screen.blit(continue_text, (continue_rect.x + 20, continue_rect.y + 10))
-
+    
+    # NEW: Single Intensify button at bottom center (for current blind only)
+    intensify_y = continue_rect.y - 40  # Above continue with gap
+    intensify_rect = pygame.Rect(game.width // 2 - constants.BUTTON_WIDTH // 2, intensify_y, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
+    pygame.draw.rect(game.screen, (100, 100, 100), intensify_rect)
+    intensify_text = game.font.render("Intensify?", True, constants.THEME['text'])
+    game.screen.blit(intensify_text, (intensify_rect.x + 20, intensify_rect.y + 10))
+    
     if constants.DEBUG:
         # Debug Boss Select Button
-        debug_button_text = game.small_font.render("Select Boss (Debug)", True, (0, 255, 0))  # Green for debug
-        debug_button_rect = pygame.Rect(game.width - 200, game.height - 100, 180, 40)  # Bottom-right; adjust
+        debug_button_text = game.small_font.render("Select Boss (Debug)", True, (0, 255, 0)) # Green for debug
+        debug_button_rect = pygame.Rect(game.width - 200, game.height - 100, 180, 40) # Bottom-right; adjust
         pygame.draw.rect(game.screen, (50, 50, 50), debug_button_rect, border_radius=5)
         game.screen.blit(debug_button_text, (debug_button_rect.x + 10, debug_button_rect.y + 10))
-        debug_jump_text = game.small_font.render("Jump to Boss (Debug)", True, (0, 255, 0))  # Green for debug
-        debug_jump_rect = pygame.Rect(game.width - 200, game.height - 60, 180, 40)  # Above the select button; adjust y to avoid overlap
+        debug_jump_text = game.small_font.render("Jump to Boss (Debug)", True, (0, 255, 0)) # Green for debug
+        debug_jump_rect = pygame.Rect(game.width - 200, game.height - 60, 180, 40) # Above the select button; adjust y to avoid overlap
         pygame.draw.rect(game.screen, (50, 50, 50), debug_jump_rect, border_radius=5)
         game.screen.blit(debug_jump_text, (debug_jump_rect.x + 10, debug_jump_rect.y + 10))
-
         if game.debug_boss_dropdown_open:
             # Dropdown Panel: Scrollable list
-            panel_width, panel_height = 300, 300  # Size for ~10-15 visible items
-            
+            panel_width, panel_height = 300, 300 # Size for ~10-15 visible items
+           
             # Position: Above the button, hugging right side
-            panel_x = game.width - panel_width - 10  # Hug right with padding
-            panel_y = debug_button_rect.y - panel_height - 10  # Above button with padding
-            
+            panel_x = game.width - panel_width - 10 # Hug right with padding
+            panel_y = debug_button_rect.y - panel_height - 10 # Above button with padding
+           
             # Adaptive: If above clips top, shift below as fallback
             if panel_y < 0:
                 panel_y = debug_button_rect.y + debug_button_rect.height + 10
-
-            pygame.draw.rect(game.screen, (20, 20, 20), (panel_x, panel_y, panel_width, panel_height))  # Dark panel
-
-            item_height = 25  # Each effect row
+            pygame.draw.rect(game.screen, (20, 20, 20), (panel_x, panel_y, panel_width, panel_height)) # Dark panel
+            item_height = 25 # Each effect row
             visible_items = panel_height // item_height
             total_items = len(data.BOSS_EFFECTS)
-            
+           
             # Scroll arrows (simple up/down buttons)
             up_rect = pygame.Rect(panel_x + panel_width - 30, panel_y, 30, 30)
             down_rect = pygame.Rect(panel_x + panel_width - 30, panel_y + panel_height - 30, 30, 30)
@@ -900,16 +901,14 @@ def draw_blinds_screen(game):
             pygame.draw.rect(game.screen, (100, 100, 100), down_rect)
             game.screen.blit(game.small_font.render("^", True, (constants.THEME['text'])), (up_rect.x + 10, up_rect.y + 5))
             game.screen.blit(game.small_font.render("v", True, (constants.THEME['text'])), (down_rect.x + 10, down_rect.y + 5))
-
             # Render visible effects
             for i in range(game.debug_boss_scroll_offset, min(game.debug_boss_scroll_offset + visible_items, total_items)):
                 effect = data.BOSS_EFFECTS[i]
-                item_text = game.small_font.render(f"{effect['name']}: {effect['desc'][:30]}...", True, (constants.THEME['text']))  # Truncate long desc
+                item_text = game.small_font.render(f"{effect['name']}: {effect['desc'][:30]}...", True, (constants.THEME['text'])) # Truncate long desc
                 item_y = panel_y + (i - game.debug_boss_scroll_offset) * item_height + 5
                 game.screen.blit(item_text, (panel_x + 10, item_y))
-
     # Update return to include debug rects
-    return continue_rect, debug_button_rect, up_rect, down_rect, debug_jump_rect
+    return blind_rects, continue_rect, debug_button_rect, up_rect, down_rect, debug_jump_rect, intensify_rect  # 7 values
 
 def draw_tutorial_screen(game):
     """Draws the tutorial screen with overlays on mock states."""

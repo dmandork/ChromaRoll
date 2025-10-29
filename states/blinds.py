@@ -3,6 +3,7 @@ import pygame
 import random
 import copy
 import time
+import data  # FIXED: For blind_order and D20_OUTCOMES
 from constants import *  # For THEME, BUTTON_WIDTH, BASE_TARGETS, etc.
 from utils import draw_rounded_element, resource_path  # For buttons/UI elements
 from screens import draw_blinds_screen, draw_custom_button  # For main blinds drawing/buttons
@@ -15,6 +16,8 @@ from states.game import GameState
 
 from .shop import ShopState
 
+blind_order = ['Small', 'Big', 'Boss']  # FIXED: Define locally
+
 
 class BlindsState(State):
     def __init__(self, game):
@@ -24,6 +27,7 @@ class BlindsState(State):
         self.up_rect = None
         self.down_rect = None
         self.debug_jump_rect = None
+        self.intensify_rect = None  # NEW: Single for current blind
         # For item rects in dropdown (since dynamic, recalculate in handle_event)
         if DEBUG:
             self.stake_dropdown_open = False
@@ -91,7 +95,7 @@ class BlindsState(State):
 
     def draw(self):
         self.game.screen.fill(THEME['background'])  # Clear relics
-        self.continue_rect, self.debug_button_rect, self.up_rect, self.down_rect, self.debug_jump_rect = draw_blinds_screen(self.game)
+        self.blind_rects, self.continue_rect, self.debug_button_rect, self.up_rect, self.down_rect, self.debug_jump_rect, self.intensify_rect = draw_blinds_screen(self.game)  # Unpack 7
         
         if DEBUG and self.dropdown_rect:
             # Draw stake dropdown (upper left)
@@ -146,6 +150,12 @@ class BlindsState(State):
                 self.game.state_machine.change_state(GameState(self.game))
                 return
 
+            # NEW: Single intensify button for current blind
+            if self.intensify_rect and self.intensify_rect.collidepoint(mouse_pos):
+                from states.d20_roll import D20RollState
+                self.game.state_machine.change_state(D20RollState(self.game, self.game.current_blind))  # Trigger for current
+                return
+
             if DEBUG:
                 # Existing boss dropdown handling
                 if self.debug_button_rect and self.debug_button_rect.collidepoint(mouse_pos):
@@ -160,7 +170,8 @@ class BlindsState(State):
                     # Click on item: Recalculate item rects (since dynamic)
                     panel_x, panel_y = self.debug_button_rect.x - 300, self.debug_button_rect.y - 300  # Match draw position
                     item_height = 25
-                    for i in range(self.game.debug_boss_scroll_offset, min(self.game.debug_boss_scroll_offset + (300 // item_height), len(BOSS_EFFECTS))):
+                    visible_items = 300 // item_height  # Panel height // item
+                    for i in range(self.game.debug_boss_scroll_offset, min(self.game.debug_boss_scroll_offset + visible_items, len(BOSS_EFFECTS))):
                         item_rect = pygame.Rect(panel_x, panel_y + (i - self.game.debug_boss_scroll_offset) * item_height, 370, item_height)  # Full row clickable
                         if item_rect.collidepoint(mouse_pos):
                             self.game.upcoming_boss_effect = BOSS_EFFECTS[i]

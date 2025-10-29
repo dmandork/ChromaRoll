@@ -81,3 +81,9 @@ def get_easing(t, mode='out_cubic'):
     elif mode == 'in_cubic':
         return t ** 3
     return t  # Linear fallback
+
+def tint_image(surface, color):
+    """Tint a surface with color (RGB tuple), preserving transparency."""
+    tinted = surface.copy()
+    tinted.fill(color, special_flags=pygame.BLEND_MULT)  # Multiply for tint
+    return tinted

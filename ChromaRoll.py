@@ -391,6 +391,7 @@ class ChromaRollGame:
         self.drag_offset_x = 0
         self.drag_offset_y = 0
         self.score_mult = 1.0  # For Dagger charm
+        self.mult = 1.0  # Base multiplier for buffs
         self.hand_multipliers = {ht: 1.0 for ht in data.HAND_TYPES}  # Multipliers for hand types
         self.pack_choices = []  # Choices for pack selection
         self.confirm_sell_index = -1  # Index of charm to confirm sell
@@ -1532,6 +1533,14 @@ class ChromaRollGame:
             else:
                 # Game over - transition to state
                 self.state_machine.change_state(GameOverState(self))
+
+        # In score_and_new_turn, on win (after round_score >= target)
+        if hasattr(self, 'intensified_buff'):
+            buff = self.intensified_buff
+            self.mult += buff.get('mult', 0) # e.g., +2x
+            self.coins += buff.get('coins', 0)
+            # Add pack/achievement/discards/etc. (e.g., if 'pack': add add)
+            del self.intensified_buff  # Clear
 
     def toggle_hold(self, index):
         """Toggles hold state for a die."""
