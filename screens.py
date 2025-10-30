@@ -1391,33 +1391,37 @@ def draw_custom_button(game, rect, text, is_hover=False, fill_color=None, is_red
 
 def draw_text(self):
     """Draws current hand info, score, rerolls, discards, etc."""
-    # NEW: Wrap hand_text for long blocks (e.g., "BLOCKED: ...")
-    hand_lines = wrap_text(self.small_font, self.current_hand_text, max_width=450)
-    y_offset = 50  # Start y (adjust if overlapping title)
-    for line in hand_lines:
-        hand_text_surf = self.small_font.render(line, True, (THEME['text']))
+    # FIXED: Draw hand_lines at original y=120 (away from charms at y=10), with spacing
+    y_offset = 120  # Original hand y (safe from charms)
+    for line in self.current_hand_lines:
+        hand_text_surf = self.small_font.render(line, True, THEME['text'])
         self.screen.blit(hand_text_surf, (50, y_offset))
         y_offset += self.small_font.get_height() + 2  # Small gap
 
-    # **INSERT: Wrap and draw modifier text (handles long lists)
-    modifier_lines = wrap_text(self.small_font, self.current_modifier_text, max_width=450)  # Adjust max_width to UI fit
-    y_offset = 150  # Start y for modifiers
-    for line in modifier_lines:
+    # FIXED: Draw modifiers at 150 + shift if hand wrapped long (e.g., +22px per extra line)
+    mod_y = 150
+    if len(self.current_hand_lines) > 1:
+        mod_y += (len(self.current_hand_lines) - 1) * (self.small_font.get_height() + 2)
+    for line in self.current_modifier_lines:
         # Handle "(disabled)" coloring per line if needed (split lines if complex)
         if " (disabled)" in line:
             base_line = line.replace(" (disabled)", "")
             base_render = self.small_font.render(base_line, True, THEME['text'])
             disabled_render = self.small_font.render(" (disabled)", True, (255, 0, 0))
-            self.screen.blit(base_render, (50, y_offset))
-            self.screen.blit(disabled_render, (50 + base_render.get_width(), y_offset))
+            self.screen.blit(base_render, (50, mod_y))
+            self.screen.blit(disabled_render, (50 + base_render.get_width(), mod_y))
         else:
             line_render = self.small_font.render(line, True, THEME['text'])
-            self.screen.blit(line_render, (50, y_offset))
-        y_offset += self.small_font.get_height()  # Line spacing (e.g., 20px)
+            self.screen.blit(line_render, (50, mod_y))
+        mod_y += self.small_font.get_height() + 2  # Gap for readability
 
-    # Score (shift down if modifiers wrapped long; optional: dynamic y based on len(modifier_lines))
-    score_y = 180 + (len(modifier_lines) - 1) * self.small_font.get_height()  # Adjust if >1 line
-    score_text = self.small_font.render(f"Score: {self.round_score}/{int(self.get_blind_target())}", True, (THEME['text']))
+    # FIXED: Score at 180 + shift if hand or modifiers wrapped (full cumulative)
+    score_y = 180
+    if len(self.current_hand_lines) > 1:
+        score_y += (len(self.current_hand_lines) - 1) * (self.small_font.get_height() + 2)
+    if len(self.current_modifier_lines) > 1:
+        score_y += (len(self.current_modifier_lines) - 1) * (self.small_font.get_height() + 2)
+    score_text = self.small_font.render(f"Score: {self.round_score}/{int(self.get_blind_target())}", True, THEME['text'])
     self.screen.blit(score_text, (50, score_y))
 
 def draw_charm_die(game, rect, charm, index=None):

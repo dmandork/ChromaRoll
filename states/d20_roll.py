@@ -91,34 +91,35 @@ class D20RollState(State):
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
-            mouse_pos = event.pos
+            mouse_pos = event.pos  # Precise clicks (scoped to mouse events)
             if self.phase == 'done':
                 if hasattr(self, 'accept_rect') and self.accept_rect.collidepoint(mouse_pos):
                     # FIXED: Apply flags/buff/temp on accept (delayed)
-                    self.apply_downside()  # Flags, temp_message, buff—post-commit
+                    self.outcome = self.get_outcome(self.roll_result)  # Now set outcome
+                    self.apply_downside()  # Flags, message, buff—post-commit
                     # NEW: Flag for GameState enter (force pull + buff apply)
                     self.game.from_d20_intensify = True  # Temp flag
                     from states.game import GameState
                     self.game.state_machine.change_state(GameState(self.game))
                     # Clear flag post-transition (in GameState enter, after use)
-
-        # FIXED: DEBUG Tier Selector (click button to open; click opt to select/close) - fully nested under MOUSEBUTTONDOWN
-        if DEBUG:
-            if hasattr(self, 'debug_tier_rect') and self.debug_tier_rect.collidepoint(mouse_pos):
-                self.debug_tier_open = not self.debug_tier_open  # Toggle on button click (stays open)
-                return  # Early exit to ignore other clicks while toggling
             
-            if self.debug_tier_open:
-                y_offset = self.debug_tier_rect.bottom + 5
-                for tier in range(1, 6):
-                    opt_rect = pygame.Rect(10, y_offset, 120, 25)
-                    if opt_rect.collidepoint(mouse_pos):
-                        self.roll_result = tier * 4 - 2  # e.g., Tier 1:2 (1-4), Tier 5:18 (17-20)
-                        self.outcome = self.get_outcome(self.roll_result)  # Re-apply (for desc)
-                        self.debug_tier_open = False  # Close on tier select
-                        print(f"DEBUG: Forced Tier {tier} - result: {self.roll_result}, outcome: {self.outcome['name']}")
-                        break  # Stop after select
-                    y_offset += 27
+            # FIXED: DEBUG Tier Selector (click button to open; click opt to select/close) - fully nested under MOUSEBUTTONDOWN
+            if DEBUG:
+                if hasattr(self, 'debug_tier_rect') and self.debug_tier_rect.collidepoint(mouse_pos):
+                    self.debug_tier_open = not self.debug_tier_open  # Toggle on button click (stays open)
+                    return  # Early exit to ignore other clicks while toggling
+                
+                if self.debug_tier_open:
+                    y_offset = self.debug_tier_rect.bottom + 5
+                    for tier in range(1, 6):
+                        opt_rect = pygame.Rect(10, y_offset, 120, 25)
+                        if opt_rect.collidepoint(mouse_pos):
+                            self.roll_result = tier * 4 - 2  # e.g., Tier 1:2 (1-4), Tier 5:18 (17-20)
+                            self.outcome = self.get_outcome(self.roll_result)  # Re-apply (for desc)
+                            self.debug_tier_open = False  # Close on tier select
+                            print(f"DEBUG: Forced Tier {tier} - result: {self.roll_result}, outcome: {self.outcome['name']}")
+                            break  # Stop after select
+                        y_offset += 27
 
     def get_outcome(self, roll):
         # Tier lookup (from data.py - add the dict below)

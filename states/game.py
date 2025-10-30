@@ -93,6 +93,13 @@ class GameState(State):
                 print(f"DEBUG: Final hands_left after enter: {self.game.hands_left}")
 
                 self.game.new_turn()
+
+        # NEW: Carry type-specific buff (e.g., tier 1: +2x for blocked type on first next-blind hand)
+        if hasattr(self.game, 'pending_type_mult') and self.game.pending_type_mult:
+            self.game.temp_type_mult = self.game.pending_type_mult  # e.g., {'Large Straight': 2.0}
+            print(f"DEBUG: Applied carried type buff: {self.game.temp_type_mult}")
+            del self.game.pending_type_mult  # Consume
+            
         # FIXED: Removed else: new_turn() – rare case covered by fresh
         self.game.update_advantage_flag()  # Refresh after entering state
 

@@ -654,12 +654,18 @@ class ChromaRollGame:
             del self.temp_intensify_mult
 
         # In advance_blind (after resets)
-        if hasattr(self, 'pending_buff_mult'):
-            self.temp_intensify_mult = self.pending_buff_mult  # Carry to next
+        # FIXED: Decrement buff duration only if set (tier 5 'next 2')
+        if hasattr(self, 'intensify_buff_duration') and self.intensify_buff_duration > 0:
             self.intensify_buff_duration -= 1
-            if self.intensify_buff_duration <= 0:
-                del self.pending_buff_mult
+            if self.intensify_buff_duration > 0:
+                # Carry pending_mult for remaining duration
+                self.pending_buff_mult = 4.0  # e.g., tier 5 x4
+                print(f"DEBUG: Buff duration now {self.intensify_buff_duration} - carried pending_mult: {self.pending_buff_mult}")
+            else:
+                print("DEBUG: Buff duration expired - cleared")
                 del self.intensify_buff_duration
+        else:
+            print("DEBUG: No buff duration to decrement")  # TEMP: Confirm skip
 
         # NEW: Clear D20 intensify state post-blind
         if hasattr(self, 'target_mult'):
@@ -1510,10 +1516,6 @@ class ChromaRollGame:
             self.lucky_triggers = 0
             self.blind_won = True  # Set win flag if not already
 
-            if buff.get('extra_reroll'):
-                self.rerolls_left += buff['extra_reroll']
-                print(f"DEBUG: Added {buff['extra_reroll']} reroll(s) from {buff.get('name', 'Unknown')}")  # TEMP
-
             # In win block (after self.coins += total_coins)
             if hasattr(self, 'intensified_buff') and self.intensified_buff:
                 buff = self.intensified_buff
@@ -1535,9 +1537,11 @@ class ChromaRollGame:
                     self.pending_buff_mult = buff['mult_next_hand']  # e.g., 2.0; overrides if multiple
                 if buff.get('extra_discard'):
                     self.discards_left += buff.get('extra_discard')
+                if 'mult_next' in buff and hasattr(self, 'intensified_disabled_type') and self.intensified_disabled_type:
+                    self.pending_type_mult = {self.intensified_disabled_type: buff['mult_next']}  # e.g., {'Large Straight': 2.0}
                 if buff.get('extra_reroll'):
                     self.rerolls_left += buff.get('extra_reroll')
-                    print(f"DEBUG: Added {buff['extra_reroll']} reroll(s) from {buff.get('name', 'Unknown')}")  # TEMP
+                    print(f"DEBUG: Added {buff.get('extra_reroll', 0)} reroll(s) from {buff.get('name', 'Unknown')}")  # TEMP
                 del self.intensified_buff  # Clear
                 print(f"DEBUG: Rewarded {buff.get('name', 'Unknown')}: {buff}")  # TEMP: Safe name access
 
@@ -2250,9 +2254,8 @@ class ChromaRollGame:
         if hasattr(self, 'intensified_disabled_type') and self.intensified_disabled_type:
             if hand_type == self.intensified_disabled_type:
                 base_score = 0
-                modifier_desc = f"Blocked {hand_type}: 0 score—adapt!"
-                # Force final to 0 (overrides mults)
-                final_score = 0
+                modifier_desc.append(f"Blocked {hand_type}: 0 score—adapt!")  # FIXED: Append to list, not set string
+                final_score = 0  # Force zero
 
         # Sum per-die bonuses for scored dice
         for die, _ in held_rolls:
@@ -2261,6 +2264,15 @@ class ChromaRollGame:
             charm_chips += die.get('score_bonus', 0)
 
         total_modifier = base_modifier + charm_color_mult_add + rune_mult_add + charm_mult_add
+
+        # NEW: Apply type-specific buff (e.g., tier 1: +2x for blocked type this hand)
+        if hasattr(self, 'temp_type_mult') and self.temp_type_mult:
+            type_mult = self.temp_type_mult.get(hand_type, 1.0)
+            if type_mult > 1.0:
+                total_modifier += type_mult - 1  # e.g., +1 for x2
+                modifier_desc.append(f" (Type Buff x{type_mult} for {hand_type})")
+                if not is_preview:
+                    del self.temp_type_mult  # Clear after use (first hand only)
 
         # NEW: Acrobat Amulet - Apply final discard mult if set
         total_modifier += self.final_discard_mult
@@ -2447,6 +2459,10 @@ class ChromaRollGame:
                     self.current_modifier_text = "Modifiers: " + " + ".join(modifier_parts)
                 else:
                     self.current_modifier_text = ""
+
+        # NEW: Pre-wrap hand_text for draw (handles long blocks without draw change)
+        self.current_hand_lines = wrap_text(self.small_font, self.current_hand_text, max_width=450)  # FIXED: Prepare lines here
+        self.current_modifier_lines = wrap_text(self.small_font, self.current_modifier_text, max_width=450)
     
     def get_pause_button_rects(self):
         """Calculates and returns button rects for pause menu (no drawing)."""
@@ -2700,12 +2716,6 @@ class ChromaRollGame:
         all_packs = [0,1,2,3,4,5] + [6,7,8]  # Assume 0-5 existing, 6-8 for rune packs
         weights = [1]*6 + [1, 0.8, 0.3]  # Lower for Super
         self.available_packs = random.choices(all_packs, weights=weights, k=2 + any(tag['name'] == 'Voucher Tag' for tag in self.active_tags))  # Extra if Voucher Tag
-        # Map indices to packs, e.g., if pack_id in [6,7,8]: self.pack_choices = random.sample(data.MYSTIC_RUNES, pack['choices'])
-
-        # In generate_shop (after self.available_packs = ...)
-        if hasattr(self, 'pending_free_pack'):
-            self.available_packs.append(0 if self.pending_free_pack == 'prism' else 3)  # Basic Prism or Dice
-            del self.pending_free_pack
         
         # Filter pool to exclude owned (as before)
         available_pool = [c for c in data.CHARMS_POOL if c['name'] not in [e['name'] for e in self.equipped_charms]]
@@ -2729,7 +2739,12 @@ class ChromaRollGame:
                 # print("Debug: Stored grimoire_rune for bottom draw = ", self.grimoire_rune['name'])
                 # print("Debug: Removed grimoire_rune from shop_charms - now = ", [c['name'] for c in self.shop_charms])
             
-        
+        # FIXED: Add pending free pack *before* random (ensures append)
+        if hasattr(self, 'pending_free_pack'):
+            pack_id = 0 if self.pending_free_pack == 'prism' else 3  # Basic Prism or Dice
+            self.available_packs.append(pack_id)
+            print(f"DEBUG: Added free {self.pending_free_pack} pack (ID {pack_id}) - available_packs now: {self.available_packs}")
+            del self.pending_free_pack
 
         # Compute weights per charm: base rarity * stake modifier
         charm_weights = []
