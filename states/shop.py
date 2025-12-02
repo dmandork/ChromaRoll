@@ -76,6 +76,20 @@ class ShopState(State):
             self.game.temp_message = f"Rune Recycler: {pending_rune['name']} available in shop!"
             self.game.temp_message_start = time.time()
 
+        # Free Prism Pack from Crit Fail comeback
+        if getattr(self.game, 'pending_prism_pack', False):
+            prism_pack = {
+                'name': 'Prism Pack (FREE!)',
+                'cost': 0,
+                'free': True,
+                'desc': 'Crit Fail comeback reward!\nContains powerful prism/rainbow items.',
+                'type': 'prism_pack'  # you can check this in buy logic later
+            }
+            self.game.shop_charms.append(prism_pack)  # appears in normal charm shop slots
+            self.game.pending_prism_pack = False
+            self.game.temp_message = "Crit Fail comeback: Free Prism Pack in shop!"
+            self.game.temp_message_start = time.time()
+
     def update(self, dt):
         pass  # Expand for animations if needed
 

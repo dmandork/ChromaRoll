@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # Ensure root di
 import data
 import screens
 import savegame
+from d20_boon import D20BoonSystem
 from constants import *
 from utils import draw_rounded_element, resource_path, create_dice_bag, wrap_text, get_easing
 
@@ -76,6 +77,12 @@ class ChromaRollGame:
 
         # Pre-load other assets (icons, sounds, etc.) here as before
         # e.g., your charm pre-load loop, mixer.init(), Sound loads
+
+        self.d20_boon = D20BoonSystem()
+        self.show_challenges_screen = False  # New flag for the screen
+        self.challenges_mode = "main"     # main / fusion / rolling / result
+        self.selected_fusion = None
+        self.challenges_anim_time = 0
 
         # In __init__, add the icon paths and cache
         self.charm_icon_paths = {
@@ -411,7 +418,8 @@ class ChromaRollGame:
         self.current_rune = None  # For 
         self.current_rune_slot = -1
         self.selected_dice = []  # For die selection during apply
-    
+        self.pending_prism_pack = False      # Set on current-blind win → free pack in next shop
+        self.boon_hand_type_mult = {}        # e.g. {'Large Straight': 2.0} for the whole next blind
 
         # Set initial hand texts
         self.update_hand_text()
@@ -780,6 +788,8 @@ class ChromaRollGame:
 
         # DEBUG: Final hands after all
         # print(f"DEBUG: Final hands_left after advance_blind: {self.hands_left}")
+
+    
 
     def new_turn(self):
         """Starts a new turn: draw hand, set to value 1, reset holds and rerolls."""

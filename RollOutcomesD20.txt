@@ -1,0 +1,52 @@
+ChromaRoll D20 Boon System: Detailed Overview
+The D20 Boon System is a new optional mechanic introduced in the Challenges Screen of ChromaRoll, designed to add risk/reward depth and thematic "chroma" flair to progression. It allows players to intensify a minor or major challenge (skipping the standard post-challenge shop and coins) in exchange for a chance at variable buffs or debuffs, determined by an optional d20 roll. This system differentiates ChromaRoll from its inspirations (like Balatro's tags) by incorporating true dice randomness, color fusion customization, and roguelike comeback potential. It's fully optional—players can skip the boon entirely for safe progression or roll without fusion for simplicity—making it accessible for casual play while offering strategy for deeper runs.
+The system ties into the game's core loop: After viewing the phase's challenges on the Challenges Screen (which highlights the current challenge out of 3, shows required scores, and previews the boss on challenge 3), players can choose to apply a boon to the upcoming minor or major challenge. If applied, it heightens difficulty (e.g., increased score target) but unlocks the d20 roll for outcomes. Success grants buffs (instant or delayed for bosses), while failure risks game over or setbacks. Delayed boons trigger on the next boss or final round, building suspense. Balancing ensures no permanent power creep (e.g., no charm slots), with testing via debug mode (force rolls/outcomes).
+Key Features
+
+Optional d20 Roll: Players toggle "Roll d20?" before confirming the boon. If skipped, a standard intensification applies (balanced trade-off, e.g., +10% target for a moderate buff). The roll uses random.randint(1,20) in code, animated in UI with a blank d20 PNG base + font-rendered number (tinted for fusion).
+5 Tiered Outcomes: Even probabilities (~20% each). Low rolls punish but reward comebacks; high rolls empower. Each has a base effect (ease/debuff on current challenge) and success reward (temp buffs like multipliers or resources).
+Optional Color Fusion: Before rolling, players can fuse one of the 5 base colors (red, blue, green, purple, yellow) from their dice pool. This modifies the tier by targeting the fused color for nerfs/buffs (e.g., debuffs hit it harder, but success amplifies it). Adds chroma strategy—fuse a strong color for riskier plays or weak one for safety. Costs a minor resource (e.g., discard or coin) to encourage thought. Future expansions could gate special die fusions (Gold, Silver, etc.) behind charms/phases.
+Trade-Offs: Boons skip shop/coins, fitting roguelike risk. Instant effects apply now; delayed on bosses. Ties to achievements (e.g., "Survive 10 Crit Fails" unlocks fusion variants).
+Implementation Notes: In data.py: Dict for tiers/effects/fusions. statemachine.py: Logic for roll/fusion mods. UI (Challenges Screen): Tooltips explain outcomes ("Risk d20 for chromatic fate?"); animations for roll/spawned die advantage. Balance via debug (force colors/rolls).
+
+The 5 d20 Outcomes
+Each tier is fixed initially (one outcome per group) for simplicity, with variants planned (e.g., 2-3 flavors per tier in medium-term roadmap). Outcomes scale with fusion for chroma uniqueness.
+
+1-4: Crit Fail (High Risk, High Reward - Prism Fracture)
+
+Base Effect: +50% score target; randomly disable one hand type (e.g., no Flushes or Straights) this challenge only. Forces adaptation in dice rolling.
+With Color Fusion: Disable ties to fused color (e.g., fuse blue: no hands using blue dice qualify as the disabled type), adding strategy (fuse non-essential color to minimize pain).
+Success Reward: Refracts the disabled type into a temp buff (+2x score for it next challenge) + free Prism pack in next shop (synergizes with multi-hand bonuses).
+Fun Factor: Tense puzzle—adapt your 5-dice hand or fail, but comeback feels heroic. Low complexity: Tracks only this/next challenge.
+
+
+5-8: Challenging (Moderate Setback - Hue Dimming)
+
+Base Effect: +25% score target; dice of a random color score -20% this challenge (mild nerf to hand values).
+With Color Fusion: Targets fused color instead (-20% on it), but success "brightens" (+30% for that color next challenge).
+Success Reward: +2x multiplier next hand +20 coins (quick recovery).
+Fun Factor: Creates a "weak spot" to play around, pushing color swaps without full locks. Low complexity: Simple score mod.
+
+
+9-12: Neutral (Balanced Trade-Off - Roll Harmony)
+
+Base Effect: +8% score target; stabilize one reroll (can't change a random die this round—mild lock).
+With Color Fusion: Stability applies to fused-color dice, but success harmonizes (+1 free reroll for them next challenge).
+Success Reward: +1.5x multiplier this challenge +1 extra discard (up to 5 dice).
+Fun Factor: Subtle "harmony" nudge rewards planning, like holding key dice. Low complexity: Flag one die temporarily.
+
+
+13-16: Favorable (Slight Ease - Roll Flow)
+
+Base Effect: -12% score target; +1 extra reroll this round + advantage on 1 die (spawn copy above for second chance roll, using existing mechanic).
+With Color Fusion: Advantage prioritizes fused-color die, and success flows it (+1 reroll carryover to next challenge).
+Success Reward: +2.5x multiplier this challenge + free full discard (up to 5 dice).
+Fun Factor: Smooth efficiency boost feels lucky, enhancing reroll flow. Low complexity: Leverage built-in advantage spawn.
+
+
+17-20: Crit Success (Big Win - Chroma Radiance)
+
+Base Effect: -25% score target; all colors score +30% this challenge (major ease).
+With Color Fusion: Explodes fused color (+50% instead, treats it as wildcard for hand types next hand).
+Success Reward: +4x multiplier next 2 challenges +50 coins + instant achievement progress (e.g., toward charm unlock).
+Fun Factor: "Rainbow overdrive" turns hands into powerhouses. Low complexity: Global score amp.
