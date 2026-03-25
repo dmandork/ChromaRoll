@@ -152,7 +152,7 @@ class BlindsState(State):
 
             # NEW: Single intensify button for current blind
             if self.intensify_rect and self.intensify_rect.collidepoint(mouse_pos):
-                from states.d20_roll import D20RollState
+                from .d20_roll import D20RollState
                 self.game.state_machine.change_state(D20RollState(self.game, self.game.current_blind))  # Trigger for current
                 return
 

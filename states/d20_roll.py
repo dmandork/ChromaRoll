@@ -31,7 +31,6 @@ class D20RollState(State):
                 self.roll_result = random.randint(1, 20)
                 self.outcome = self.get_outcome(self.roll_result)  # FIXED: Set for desc preview
                 self.phase = 'done'  # To done (desc visible, no flags yet)
-                # No apply_downside() here—wait for accept
         elif self.phase == 'reveal':
             elapsed = time.time() - self.reveal_start_time
             if elapsed >= 2.0:  # Show outcome for 2s, then done

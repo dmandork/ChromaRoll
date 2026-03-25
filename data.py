@@ -1,6 +1,7 @@
 # data.py
 # Game data: lists, dicts for charms, pouches, bosses, etc.
 from constants import HAND_TYPES,BASE_COLORS
+
 import random
 
 HAND_TYPES = ['Pair', '2 Pair', '3 of a Kind', '4 of a Kind', '5 of a Kind', 'Full House', 'Small Straight', 'Large Straight']
