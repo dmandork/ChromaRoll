@@ -1135,9 +1135,11 @@ def draw_dice(game):
         if game.selecting_fates_die:
             pygame.draw.rect(game.screen, (0, 255, 0), rect, 2)  # Green selector on all dice
 
-        # Optional: Held highlight (add if not already present)
-        if game.held[i]:
-            pygame.draw.rect(game.screen, (0, 255, 0), rect, 2)
+        # Held highlight + D20 Tier 3 (Roll Harmony) locked die
+        is_locked = hasattr(game, 'intensified_locked_die_idx') and i == game.intensified_locked_die_idx
+        if game.held[i] or is_locked:
+            border_width = 4 if is_locked else 2   # thicker border so it stands out as "D20 locked"
+            pygame.draw.rect(game.screen, (0, 255, 0), rect, border_width)
 
         
 

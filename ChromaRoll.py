@@ -1188,24 +1188,28 @@ class ChromaRollGame:
             return  # Block actions during popup
         self.is_discard_phase = False
         self.has_rolled = True
-        # In start_roll_phase():
-        if self.current_blind == 'Boss' and self.current_boss_effect['name'] == 'Discard Delay':
-            self.is_discard_phase = True  # Enable after first roll? Wait, start_roll exits discard, so for delay, perhaps flag to skip initial but allow post-first.
-        # Note: For Discard Delay, in new_turn set is_discard_phase=False, then here after first roll (has_rolled=True), set to True if not used yet? Needs tweak.
+
         # Play sound at animation start
         self.sfx_channel.play(self.roll_sound)
+
         # Animate rolling for all dice
         for frame in range(ANIMATION_FRAMES):
             self.rolls = [(die, random.choice(die['faces'])) for die in self.hand]
-            self.screen.fill(THEME['background'])  # Clear screen
+            self.screen.fill(THEME['background'])
             screens.draw_game_screen(self)
-            pygame.display.flip()  # Update screen during animation
+            pygame.display.flip()
             time.sleep(ANIMATION_DELAY)
+
         # Final roll
-        self.apply_boss_face_shuffle()  # Ensure shuffle before rolling
+        self.apply_boss_face_shuffle()
         self.rolls = self.roll_hand()
-        self.discard_selected = [False] * NUM_DICE_IN_HAND  # Clear selections
+        self.discard_selected = [False] * NUM_DICE_IN_HAND
         self.update_hand_text()
+
+        # === ROLL HARMONY (D20 Tier 3) - Choose locked die RIGHT AFTER animation ===
+        if hasattr(self, 'roll_harmony_active') and self.roll_harmony_active:
+            self.intensified_locked_die_idx = random.randint(0, 4)
+            print(f"[DEBUG] Roll Harmony locked die #{self.intensified_locked_die_idx + 1}")  # temporary debug
 
     def score_and_new_turn(self):
         """Manually scores and starts a new turn."""

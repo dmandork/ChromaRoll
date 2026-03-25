@@ -82,10 +82,11 @@ class D20BoonSystem:
             buff['color_mult_next'] = {color: 1.3}
 
         elif roll <= 12:  # Roll Harmony
-            # Lock random/fused color die (apply in game: pick idx of prefer_color)
+            # Lock random/fused color die — DELAY selection until AFTER "Start Roll" click
             self.prefer_color = fused
-            self.locked_die_idx = random.randint(0, 4)  # Temp; override in blind start w/ prefer
-            full_desc_parts[0] += f" (prefer {fused or 'random'} die)"
+            self.roll_harmony_active = True
+            self.intensified_locked_die_idx = -1     # -1 = not chosen yet
+            full_desc_parts[0] += f" (prefer {fused or 'random'} die after Start Roll)"
             full_desc_parts.append(" | Success: +1.5x mult this blind +1 extra discard")
             buff['hand_mult_this'] = 1.5
             buff['extra_discards'] = 1

@@ -72,19 +72,20 @@ def evaluate_hand(game, is_preview=True):
     original_rolls = held_rolls[:]
     modifier_desc = []
 
-    # Dimmed Color -20%
-    dimmed_count = 0
-    dimmed_adjust = 1.0
+    # === DIMMED COLOR FIX (Hue Dimming from D20) ===
+    # Score penalty applied to base_score FIRST so -20% is always felt
+    # (this also removes the old "Dimmed 1/4: -5% total" line)
+    dimmed_mult = 1.0
+    dimmed_count = 0          # ← keeps UnboundLocalError fixed
+    dimmed_adjust = 1.0       # ← keeps everything you added manually working
+
     if hasattr(game, 'intensified_dimmed_color') and game.intensified_dimmed_color:
-        dimmed_mult = 0.8
-        for i in range(len(held_rolls)):
-            die, value = held_rolls[i]
-            if die['color'] == game.intensified_dimmed_color:
-                held_rolls[i] = (die, value * dimmed_mult)
-                dimmed_count += 1
+        dimmed_color = game.intensified_dimmed_color
+        dimmed_count = sum(1 for die, _ in held_rolls if die.get('color') == dimmed_color)
         if dimmed_count > 0:
-            dimmed_adjust = dimmed_mult
-            modifier_desc.append(f"Dimmed {game.intensified_dimmed_color} x{dimmed_count}: x0.8 score")
+            dimmed_mult = 0.8
+            dimmed_adjust = 0.8
+            modifier_desc.append(f"Dimmed {dimmed_color} x{dimmed_count}: x0.8 score")
 
     # Radiance global mult
     if hasattr(game, 'intensified_global_color_mult') and game.intensified_global_color_mult != 1.0:
@@ -714,7 +715,7 @@ def evaluate_hand(game, is_preview=True):
                 modifier_desc.append(f"{charm['name']} x2 (retrigger)")
 
     # Final score assembly
-    final_score = int((base_score + charm_chips + rune_chips) * (1 + total_modifier) * retrigger_mult)
+    final_score = int(((base_score * dimmed_mult) + charm_chips + rune_chips) * (1 + total_modifier) * retrigger_mult)
 
     # Dimmed final scale
     if dimmed_count > 0:
