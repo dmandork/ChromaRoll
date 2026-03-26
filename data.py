@@ -299,7 +299,7 @@ D20_OUTCOMES = [
     }},
     # 17-20: Crit Success
     {'min': 17, 'max': 20, 'outcome': {
-        'name': 'Chroma Radiance', 'desc': 'Big win: -25% target, +30% all colors this blind.',
+        'name': 'Chroma Radiance', 'desc': 'Big win: -25% target, +30% score this blind.',
         'downside': {'target_mult': 0.75, 'global_color_mult': 1.3},
         'buff': {'mult_next_2': 4.0, 'coins': 50}  # Dropped achievement; add back later if wanted
     }}

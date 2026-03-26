@@ -861,6 +861,11 @@ class ChromaRollGame:
                 self.is_discard_phase = False  # Skip initial discard; enable after first reroll
             # Reset per-turn trackers if needed
             self.boss_reroll_count = 0
+        
+        # === ROLL HARMONY - Random locked die every new hand ===
+        if getattr(self, 'roll_harmony_active', False):
+            self.intensified_locked_die_idx = random.randint(0, 4)
+            print(f"[D20] NEW locked die for this hand: #{self.intensified_locked_die_idx + 1}")
 
     def roll_hand(self):
         """Rolls each die in the hand, returning list of (die, value)."""
@@ -917,12 +922,18 @@ class ChromaRollGame:
                             self.held[i] = False  # Force reroll
             
             # ADD: Clear Fate's Favor state on reroll (duplicate goes away, charm unusable this hand)
-            if self.fates_advantage_index != -1:
+            # ONLY clear Fate's Favor — Roll Flow (Tier 4) keeps its selected index
+            if self.fates_advantage_index != -1 and self.fates_advantage_value is not None:
                 self.fates_advantage_index = -1
                 self.fates_advantage_value = None
                 self.held_fates_advantage = False
                 self.selecting_fates_die = False  # Safety
-                # print("Debug: Cleared Fate's Favor on reroll")
+                print("Debug: Cleared Fate's Favor on reroll")
+
+            # === STRONG GUARD: Save held advantage value BEFORE any reroll ===
+            saved_advantage_value = None
+            if self.has_advantage and self.held_advantage:
+                saved_advantage_value = self.advantage_value
 
             # Animate cycling for non-held dice
             # Play roll sound here (at start of reroll)
@@ -958,9 +969,18 @@ class ChromaRollGame:
                 self.advantage_value = random.randint(1, 6)
                 # print("Debug: Rerolled advantage value:", self.advantage_value)
 
+            # === STRONG PRESERVE: If advantage was held, FORCE it to stay the same ===
+            if self.has_advantage and self.held_advantage and saved_advantage_value is not None:
+                self.advantage_value = saved_advantage_value
+                print(f"DEBUG: FORCE-preserved held advantage value = {self.advantage_value} (did NOT reroll)")
+
             if not DEBUG_UNLIMITED_REROLLS:  # FIXED: Custom flag
                 self.rerolls_left -= 1
             self.update_hand_text()  # Update after reroll
+            # === ROLL HARMONY (D20 Tier 3) - Choose new locked die on every reroll ===
+            if hasattr(self, 'd20_boon') and getattr(self.d20_boon, 'roll_harmony_active', False):
+                self.intensified_locked_die_idx = random.randint(0, 4)
+                print(f"[D20 DEBUG] Locked die chosen on reroll: #{self.intensified_locked_die_idx + 1}")
             self.boss_reroll_count += 1  # Track for Break Surge
         else:
             # Score and advance hand or end round
@@ -1206,10 +1226,11 @@ class ChromaRollGame:
         self.discard_selected = [False] * NUM_DICE_IN_HAND
         self.update_hand_text()
 
-        # === ROLL HARMONY (D20 Tier 3) - Choose locked die RIGHT AFTER animation ===
-        if hasattr(self, 'roll_harmony_active') and self.roll_harmony_active:
+        # === ROLL HARMONY (D20 Tier 3) - Choose new locked die AFTER "Start Roll" ===
+        if hasattr(self, 'd20_boon') and getattr(self.d20_boon, 'roll_harmony_active', False):
+            old_idx = getattr(self, 'intensified_locked_die_idx', -1)
             self.intensified_locked_die_idx = random.randint(0, 4)
-            print(f"[DEBUG] Roll Harmony locked die #{self.intensified_locked_die_idx + 1}")  # temporary debug
+            print(f"[D20 DEBUG] Start Roll - Old locked: {old_idx} → NEW locked die #{self.intensified_locked_die_idx + 1}")
 
     def score_and_new_turn(self):
         """Manually scores and starts a new turn."""
@@ -1654,37 +1675,33 @@ class ChromaRollGame:
             print("DEBUG: No intensified buff to apply")  # TEMP: Confirm skip
 
     def toggle_hold(self, index):
-        """Toggles hold state for a die."""
-        # In toggle_hold(index):
+        """Toggles hold state for a die. Supports Roll Flow advantage + Fate's Favor with mutually exclusive hold."""
         if self.current_blind == 'Boss' and self.current_boss_effect:
             effect_name = self.current_boss_effect['name']
             if effect_name == 'Glass Guard':
                 die = self.hand[index]
                 if die['color'] == 'Glass':
                     return  # Cannot hold Glass
-        # Then normal toggle
+
         if self.show_popup:
-            return  # Block actions during popup
-        # print(f"Debug: toggle_hold {index} - before flip: held[{index}] = {self.held[index]}, held_fates_advantage = {self.held_fates_advantage}")  # Debug swap
+            return
+
+        # Normal toggle for the clicked die
         self.held[index] = not self.held[index]
-        # print(f"Debug: toggle_hold {index} - after flip: held[{index}] = {self.held[index]}")
-        
-        # Existing amulet exclusion
-        if index == 2 and self.held[index] and self.has_advantage and self.held_advantage:
-            self.held_advantage = False
-            # print("Debug: Unheld amulet advantage due to holding original - held_advantage =", self.held_advantage)
-        
-        # For Fate's Favor: Flip original and unhold advantage if held
+
+        # === ROLL FLOW ADVANTAGE (Tier 4) - Mutually exclusive hold ===
+        adv_index = getattr(self, 'fates_advantage_index', -1)
+        if adv_index != -1 and self.has_advantage:
+            if index == adv_index:  # Clicked the original selected die
+                if self.held[index] and self.held_advantage:
+                    self.held_advantage = False  # Unhold advantage
+
+        # === FATE'S FAVOR LOGIC (unchanged) ===
         if index == self.fates_advantage_index:
             if self.held[index] and self.held_fates_advantage:
                 self.held_fates_advantage = False
-                # print(f"Debug: Unheld Fate's advantage due to holding original - held_fates_advantage = {self.held_fates_advantage}")
-            elif not self.held[index] and self.held_fates_advantage:
-                self.held_fates_advantage = False  # Optional: Unhold advantage if unholding original
-                # print(f"Debug: Unheld Fate's advantage due to unholding original - held_fates_advantage = {self.held_fates_advantage}")
-        
+
         self.update_hand_text()
-        # print(f"Debug: toggle_hold {index} - after update_hand_text: held[{index}] = {self.held[index]}, held_fates_advantage = {self.held_fates_advantage}")  # Check no revert
     
     def get_pause_button_rects(self):
         """Calculates and returns button rects for pause menu (no drawing)."""

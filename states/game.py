@@ -36,6 +36,18 @@ class GameState(State):
     def enter(self):
         print(f"DEBUG: Equipped charms in GameState.enter: {[c['name'] for c in self.game.equipped_charms]}")
         print(f"DEBUG: GameState enter – is_resuming: {self.game.is_resuming}, last_state_was_rune: {self.game.last_state_was_rune}, rolls len: {len(self.game.rolls)}, bag len: {len(self.game.bag)}")  # TEMP
+        # === D20 RESET - Clear ALL intensified effects for new blind ===
+        if not getattr(self.game, 'from_d20_intensify', False):
+            self.game.intensified_locked_die_idx = -1
+            self.game.roll_harmony_active = False
+            self.game.intensified_dimmed_color = None
+            self.game.intensified_disabled_type = None
+            self.game.intensified_global_color_mult = 1.0
+            self.game.intensified_buff = None
+            print("DEBUG: D20 flags reset for new blind")
+        else:
+            self.game.from_d20_intensify = False  # consume the flag (keep effects for this blind)
+            print("DEBUG: Came from D20 roll — kept intensified effects")
         # FIXED: Skip only if from rune (not fresh/resume)
         if self.game.last_state_was_rune:  # Game entry - preserve hand, skip init
             print("DEBUG: From game rune – skipping init pull")  # TEMP
@@ -352,16 +364,19 @@ class GameState(State):
                         if self.game.held[i]:
                             self.game.held[i] = False  # Mutual exclusion
                         self.game.update_hand_text()
-                        # print(f"Debug: Fate's Favor activated on die {i}, value: {self.game.fates_advantage_value}")
                         break
                     else:
                         if self.game.is_discard_phase:
                             self.game.toggle_discard(i)
                         else:
                             self.game.toggle_hold(i)
-                            # ADDED: Exclusion for center die (i==2)
-                            if i == 2 and self.game.held[2]:
-                                self.game.held_advantage = False  # Unhold advantage if original held
+                            
+                            # === ROLL FLOW ADVANTAGE (Tier 4) - dynamic exclusion ===
+                            adv_index = getattr(self.game, 'fates_advantage_index', -1)
+                            if adv_index != -1 and self.game.has_advantage:
+                                if i == adv_index and self.game.held[i]:
+                                    self.game.held_advantage = False  # Unhold advantage if original is held
+                            
                             # print(f"Debug: Toggled die {i} - held[{i}] = {self.game.held[i]}")  # Debug for 3rd die
                         break  # Stop after handling one die click
 
@@ -381,13 +396,29 @@ class GameState(State):
                         print(f"DEBUG: Selected die {i} for Roll Flow advantage: {self.game.advantage_value}")
                         break
 
-            # Advantage choice clicks (only advantage die now; main loop handles 3rd die)
+            # Advantage choice clicks (Roll Flow) - recalculate rect on-the-fly so click detection matches visual position
             if not self.game.is_discard_phase and self.game.has_advantage and self.game.advantage_value is not None:
-                if self.game.advantage_die_rect and self.game.advantage_die_rect.collidepoint(mouse_pos):
+                adv_index = getattr(self.game, 'fates_advantage_index', 2)
+                
+                # Recalculate start_x exactly like draw_dice does
+                total_dice_width = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
+                start_x = (self.game.width - total_dice_width) // 2
+                
+                # Build the exact same rect that was drawn
+                x = start_x + adv_index * (constants.DIE_SIZE + 20)
+                adv_y = (self.game.height - constants.DIE_SIZE - 100) - constants.DIE_SIZE - 10
+                adv_size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if self.game.held_advantage else constants.DIE_SIZE
+                adv_offset = (constants.DIE_SIZE - adv_size) / 2 if self.game.held_advantage else 0
+                adv_rect = pygame.Rect(x + adv_offset, adv_y + adv_offset, adv_size, adv_size)
+                
+                if adv_rect.collidepoint(mouse_pos):
                     self.game.held_advantage = not self.game.held_advantage
-                    if self.game.held_advantage and self.game.held[2]:
-                        self.game.held[2] = False  # Unhold original if advantage held
-                    print(f"DEBUG: Toggled advantage die - held_advantage = {self.game.held_advantage}, held[2] = {self.game.held[2]}")  # TEMP
+                    
+                    # Mutually exclusive: only one or the other can be held
+                    if self.game.held_advantage:
+                        self.game.held[adv_index] = False
+                    
+                    print(f"DEBUG: Toggled advantage on die {adv_index + 1} - held_advantage = {self.game.held_advantage}")
                     self.game.update_hand_text()
                 # REMOVED: elif center_die_rect toggle (handled precisely in main loop above)
             

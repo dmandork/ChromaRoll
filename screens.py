@@ -1143,43 +1143,44 @@ def draw_dice(game):
 
         
 
-    # Draw advantage duplicate if in rolling phase (amulet)
-    if not game.is_discard_phase and game.has_advantage and game.advantage_value is not None:
-        # Duplicate above center
-        adv_y = (game.height - constants.DIE_SIZE - 100) - constants.DIE_SIZE - 10
-        adv_x = start_x + 2 * (constants.DIE_SIZE + 20)
-        adv_size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held_advantage else constants.DIE_SIZE
-        adv_offset = (constants.DIE_SIZE - adv_size) / 2 if game.held_advantage else 0
-        adv_rect = pygame.Rect(adv_x + adv_offset, adv_y + adv_offset, adv_size, adv_size)
-        game.advantage_die_rect = adv_rect
-        
-        # Draw duplicate (same as center but with advantage_value)
-        die = game.rolls[2][0]
-        color = die['color']
-        if color == 'Rainbow':
-            color_index = int(current_time / constants.CYCLE_SPEED) % len(constants.BASE_COLORS)
-            color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
-        else:
-            color_rgb = constants.COLORS[color]
-        adv_inner_content = lambda r: [
-            _draw_dots(r, game.advantage_value),
-            draw_enhancement_visuals(game, r, die)
-        ]
-        draw_rounded_element(game.screen, adv_rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=adv_inner_content)
-        
-        # Highlight if held
-        if game.held_advantage:
-            pygame.draw.rect(game.screen, (0, 255, 0), adv_rect, 2)
-        if game.held[2]:
-            pygame.draw.rect(game.screen, (0, 255, 0), game.center_die_rect, 2)  # Highlight original if held
+        # Draw advantage duplicate if in rolling phase (Roll Flow / Amulet)
+        if not game.is_discard_phase and game.has_advantage and game.advantage_value is not None:
+            # Use the selected index (from Roll Flow or Amulet) — falls back to center only if somehow missing
+            adv_index = getattr(game, 'fates_advantage_index', 2) if hasattr(game, 'fates_advantage_index') and game.fates_advantage_index != -1 else 2
+            x = start_x + adv_index * (constants.DIE_SIZE + 20)
+            adv_y = (game.height - constants.DIE_SIZE - 100) - constants.DIE_SIZE - 10
+            adv_size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held_advantage else constants.DIE_SIZE
+            adv_offset = (constants.DIE_SIZE - adv_size) / 2 if game.held_advantage else 0
+            adv_rect = pygame.Rect(x + adv_offset, adv_y + adv_offset, adv_size, adv_size)
+            game.advantage_die_rect = adv_rect
+            
+            # Draw duplicate (same color as the chosen die, but advantage_value)
+            die = game.rolls[adv_index][0]
+            color = die['color']
+            if color == 'Rainbow':
+                color_index = int(current_time / constants.CYCLE_SPEED) % len(constants.BASE_COLORS)
+                color_rgb = constants.COLORS[constants.BASE_COLORS[color_index]]
+            else:
+                color_rgb = constants.COLORS[color]
+            adv_inner_content = lambda r: [
+                _draw_dots(r, game.advantage_value),
+                draw_enhancement_visuals(game, r, die)
+            ]
+            draw_rounded_element(game.screen, adv_rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=adv_inner_content)
+            
+            # Highlight if held
+            if game.held_advantage:
+                pygame.draw.rect(game.screen, (0, 255, 0), adv_rect, 2)
+            if game.held[adv_index]:
+                pygame.draw.rect(game.screen, (0, 255, 0), game.hand_die_rects[adv_index], 2)  # Highlight original chosen die
 
-        # Refresh center rect (if held state changed size)
-        if 2 < len(game.rolls):
-            x = start_x + 2 * (constants.DIE_SIZE + 20)
-            y = game.height - constants.DIE_SIZE - 100
-            size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[2] else constants.DIE_SIZE
-            offset = (constants.DIE_SIZE - size) / 2 if game.held[2] else 0
-            game.center_die_rect = pygame.Rect(x + offset, y + offset, size, size)
+            # Refresh the original die rect (if held state changed size)
+            if adv_index < len(game.rolls):
+                orig_x = start_x + adv_index * (constants.DIE_SIZE + 20)
+                orig_y = game.height - constants.DIE_SIZE - 100
+                orig_size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[adv_index] else constants.DIE_SIZE
+                orig_offset = (constants.DIE_SIZE - orig_size) / 2 if game.held[adv_index] else 0
+                game.hand_die_rects[adv_index] = pygame.Rect(orig_x + orig_offset, orig_y + orig_offset, orig_size, orig_size)
 
     # New for Fate's Favor: Draw duplicate above selected die
     if not game.is_discard_phase and game.fates_advantage_index != -1 and game.fates_advantage_value is not None:

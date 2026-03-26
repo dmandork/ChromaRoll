@@ -714,10 +714,17 @@ def evaluate_hand(game, is_preview=True):
                 retrigger_mult *= 2
                 modifier_desc.append(f"{charm['name']} x2 (retrigger)")
 
-    # Final score assembly
-    final_score = int(((base_score * dimmed_mult) + charm_chips + rune_chips) * (1 + total_modifier) * retrigger_mult)
+    # === TIER 5 CHROMA RADIANCE - Simple +30% to final score ===
+    chroma_mult = 1.3 if (hasattr(game, 'd20_boon') and 
+                          game.d20_boon.outcome and 
+                          game.d20_boon.outcome.get('name') == 'Chroma Radiance') else 1.0
+    if chroma_mult > 1.0:
+        modifier_desc.append("Chroma Radiance +30% all colors")
 
-    # Dimmed final scale
+    # Final score assembly
+    final_score = int(((base_score * dimmed_mult) + charm_chips + rune_chips) * (1 + total_modifier) * retrigger_mult * chroma_mult)
+
+    # Dimmed final scale (applied AFTER chroma so it doesn't overwrite it)
     if dimmed_count > 0:
         dimmed_scale = dimmed_adjust ** (dimmed_count / len(original_rolls))
         final_score = int(final_score * dimmed_scale)

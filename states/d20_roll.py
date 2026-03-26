@@ -147,6 +147,11 @@ class D20RollState(State):
             
             # Store buff for win reward
             self.game.intensified_buff = self.outcome['buff']
+
+            if self.outcome['name'] == 'Roll Harmony':
+                self.game.roll_harmony_active = True
+                self.game.intensified_locked_die_idx = -1
+                print("DEBUG: Roll Harmony flag set on game")
             
             # Temp message for feedback
             self.game.temp_message = f"{self.outcome['name']}: {self.outcome['desc']}"
