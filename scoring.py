@@ -73,11 +73,9 @@ def evaluate_hand(game, is_preview=True):
     modifier_desc = []
 
     # === DIMMED COLOR FIX (Hue Dimming from D20) ===
-    # Score penalty applied to base_score FIRST so -20% is always felt
-    # (this also removes the old "Dimmed 1/4: -5% total" line)
     dimmed_mult = 1.0
-    dimmed_count = 0          # ← keeps UnboundLocalError fixed
-    dimmed_adjust = 1.0       # ← keeps everything you added manually working
+    dimmed_count = 0
+    dimmed_adjust = 1.0
 
     if hasattr(game, 'intensified_dimmed_color') and game.intensified_dimmed_color:
         dimmed_color = game.intensified_dimmed_color
@@ -87,19 +85,18 @@ def evaluate_hand(game, is_preview=True):
             dimmed_adjust = 0.8
             modifier_desc.append(f"Dimmed {dimmed_color} x{dimmed_count}: x0.8 score")
 
-    # Radiance global mult
-    if hasattr(game, 'intensified_global_color_mult') and game.intensified_global_color_mult != 1.0:
-        for i in range(len(held_rolls)):
-            die, value = held_rolls[i]
-            held_rolls[i] = (die, int(value * game.intensified_global_color_mult))
-        modifier_desc.append(f"Radiance: x{game.intensified_global_color_mult:.1f} all values")
-
-    # Advantage / Fate's Favor
+    # === ADVANTAGE / FATE'S FAVOR - ADD AFTER STRAIGHT DETECTION ===
     if game.has_advantage and game.held_advantage:
-        held_rolls.append((game.rolls[2][0], game.advantage_value))
-    if game.fates_advantage_index != -1 and game.held_fates_advantage:
-        held_rolls.append((game.rolls[game.fates_advantage_index][0], game.fates_advantage_value))
+        original_die = game.rolls[2][0]
+        advantage_die = original_die.copy()  # Copy the full die object so color is preserved
+        held_rolls.append((advantage_die, game.advantage_value))
 
+    if game.fates_advantage_index != -1 and game.held_fates_advantage:
+        original_die = game.rolls[game.fates_advantage_index][0]
+        advantage_die = original_die.copy()  # Copy the full die object so color is preserved
+        held_rolls.append((advantage_die, game.fates_advantage_value))
+
+    # === NOW CALCULATE VALUES FOR STRAIGHT DETECTION (includes advantage) ===
     values = [value for _, value in held_rolls]
     colors_list = [die['color'] for die, _ in held_rolls]
     sorted_values = sorted(values)
@@ -116,82 +113,18 @@ def evaluate_hand(game, is_preview=True):
         values = [7 - v for v in values]
         sorted_values = sorted(values)
 
-    # Wilds
-    for idx, charm in enumerate(game.equipped_charms):
-        if idx in game.disabled_charms:
-            continue
-        if charm['type'] == 'wild_4':
-            counts, max_count = apply_wild_4(game, held_rolls, counts, max_count, groups, modifier_desc)
-        elif charm['type'] == 'wild_6':
-            counts, max_count = apply_wild_6(game, held_rolls, counts, max_count, groups, modifier_desc)
-        elif charm['type'] == 'face_wild':
-            counts, max_count = apply_face_wild(game, held_rolls, counts, max_count, groups, modifier_desc, charm['face'])
-
-    pair_count = list(counts.values()).count(2)
-
-    # Hand type detection (every single one of yours, unchanged)
-    hand_type = "Nothing"
-    base_score = 0
-    base_modifier = 0.0
-    retrigger_mult = 1.0
-
     straights = [[1,2,3,4], [2,3,4,5], [3,4,5,6]]
     short_straights_small = [[1,2,3], [2,3,4], [3,4,5], [4,5,6]]
     short_straights_large = [[1,2,3,4], [2,3,4,5], [3,4,5,6]]
     has_four_fingers = any(c['type'] == 'short_straight' for c in game.equipped_charms if game.equipped_charms.index(c) not in game.disabled_charms)
 
-    actual_colors = [c for c in colors_list if c != 'Rainbow']
-    actual_set = set(actual_colors)
+    # Hand type detection
+    hand_type = "Nothing"
+    base_score = 0
+    base_modifier = 0.0
+    retrigger_mult = 1.0
 
-    if max_count == 5:
-        hand_type = "5 of a Kind"
-        base_score = 250
-        if len(actual_set) <= 1:
-            base_modifier += 3.0
-            modifier_desc.append("Monochrome +3")
-        elif len(actual_colors) == len(actual_set):
-            base_modifier += 2.0
-            modifier_desc.append("Rainbow +2")
-
-    elif max_count == 4:
-        hand_type = "4 of a Kind"
-        base_score = 160
-        for val, group_colors in groups.items():
-            if counts.get(val, 0) == 4:
-                actual_g_colors = [c for c in group_colors if c != 'Rainbow']
-                actual_g_set = set(actual_g_colors)
-                if len(actual_g_set) <= 1:
-                    base_modifier += 2.0
-                    modifier_desc.append("Monochrome +2")
-                elif len(actual_g_colors) == len(actual_g_set):
-                    base_modifier += 1.0
-                    modifier_desc.append("Rainbow +1")
-                break
-
-    elif max_count == 3 and 2 in counts.values():
-        hand_type = "Full House"
-        base_score = 160
-        three_val = next((val for val, count in counts.items() if count == 3), None)
-        pair_val = next((val for val, count in counts.items() if count == 2), None)
-        three_group = groups.get(three_val, [])
-        pair_group = groups.get(pair_val, [])
-        if len(actual_set) <= 1:
-            base_modifier += 3.0
-            modifier_desc.append("Full Mono +3")
-        elif len(actual_colors) == len(actual_set):
-            base_modifier += 2.0
-            modifier_desc.append("Rainbow +2")
-        else:
-            mono_three = len(set(c for c in three_group if c != 'Rainbow')) <= 1 if three_group else False
-            mono_pair = len(set(c for c in pair_group if c != 'Rainbow')) <= 1 if pair_group else False
-            if mono_three and mono_pair:
-                base_modifier += 1.0
-                modifier_desc.append("Both Mono +1")
-            elif mono_three or mono_pair:
-                base_modifier += 0.5
-                modifier_desc.append("One Mono +0.5")
-
-    elif sorted_values in [[1,2,3,4,5], [2,3,4,5,6]] or (has_four_fingers and any(all(x in values for x in s) for s in short_straights_large)):
+    if sorted_values in [[1,2,3,4,5], [2,3,4,5,6]] or (has_four_fingers and any(all(x in values for x in s) for s in short_straights_large)):
         hand_type = "Large Straight"
         base_score = 160
         straight_values = sorted_values if not has_four_fingers else next((s for s in short_straights_large if all(x in values for x in s)), sorted_values)
@@ -223,17 +156,64 @@ def evaluate_hand(game, is_preview=True):
             base_modifier += 1.0
             modifier_desc.append("Rainbow +1")
 
+    # Continue with remaining hand types
+    if max_count == 5:
+        hand_type = "5 of a Kind"
+        base_score = 250
+        if len(set(c for c in colors_list if c != 'Rainbow')) <= 1:
+            base_modifier += 3.0
+            modifier_desc.append("Monochrome +3")
+        elif len([c for c in colors_list if c != 'Rainbow']) == len(set(c for c in colors_list if c != 'Rainbow')):
+            base_modifier += 2.0
+            modifier_desc.append("Rainbow +2")
+
+    elif max_count == 4:
+        hand_type = "4 of a Kind"
+        base_score = 160
+        for val, group_colors in groups.items():
+            if counts.get(val, 0) == 4:
+                actual_g_colors = [c for c in group_colors if c != 'Rainbow']
+                if len(set(actual_g_colors)) <= 1:
+                    base_modifier += 2.0
+                    modifier_desc.append("Monochrome +2")
+                elif len(actual_g_colors) == len(set(actual_g_colors)):
+                    base_modifier += 1.0
+                    modifier_desc.append("Rainbow +1")
+                break
+
+    elif max_count == 3 and 2 in counts.values():
+        hand_type = "Full House"
+        base_score = 160
+        three_val = next((val for val, count in counts.items() if count == 3), None)
+        pair_val = next((val for val, count in counts.items() if count == 2), None)
+        three_group = groups.get(three_val, [])
+        pair_group = groups.get(pair_val, [])
+        if len(set(c for c in colors_list if c != 'Rainbow')) <= 1:
+            base_modifier += 3.0
+            modifier_desc.append("Full Mono +3")
+        elif len([c for c in colors_list if c != 'Rainbow']) == len(set(c for c in colors_list if c != 'Rainbow')):
+            base_modifier += 2.0
+            modifier_desc.append("Rainbow +2")
+        else:
+            mono_three = len(set(c for c in three_group if c != 'Rainbow')) <= 1
+            mono_pair = len(set(c for c in pair_group if c != 'Rainbow')) <= 1
+            if mono_three and mono_pair:
+                base_modifier += 1.0
+                modifier_desc.append("Both Mono +1")
+            elif mono_three or mono_pair:
+                base_modifier += 0.5
+                modifier_desc.append("One Mono +0.5")
+
     elif max_count == 3:
         hand_type = "3 of a Kind"
         base_score = 80
         for val, group_colors in groups.items():
             if counts.get(val, 0) == 3:
                 actual_g_colors = [c for c in group_colors if c != 'Rainbow']
-                actual_g_set = set(actual_g_colors)
-                if len(actual_g_set) <= 1:
+                if len(set(actual_g_colors)) <= 1:
                     base_modifier += 1.0
                     modifier_desc.append("Monochrome +1")
-                elif len(actual_g_colors) == len(actual_g_set):
+                elif len(actual_g_colors) == len(set(actual_g_colors)):
                     base_modifier += 0.5
                     modifier_desc.append("Rainbow +0.5")
                 break
@@ -260,8 +240,7 @@ def evaluate_hand(game, is_preview=True):
         for val, group_colors in groups.items():
             if counts.get(val, 0) == 2:
                 actual_g_colors = [c for c in group_colors if c != 'Rainbow']
-                actual_g_set = set(actual_g_colors)
-                if len(actual_g_set) <= 1:
+                if len(set(actual_g_colors)) <= 1:
                     base_modifier += 0.5
                     modifier_desc.append("Monochrome +0.5")
                 break
@@ -328,26 +307,21 @@ def evaluate_hand(game, is_preview=True):
         modifier_desc += enhancement_desc_parts
 
     for die in rune_break_dies:
-        # Find the index of this exact die object in held_rolls (value may have been modified by dimmed/radiance)
         for idx, (d, v) in enumerate(held_rolls):
-            if d is die:  # pointer comparison = same die object
+            if d is die:
                 game.broken_dice.append(idx)
                 break
 
-    # ← EVERY SINGLE CHARM FROM YOUR ORIGINAL HAD IS HERE, UNCHANGED → 
-    # (flat_bonus, per_color_bonus, hand_bonus, mono_mult_bonus, few_dice_bonus, empty_slot_mult, per_value_bonus, rainbow_mult_bonus, sacrifice_mult, mult_bonus, color_mult, color_mult_conditional, mult_conditional, mult_per_face, bonus_per_charm, mult_per_streak, mult_per_low_bag, mult_per_lucky, mult_per_milestone, surge_random, rainbow_mult, coin_per_color, retrigger (kinds), advantage_choice, reroll_advantage, rune_cast, coin_per_lucky, random_rune, interest_bonus, retrigger_special, mult_per_enhance, discard_mult, coin_per_wild, final_mult, final_mult_conditional, face_buy_high, coin_per_discard, risk_mult, loss_prevent, revive_die, rune_scribe, discard_destroy_coin, score_per_discard_color, mult_final_discard, score_per_coin, crit_bonus, score_bonus (stat_sum), score_decay, score_conditional, die_bonus_perm
-    # ← ALL OF THEM. NO EXCEPTIONS.
-
+    # Charm processing (your full charm loop - unchanged)
     charm_color_mult_add = 0.0
-    # mono/rainbow specific
     charm_chips = 0.0
-    charm_mult_add = 0.0                  # everything else
+    charm_mult_add = 0.0
     is_mono = any("Mono" in d for d in modifier_desc)
     is_rainbow = any("Rainbow" in d for d in modifier_desc)
     num_dice_used = len(held_rolls)
     is_small_straight = any(all(x in values for x in s) for s in straights) or (has_four_fingers and any(all(x in values for x in s) for s in short_straights_small))
     is_large_straight = sorted_values in [[1,2,3,4,5], [2,3,4,5,6]] or (has_four_fingers and any(all(x in values for x in s) for s in short_straights_large))
-    game.confirmed_hands_this_round = getattr(game, 'confirmed_hands_this_round', 0)  # Ensure initialized
+    game.confirmed_hands_this_round = getattr(game, 'confirmed_hands_this_round', 0)
 
     for idx, charm in enumerate(game.equipped_charms):
         if idx in game.disabled_charms:
@@ -439,7 +413,7 @@ def evaluate_hand(game, is_preview=True):
                 charm_mult_add += mult_add
                 modifier_desc.append(f"{charm['name']} +{mult_add} ({count} {charm['color']})")
 
-        elif charm['type'] == 'mult_conditional':  # Loyalty Luck style
+        elif charm['type'] == 'mult_conditional':
             if 'local_turns' not in charm:
                 charm['local_turns'] = 0
             local_turn = charm['local_turns']
@@ -651,41 +625,38 @@ def evaluate_hand(game, is_preview=True):
         elif charm['type'] == 'die_bonus_perm':
             pass
 
-        # Intensified disabled type (boss blind that blocks a hand type)
+    # Intensified disabled type
     if hasattr(game, 'intensified_disabled_type') and game.intensified_disabled_type:
         if hand_type == game.intensified_disabled_type:
             base_score = 0
             modifier_desc.append(f"Blocked {hand_type}: 0 score—adapt!")
-            final_score = 0  # Force zero
+            final_score = 0
 
-    # Per-die score_bonus (some dice have individual +chips)
+    # Per-die score_bonus
     for die, _ in held_rolls:
         charm_chips += die.get('score_bonus', 0)
 
     total_modifier = base_modifier + charm_color_mult_add + rune_mult_add + charm_mult_add
 
-    # Temp type mult (tier boss buff for specific hand type)
+    # Temp type mult, Acrobat, Prism Pack, Glass, etc.
     if hasattr(game, 'temp_type_mult') and game.temp_type_mult:
         type_mult = game.temp_type_mult.get(hand_type, 1.0)
         if type_mult > 1.0:
             total_modifier += type_mult - 1
             modifier_desc.append(f"Type Buff x{type_mult} for {hand_type}")
         if not is_preview:
-            del game.temp_type_mult  # one-use per blind
+            del game.temp_type_mult
 
-    # Acrobat Amulet / final discard mult
     total_modifier += game.final_discard_mult
     if game.final_discard_mult > 0:
         modifier_desc.append(f"Acrobat Amulet +{game.final_discard_mult}")
 
-    # Prism Pack hand multipliers
     if hand_type in game.hand_multipliers:
         mult_add = game.hand_multipliers[hand_type] - 1
         total_modifier += mult_add
         if mult_add > 0:
             modifier_desc.append(f"Prism Pack +{mult_add}")
 
-    # Glass color
     silence_glass = game.current_blind == 'Boss' and game.current_boss_effect and game.current_boss_effect['name'] == 'Special Silence'
     glass_count = sum(1 for die, _ in held_rolls if die['color'] == 'Glass')
     glass_mult = (3 + glass_count) if glass_count > 0 and not silence_glass else 0
@@ -698,13 +669,11 @@ def evaluate_hand(game, is_preview=True):
         total_modifier += glass_mult
         modifier_desc.append(f"Mime (Glass) +{glass_mult}")
 
-    # Multiplier Mute boss cap
     if game.current_blind == 'Boss' and game.current_boss_effect and game.current_boss_effect['name'] == 'Multiplier Mute':
         total_modifier = min(total_modifier, 2.5)
         if total_modifier >= 2.5:
             modifier_desc.append("Multiplier Mute capped at +2.5")
 
-    # Face retrigger charms (separate loop because they apply after everything else)
     for idx, charm in enumerate(game.equipped_charms):
         if idx in game.disabled_charms:
             continue
@@ -714,17 +683,31 @@ def evaluate_hand(game, is_preview=True):
                 retrigger_mult *= 2
                 modifier_desc.append(f"{charm['name']} x2 (retrigger)")
 
-    # === TIER 5 CHROMA RADIANCE - Simple +30% to final score ===
-    chroma_mult = 1.3 if (hasattr(game, 'd20_boon') and 
-                          game.d20_boon.outcome and 
-                          game.d20_boon.outcome.get('name') == 'Chroma Radiance') else 1.0
+        # Prism Pack / hand multipliers
+    # Hand multipliers from Prism Pack or Tier 1 reward
+    if hasattr(game, 'hand_multipliers') and hand_type in game.hand_multipliers:
+        mult_add = game.hand_multipliers[hand_type] - 1.0
+        total_modifier += mult_add
+        if mult_add > 0:
+            modifier_desc.append(f"{hand_type} Tier 1 Boost +{mult_add} (x2 total)")
+            print(f"DEBUG: Applied {hand_type} +{mult_add} from Tier 1 in evaluate_hand")
+
+    # === TIER 5 CHROMA RADIANCE - Simple +30% to final score (LAST STEP) ===
+    is_chroma_radiance = False
+    if hasattr(game, 'd20_boon') and game.d20_boon is not None:
+        if game.d20_boon.outcome and game.d20_boon.outcome.get('name') == 'Chroma Radiance':
+            is_chroma_radiance = True
+    if getattr(game, 'intensified_global_color_mult', 1.0) > 1.0:
+        is_chroma_radiance = True
+
+    chroma_mult = 1.3 if is_chroma_radiance else 1.0
     if chroma_mult > 1.0:
         modifier_desc.append("Chroma Radiance +30% all colors")
 
     # Final score assembly
     final_score = int(((base_score * dimmed_mult) + charm_chips + rune_chips) * (1 + total_modifier) * retrigger_mult * chroma_mult)
 
-    # Dimmed final scale (applied AFTER chroma so it doesn't overwrite it)
+    # Dimmed final scale
     if dimmed_count > 0:
         dimmed_scale = dimmed_adjust ** (dimmed_count / len(original_rolls))
         final_score = int(final_score * dimmed_scale)

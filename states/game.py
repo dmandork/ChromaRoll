@@ -54,6 +54,18 @@ class GameState(State):
             self.game.last_state_was_rune = False
             self.game.has_rolled = True
             return
+        
+# === Apply Tier 1 pending hand multiplier (+2x on previously disabled hand) ===
+        if hasattr(self.game, 'pending_type_mult') and self.game.pending_type_mult:
+            if not hasattr(self.game, 'hand_multipliers'):
+                self.game.hand_multipliers = {}
+            for hand_type, mult in self.game.pending_type_mult.items():
+                self.game.hand_multipliers[hand_type] = mult
+                print(f"DEBUG: Applied Tier 1 +2x multiplier for hand type '{hand_type}'")
+            del self.game.pending_type_mult  # Clear after applying
+        else:
+            print("DEBUG: No pending_type_mult from Tier 1")
+
         # NEW: Carry pending buff to this blind's first hand (e.g., Hue Dimming 2x)
         if hasattr(self.game, 'pending_buff_mult') and self.game.pending_buff_mult != 1.0:
             self.game.temp_intensify_mult = self.game.pending_buff_mult

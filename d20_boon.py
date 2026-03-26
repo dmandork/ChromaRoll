@@ -176,10 +176,12 @@ class D20BoonSystem:
         if 'wildcard_next_hand' in buff:
             game.wildcard_color_next = buff['wildcard_next_hand']
 
-        # Free pack
+        # Free Prism Pack (Tier 1 success reward)
         if self.pending_free_pack is not None:
-            game.pending_free_pack = self.pending_free_pack
+            game.pending_free_pack = self.pending_free_pack   # 2 = Prism
+            game.has_free_prism_pack = True                   # Important flag for UI
             game.temp_message += " + Free Prism Pack!"
+            self.pending_free_pack = None
 
         # Reset
         self.pending_buff = None

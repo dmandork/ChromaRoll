@@ -90,6 +90,27 @@ class ShopState(State):
             self.game.temp_message = "Crit Fail comeback: Free Prism Pack in shop!"
             self.game.temp_message_start = time.time()
 
+        # === TIER 1 D20 SUCCESS - Free Prism Pack (Prism Fracture) ===
+        if getattr(self.game, 'has_free_prism_pack', False):
+            self.game.has_free_prism_pack = False
+            
+            # Add as a special FREE charm that opens a pack when bought
+            free_prism_reward = {
+                'name': 'FREE Prism Pack',
+                'cost': 0,
+                'free': True,
+                'type': 'prism_pack',
+                'desc': 'Tier 1 Prism Fracture Success Reward!\nContains powerful prism and rainbow items.',
+                'rarity': 'Legendary',
+                'is_free_prism': True   # Flag for buy logic
+            }
+            
+            self.game.shop_charms.append(free_prism_reward)
+            
+            self.game.temp_message = "Tier 1 Success! FREE Prism Pack added to shop!"
+            self.game.temp_message_start = time.time()
+            print("DEBUG: Tier 1 Free Prism Pack added as special charm in shop_charms")
+
     def update(self, dt):
         pass  # Expand for animations if needed
 
@@ -220,71 +241,102 @@ class ShopState(State):
             # Handle buy charms
             for i, buy_rect in enumerate(self.buy_rects or []):
                 if buy_rect.collidepoint(mouse_pos):
-                    charm = self.game.shop_charms.pop(i)
+
+                    # Get the charm WITHOUT popping it yet
+                    charm = self.game.shop_charms[i]
+
+                    # === SPECIAL: Free Prism Pack from Tier 1 ===
+                    if charm.get('is_free_prism', False):
+                        print("DEBUG: Free Prism Pack from Tier 1 claimed!")
+                        
+                        # Remove it from shop
+                        self.game.shop_charms.pop(i)
+                        
+                        # Trigger Prism Pack selection screen (same as normal premium packs)
+                        from states.pack_select import PackSelectState
+                        self.game.pack_choices = random.sample(data.HAND_TYPES, 5)  # Adjust 5 if your Prism pack gives different count
+                        
+                        self.game.state_machine.change_state(PackSelectState(self.game))
+                        
+                        self.game.temp_message = "Free Prism Pack opened! (Tier 1 Success Reward)"
+                        self.game.temp_message_start = time.time()
+                        return
+
+                    # === Normal charm buy logic (only runs if not free prism) ===
+                    charm = self.game.shop_charms.pop(i)   # Now safe to pop
                     cost = charm['cost']
                     debt_active = any(c['type'] == 'negative_coins' and idx not in self.game.disabled_charms for idx, c in enumerate(self.game.equipped_charms))
                     debt_limit = -20 if debt_active else 0
                     if len(self.game.equipped_charms) < self.game.max_charms and self.game.coins - cost >= debt_limit:
-                        self.game.equipped_charms.append(charm)  # After append
-                        # NEW: Init local_turns on equip (start at 1 for off-cycle first hand)
+                        self.game.equipped_charms.append(charm)
                         if charm['name'] == 'Loyalty Luck':
-                            charm['local_turns'] = 1  # Start at 1 (Next in 5 turns)
-                        # NEW: Turtle Token - Add initial +5 hands on equip
+                            charm['local_turns'] = 1
                         elif charm['name'] == 'Turtle Token':
-                            self.game.hands_left += charm['start']  # +5
-                            charm['rounds_passed'] = 0  # Init counter
+                            self.game.hands_left += charm['start']
+                            charm['rounds_passed'] = 0
                             self.game.temp_message = f"Turtle Token: +{charm['start']} hands (decays -1 per round)!"
                             self.game.temp_message_start = time.time()
                         self.game.coins -= cost
                         if self.game.current_boss_effect and self.game.current_boss_effect['name'] == 'Charm Eclipse':
                             self.game.disabled_charms = list(range(len(self.game.equipped_charms)))
-                        self.game.temp_message = f"Bought {charm['name']} for {charm['cost']} coins."  # FIXED: self.game
-                        # print("DEBUG: Debt allowed negative buy")
+                        self.game.temp_message = f"Bought {charm['name']} for {charm['cost']} coins."
                     else:
                         self.game.shop_charms.insert(i, charm)
-                        self.game.temp_message = "Not enough coins!"  # FIXED: self.game
+                        self.game.temp_message = "Not enough coins!"
                     return
 
             # Pack buys
-            pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9]  # Append rune pack costs
-            pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5]  # Append rune pack choices
-            pack_select_num = [1, 1, 1, 1, 1, 1, 1, 1, 2]  # New: Select counts (1 for most, 2 for Super Rune)
+            pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9]
+            pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5]
+            pack_select_num = [1, 1, 1, 1, 1, 1, 1, 1, 2]
+
             for pack_rect, pack_idx in self.pack_rects or []:
                 if pack_rect.collidepoint(mouse_pos):
+                    
                     # NEW: Handle free Grimoire rune buy (index -1)
                     if pack_idx == -1:
                         grimoire_rune = getattr(self.game, 'grimoire_rune', None)
                         if grimoire_rune:
-                            # Add to equipped charms (consumes it)
                             self.game.equipped_charms.append(grimoire_rune)
                             self.game.grimoire_rune = None
-                            # Reset flag if using one
                             if hasattr(self.game, '_grimoire_drawn'):
                                 del self.game._grimoire_drawn
-                            # Optional: Feedback (e.g., sound or message)
-                            # self.game.play_sound('buy')  # If you have audio
-                            return  # Exit early, no cost
-                    
+                            return
+
                     # NEW: Handle Rune Recycler reused rune (index 9)
                     elif pack_idx == 9:
-                        reused_rune = self.game.pack_choices[-1]  # Last in choices (the reused one)
-                        if self.game.rune_tray.count(None) > 0:  # Tray slot free
-                            self.game.add_to_rune_tray(reused_rune)  # Back to tray
-                            self.game.pack_choices.pop()  # Remove from choices
-                            self.game.available_packs.remove(9)
+                        reused_rune = self.game.pack_choices[-1] if self.game.pack_choices else None
+                        if reused_rune and self.game.rune_tray.count(None) > 0:
+                            self.game.add_to_rune_tray(reused_rune)
+                            self.game.pack_choices.pop()
+                            if 9 in self.game.available_packs:
+                                self.game.available_packs.remove(9)
                             self.game.temp_message = f"Reused {reused_rune['name']} to tray!"
-                            # FIXED: Clear flag after successful buy (allows next queue in tray use)
                             if hasattr(self.game, '_recycler_used_this_shop'):
                                 delattr(self.game, '_recycler_used_this_shop')
                         else:
                             self.game.temp_message = "Tray full—reused rune discarded."
-                            # FIXED: Clear flag on fail too (allows next queue)
                             if hasattr(self.game, '_recycler_used_this_shop'):
                                 delattr(self.game, '_recycler_used_this_shop')
                         self.game.temp_message_start = time.time()
-                        return  # Exit, no cost
-                    
-                    # Existing pack buy logic continues here... (no cost check for -1, so use if instead of elif)
+                        return
+
+                    # === SPECIAL: Free Prism Pack from Tier 1 ===
+                    if charm.get('is_free_prism', False):
+                        print("DEBUG: Free Prism Pack from Tier 1 claimed!")
+                        self.game.shop_charms.pop(i)
+                        
+                        # Use the SAME logic as your normal premium packs
+                        from states.pack_select import PackSelectState
+                        self.game.pack_choices = random.sample(data.HAND_TYPES, 5)  # Adjust 5 if your Prism pack uses different count
+                        
+                        self.game.state_machine.change_state(PackSelectState(self.game))
+                        
+                        self.game.temp_message = "Free Prism Pack opened! (Tier 1 Success Reward)"
+                        self.game.temp_message_start = time.time()
+                        return
+
+                    # === Normal paid pack buying (your original logic) ===
                     if pack_idx != -1:  # Skip cost check for Grimoire
                         cost = pack_costs[pack_idx]
                         has_debt = any(c['type'] == 'negative_coins' for c in self.game.equipped_charms)
@@ -292,27 +344,29 @@ class ShopState(State):
                         if self.game.coins - cost >= min_coins:
                             self.game.coins -= cost
                             if pack_idx in [0, 1, 2]:
-                                from states.pack_select import PackSelectState  # Lazy import
+                                from states.pack_select import PackSelectState
                                 self.game.pack_choices = random.sample(data.HAND_TYPES, pack_choices_num[pack_idx])
                                 self.game.state_machine.change_state(PackSelectState(self.game))
-                                self.game.available_packs.remove(pack_idx)
+                                if pack_idx in self.game.available_packs:
+                                    self.game.available_packs.remove(pack_idx)
                             elif pack_idx in [3, 4, 5]:
-                                from states.dice_select import DiceSelectState  # Lazy import
+                                from states.dice_select import DiceSelectState
                                 if pack_idx == 5:
                                     self.game.pack_choices = random.sample(SPECIAL_COLORS, pack_choices_num[pack_idx])
                                 else:
                                     self.game.pack_choices = random.sample(BASE_COLORS, pack_choices_num[pack_idx])
                                 self.game.state_machine.change_state(DiceSelectState(self.game))
-                                self.game.available_packs.remove(pack_idx)
-                            elif pack_idx in [6, 7, 8]:  # New: Rune packs
-                                from states.rune import RuneSelectState  # Lazy import
-                                rune_pack = data.RUNE_PACKS[pack_idx - 6]  # Map to 0-2 index
+                                if pack_idx in self.game.available_packs:
+                                    self.game.available_packs.remove(pack_idx)
+                            elif pack_idx in [6, 7, 8]:  # Rune packs
+                                from states.rune import RuneSelectState
                                 self.game.pack_choices = random.sample(data.MYSTIC_RUNES, pack_choices_num[pack_idx])
-                                self.game.pack_select_count = pack_choices_num[pack_idx]  # Track how many to select
-                                self.game.selected_runes = []  # For multi-select/holding
+                                self.game.pack_select_count = pack_choices_num[pack_idx]
+                                self.game.selected_runes = []
                                 self.game.state_machine.change_state(RuneSelectState(self.game))
-                                self.game.available_packs.remove(pack_idx)
-                    return
+                                if pack_idx in self.game.available_packs:
+                                    self.game.available_packs.remove(pack_idx)
+                        return   # Exit after normal pack buy
                     
                 # Reroll
                 if self.reroll_rect and self.reroll_rect.collidepoint(mouse_pos):

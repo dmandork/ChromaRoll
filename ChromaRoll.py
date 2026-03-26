@@ -1665,6 +1665,38 @@ class ChromaRollGame:
                 # Game over - transition to state
                 self.state_machine.change_state(GameOverState(self))
 
+# === TIER 1 SUCCESS: FREE PRISM PACK ===
+        print("DEBUG: Checking for Tier 1 Prism Fracture reward...")
+        if hasattr(self, 'd20_boon') and self.d20_boon is not None:
+            print(f"DEBUG: d20_boon exists | outcome = {self.d20_boon.outcome}")
+            
+            # Check using the intensified_buff (more reliable, since it survives longer)
+            if hasattr(self, 'intensified_buff') and self.intensified_buff:
+                buff = self.intensified_buff
+                print(f"DEBUG: Found intensified_buff: {buff}")
+                if buff.get('free_pack') == 'prism':
+                    print("DEBUG: Prism Fracture free_pack detected in buff!")
+                    if hasattr(self.d20_boon, 'apply_pending_rewards'):
+                        self.d20_boon.apply_pending_rewards(self)
+                    self.has_free_prism_pack = True
+                    print("DEBUG: Tier 1 Prism Fracture success — has_free_prism_pack = True (queued for shop)")
+                else:
+                    print("DEBUG: No 'free_pack' in buff")
+            else:
+                print("DEBUG: No intensified_buff present")
+        else:
+            print("DEBUG: No d20_boon or d20_boon is None")
+
+        # === TIER 1 SUCCESS: +2x on disabled hand type for NEXT blind ===
+        if hasattr(self, 'd20_boon') and self.d20_boon is not None:
+            if self.d20_boon.outcome and self.d20_boon.outcome.get('name') == 'Prism Fracture':
+                disabled_type = self.d20_boon.outcome.get('disabled_hand')
+                if disabled_type:
+                    self.pending_type_mult = {disabled_type: 2.0}
+                    print(f"DEBUG: Tier 1 Success - Queued +2x on '{disabled_type}' for next blind")
+                else:
+                    print("DEBUG: No disabled_hand found in outcome")
+
         if hasattr(self, 'intensified_buff') and self.intensified_buff is not None:
             buff = self.intensified_buff
             self.mult += buff.get('mult', 0)  # e.g., +2x
