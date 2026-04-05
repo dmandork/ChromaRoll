@@ -215,7 +215,7 @@ class ShopState(State):
                 return
 
             # Handle continue to blinds
-            if self.continue_rect.collidepoint(mouse_pos):
+            if self.continue_rect and self.continue_rect.collidepoint(mouse_pos):
                 self.game.shop_charms = []  # Clear shop
                 # FIXED: Set dummy rolls for new GameState (avoids fresh pull)
                 self.game.rolls = [(None, 0) for _ in range(5)]  # Dummy empty
@@ -322,19 +322,19 @@ class ShopState(State):
                         return
 
                     # === SPECIAL: Free Prism Pack from Tier 1 ===
-                    if charm.get('is_free_prism', False):
-                        print("DEBUG: Free Prism Pack from Tier 1 claimed!")
-                        self.game.shop_charms.pop(i)
+                    #if charm.get('is_free_prism', False):
+                    #    print("DEBUG: Free Prism Pack from Tier 1 claimed!")
+                    #    self.game.shop_charms.pop(i)
                         
                         # Use the SAME logic as your normal premium packs
-                        from states.pack_select import PackSelectState
-                        self.game.pack_choices = random.sample(data.HAND_TYPES, 5)  # Adjust 5 if your Prism pack uses different count
+                    #    from states.pack_select import PackSelectState
+                    #    self.game.pack_choices = random.sample(data.HAND_TYPES, 5)  # Adjust 5 if your Prism pack uses different count
                         
-                        self.game.state_machine.change_state(PackSelectState(self.game))
+                    #    self.game.state_machine.change_state(PackSelectState(self.game))
                         
-                        self.game.temp_message = "Free Prism Pack opened! (Tier 1 Success Reward)"
-                        self.game.temp_message_start = time.time()
-                        return
+                    #    self.game.temp_message = "Free Prism Pack opened! (Tier 1 Success Reward)"
+                    #    self.game.temp_message_start = time.time()
+                    #    return
 
                     # === Normal paid pack buying (your original logic) ===
                     if pack_idx != -1:  # Skip cost check for Grimoire

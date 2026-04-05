@@ -1588,8 +1588,6 @@ class ChromaRollGame:
                     self.pending_buff_mult = buff['mult_next_hand']  # e.g., 2.0; overrides if multiple
                 if buff.get('extra_discard'):
                     self.discards_left += buff.get('extra_discard')
-                if 'mult_next' in buff and hasattr(self, 'intensified_disabled_type') and self.intensified_disabled_type:
-                    self.pending_type_mult = {self.intensified_disabled_type: buff['mult_next']}  # e.g., {'Large Straight': 2.0}
                 if buff.get('extra_reroll'):
                     self.rerolls_left += buff.get('extra_reroll')
                     print(f"DEBUG: Added {buff.get('extra_reroll', 0)} reroll(s) from {buff.get('name', 'Unknown')}")  # TEMP
@@ -1620,7 +1618,15 @@ class ChromaRollGame:
                 end_prompt = EndPromptState(self)
                 self.state_machine.change_state(end_prompt)
                 return  # Exit early
-            
+
+            # === FIXED & FULLY ISOLATED TIER 1 BONUS (completely separate from Prism Pack) ===
+            if hasattr(self, 'd20_boon') and self.d20_boon is not None:
+                if hasattr(self.d20_boon, 'disabled_hand_type_for_next'):
+                    disabled = self.d20_boon.disabled_hand_type_for_next
+                    if disabled:
+                        self.tier1_disabled_hand = disabled          # ← dedicated variable
+                        print(f"DEBUG: Tier 1 Success - Set tier1_disabled_hand = '{disabled}'")
+
             # Normal win: Show popup
             self.popup_message = (f"{self.current_blind} Blind Beaten! Score: {self.round_score}/{int(self.get_blind_target())}\n"
                                 f"Hands left: {hands_dollars}\n"
@@ -1686,16 +1692,6 @@ class ChromaRollGame:
                 print("DEBUG: No intensified_buff present")
         else:
             print("DEBUG: No d20_boon or d20_boon is None")
-
-        # === TIER 1 SUCCESS: +2x on disabled hand type for NEXT blind ===
-        if hasattr(self, 'd20_boon') and self.d20_boon is not None:
-            if self.d20_boon.outcome and self.d20_boon.outcome.get('name') == 'Prism Fracture':
-                disabled_type = self.d20_boon.outcome.get('disabled_hand')
-                if disabled_type:
-                    self.pending_type_mult = {disabled_type: 2.0}
-                    print(f"DEBUG: Tier 1 Success - Queued +2x on '{disabled_type}' for next blind")
-                else:
-                    print("DEBUG: No disabled_hand found in outcome")
 
         if hasattr(self, 'intensified_buff') and self.intensified_buff is not None:
             buff = self.intensified_buff

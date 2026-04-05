@@ -55,16 +55,16 @@ class GameState(State):
             self.game.has_rolled = True
             return
         
-# === Apply Tier 1 pending hand multiplier (+2x on previously disabled hand) ===
-        if hasattr(self.game, 'pending_type_mult') and self.game.pending_type_mult:
+        # === APPLY TIER 1 BONUS (isolated path — Prism Pack cannot touch this) ===
+        if hasattr(self.game, 'tier1_disabled_hand') and self.game.tier1_disabled_hand:
+            disabled = self.game.tier1_disabled_hand
             if not hasattr(self.game, 'hand_multipliers'):
                 self.game.hand_multipliers = {}
-            for hand_type, mult in self.game.pending_type_mult.items():
-                self.game.hand_multipliers[hand_type] = mult
-                print(f"DEBUG: Applied Tier 1 +2x multiplier for hand type '{hand_type}'")
-            del self.game.pending_type_mult  # Clear after applying
-        else:
-            print("DEBUG: No pending_type_mult from Tier 1")
+            self.game.hand_multipliers[disabled] = 2.0
+            self.game.temp_message = f"Tier 1 Success! +2× on {disabled} this blind!"
+            self.game.temp_message_start = time.time()
+            print(f"DEBUG: Applied Tier 1 +2x on '{disabled}' (Prism Pack untouched)")
+            # Do NOT delete this flag yet — it will be cleared after one use in scoring
 
         # NEW: Carry pending buff to this blind's first hand (e.g., Hue Dimming 2x)
         if hasattr(self.game, 'pending_buff_mult') and self.game.pending_buff_mult != 1.0:

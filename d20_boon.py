@@ -69,7 +69,10 @@ class D20BoonSystem:
             if exempt:
                 full_desc_parts[0] += f" (hands w/ {exempt} exempt)"
             full_desc_parts.append(f" | Success: +2x {self.disabled_hand_type} next blind + free Prism Pack")
-            buff['hand_type_mult_next'] = {self.disabled_hand_type: 2.0}
+
+            self.disabled_hand_type_for_next = self.disabled_hand_type
+            
+            #buff['hand_type_mult_next'] = {self.disabled_hand_type: 2.0}
             self.pending_free_pack = 2  # Prism pack ID (adjust if different)
 
         elif roll <= 8:  # Hue Dimming
@@ -136,7 +139,7 @@ class D20BoonSystem:
         }
 
     def apply_pending_rewards(self, game):
-        """Call on blind success. Handles ALL doc rewards."""
+        """Call on blind success. Handles ALL success rewards."""
         if not self.pending_buff:
             return
         buff = self.pending_buff
@@ -146,21 +149,25 @@ class D20BoonSystem:
             game.coins += buff['coins']
             game.temp_message += f" +${buff['coins']}"
 
-        # Mult this blind (retrospective: boost round_score before coins)
+        # Mult this blind
         if 'hand_mult_this' in buff:
             game.round_score *= buff['hand_mult_this']
             game.temp_message += f" D20 Success x{buff['hand_mult_this']}"
 
         # Mult next blind/hand
         if 'hand_mult_next' in buff:
-            game.pending_hand_mult = buff['hand_mult_next']  # Your existing pending
+            game.pending_buff_mult = buff['hand_mult_next']
 
         if 'hand_mult_next_2' in buff:
-            game.pending_hand_mult_2 = buff['hand_mult_next_2']
+            game.pending_buff_mult = buff['hand_mult_next_2']
+            game.intensify_buff_duration = 2
 
-        # Hand type next
+        # === TIER 1: +2x on disabled hand type for NEXT blind ===
         if 'hand_type_mult_next' in buff:
-            game.next_blind_hand_bonuses.update(buff['hand_type_mult_next'])
+            if not hasattr(game, 'pending_type_mult'):
+                game.pending_type_mult = {}
+            game.pending_type_mult.update(buff['hand_type_mult_next'])
+            print(f"DEBUG: Tier 1 queued hand_type_mult_next: {buff['hand_type_mult_next']}")
 
         # Color next
         if 'color_mult_next' in buff:
@@ -168,24 +175,24 @@ class D20BoonSystem:
                 game.next_blind_color_mults = {}
             game.next_blind_color_mults.update(buff['color_mult_next'])
 
-        # Discards next blind
+        # Discards
         if 'extra_discards' in buff:
-            game.pending_extra_discards = buff['extra_discards']  # Or +=
+            game.discards_left += buff['extra_discards']
 
-        # Wildcard next
-        if 'wildcard_next_hand' in buff:
-            game.wildcard_color_next = buff['wildcard_next_hand']
-
-        # Free Prism Pack (Tier 1 success reward)
+        # Free Prism Pack
         if self.pending_free_pack is not None:
-            game.pending_free_pack = self.pending_free_pack   # 2 = Prism
-            game.has_free_prism_pack = True                   # Important flag for UI
+            game.pending_free_pack = self.pending_free_pack
+            game.has_free_prism_pack = True
             game.temp_message += " + Free Prism Pack!"
             self.pending_free_pack = None
 
+                # === NEW ISOLATED TIER 1 CAPTURE (completely separate from Prism Pack) ===
+        if 'hand_type_mult_next' in buff:
+            disabled = list(buff['hand_type_mult_next'].keys())[0]
+            game.tier1_disabled_hand = disabled
+            print(f"DEBUG: Tier 1 - Captured disabled hand '{disabled}' directly from boon")
+
         # Reset
         self.pending_buff = None
-        self.pending_free_pack = None
         self.active = False
-
-        game.temp_message_start = time.time()  # Show success msg
+        game.temp_message_start = time.time()

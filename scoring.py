@@ -684,13 +684,10 @@ def evaluate_hand(game, is_preview=True):
                 modifier_desc.append(f"{charm['name']} x2 (retrigger)")
 
         # Prism Pack / hand multipliers
-    # Hand multipliers from Prism Pack or Tier 1 reward
-    if hasattr(game, 'hand_multipliers') and hand_type in game.hand_multipliers:
-        mult_add = game.hand_multipliers[hand_type] - 1.0
-        total_modifier += mult_add
-        if mult_add > 0:
-            modifier_desc.append(f"{hand_type} Tier 1 Boost +{mult_add} (x2 total)")
-            print(f"DEBUG: Applied {hand_type} +{mult_add} from Tier 1 in evaluate_hand")
+    # === TIER 1 ISOLATED BONUS (Prism Pack cannot override this) ===
+    if hasattr(game, 'tier1_disabled_hand') and game.tier1_disabled_hand == hand_type:
+        total_modifier += 1.0
+        modifier_desc.append(f"{hand_type} Tier 1 Boost +1.0 (x2)")
 
     # === TIER 5 CHROMA RADIANCE - Simple +30% to final score (LAST STEP) ===
     is_chroma_radiance = False
