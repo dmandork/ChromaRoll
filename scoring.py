@@ -638,24 +638,28 @@ def evaluate_hand(game, is_preview=True):
 
     total_modifier = base_modifier + charm_color_mult_add + rune_mult_add + charm_mult_add
 
-    # Temp type mult, Acrobat, Prism Pack, Glass, etc.
+    """ # Temp type mult, Acrobat, Prism Pack, Glass, etc.
     if hasattr(game, 'temp_type_mult') and game.temp_type_mult:
         type_mult = game.temp_type_mult.get(hand_type, 1.0)
         if type_mult > 1.0:
             total_modifier += type_mult - 1
             modifier_desc.append(f"Type Buff x{type_mult} for {hand_type}")
         if not is_preview:
-            del game.temp_type_mult
+            del game.temp_type_mult """
 
     total_modifier += game.final_discard_mult
     if game.final_discard_mult > 0:
         modifier_desc.append(f"Acrobat Amulet +{game.final_discard_mult}")
 
+    # === Hand-Type Multipliers (D20 Tier 1 + Prism Pack) ===
+    # Shows the FULL multiplier (e.g. 2.0x) with clear D20 label
     if hand_type in game.hand_multipliers:
-        mult_add = game.hand_multipliers[hand_type] - 1
-        total_modifier += mult_add
-        if mult_add > 0:
-            modifier_desc.append(f"Prism Pack +{mult_add}")
+        full_mult = game.hand_multipliers[hand_type]
+        total_modifier += full_mult - 1          # math stays correct
+        if full_mult > 1.0:
+            # Remove any older line for this hand type (prevents duplication)
+            modifier_desc = [line for line in modifier_desc if not (hand_type in line and "x" in line)]
+            modifier_desc.append(f"{hand_type} {full_mult:.1f}x (D20 Tier 1)")
 
     silence_glass = game.current_blind == 'Boss' and game.current_boss_effect and game.current_boss_effect['name'] == 'Special Silence'
     glass_count = sum(1 for die, _ in held_rolls if die['color'] == 'Glass')
@@ -682,12 +686,6 @@ def evaluate_hand(game, is_preview=True):
             if face_count > 0:
                 retrigger_mult *= 2
                 modifier_desc.append(f"{charm['name']} x2 (retrigger)")
-
-        # Prism Pack / hand multipliers
-    # === TIER 1 ISOLATED BONUS (Prism Pack cannot override this) ===
-    if hasattr(game, 'tier1_disabled_hand') and game.tier1_disabled_hand == hand_type:
-        total_modifier += 1.0
-        modifier_desc.append(f"{hand_type} Tier 1 Boost +1.0 (x2)")
 
     # === TIER 5 CHROMA RADIANCE - Simple +30% to final score (LAST STEP) ===
     is_chroma_radiance = False

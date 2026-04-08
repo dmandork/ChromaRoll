@@ -1,3 +1,4 @@
+# d20_roll.py
 import pygame
 import time
 import random
@@ -93,14 +94,19 @@ class D20RollState(State):
             mouse_pos = event.pos  # Precise clicks (scoped to mouse events)
             if self.phase == 'done':
                 if hasattr(self, 'accept_rect') and self.accept_rect.collidepoint(mouse_pos):
-                    # FIXED: Apply flags/buff/temp on accept (delayed)
-                    self.outcome = self.get_outcome(self.roll_result)  # Now set outcome
-                    self.apply_downside()  # Flags, message, buff—post-commit
-                    # NEW: Flag for GameState enter (force pull + buff apply)
-                    self.game.from_d20_intensify = True  # Temp flag
+                    # === NEW: Properly trigger the modern D20BoonSystem so pending_buff is created ===
+                    if hasattr(self.game, 'd20_boon') and self.roll_result is not None:
+                        self.game.d20_boon.roll = self.roll_result
+                        self.game.d20_boon._apply_outcome()   # This creates pending_buff + free_pack
+                        print(f"DEBUG: D20BoonSystem processed roll {self.roll_result} → pending_buff now set")
+                    
+                    # Keep the old downside effects for this blind (target mult, disabled color, etc.)
+                    self.apply_downside()
+                    
+                    self.game.from_d20_intensify = True
                     from states.game import GameState
                     self.game.state_machine.change_state(GameState(self.game))
-                    # Clear flag post-transition (in GameState enter, after use)
+                    return
             
             # FIXED: DEBUG Tier Selector (click button to open; click opt to select/close) - fully nested under MOUSEBUTTONDOWN
             if DEBUG:
@@ -140,7 +146,12 @@ class D20RollState(State):
                 # Similar for disabled_type/locked_die (e.g., lock a fused-color die)
             
             # Store flags for this blind (use intensified_ prefix to scope)
-            self.game.intensified_disabled_type = self.outcome['downside'].get('disabled_type')
+                        # Use the SAME hand type that D20BoonSystem already chose for the reward
+            if hasattr(self.game, 'd20_boon') and self.game.d20_boon.disabled_hand_type:
+                self.game.intensified_disabled_type = self.game.d20_boon.disabled_hand_type
+            else:
+                self.game.intensified_disabled_type = self.outcome['downside'].get('disabled_type')
+                
             self.game.intensified_dimmed_color = self.outcome['downside'].get('dimmed_color')
             self.game.intensified_locked_die_idx = self.outcome['downside'].get('locked_die_idx', -1)
             self.game.intensified_global_color_mult = self.outcome['downside'].get('global_color_mult', 1.0)

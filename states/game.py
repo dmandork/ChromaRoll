@@ -36,7 +36,15 @@ class GameState(State):
     def enter(self):
         print(f"DEBUG: Equipped charms in GameState.enter: {[c['name'] for c in self.game.equipped_charms]}")
         print(f"DEBUG: GameState enter – is_resuming: {self.game.is_resuming}, last_state_was_rune: {self.game.last_state_was_rune}, rolls len: {len(self.game.rolls)}, bag len: {len(self.game.bag)}")  # TEMP
-        # === D20 RESET - Clear ALL intensified effects for new blind ===
+        print(f"DEBUG: GameState.enter() → d20_boon.pending_buff = {self.game.d20_boon.pending_buff if hasattr(self.game, 'd20_boon') and self.game.d20_boon else None}")
+                # === D20 RESET - Clear ALL intensified effects for new blind ===
+        # BUT PROTECT pending_buff / pending_free_pack so rewards can be applied in advance_blind
+        pending_buff_to_keep = None
+        pending_free_pack_to_keep = None
+        if hasattr(self.game, 'd20_boon') and self.game.d20_boon:
+            pending_buff_to_keep = self.game.d20_boon.pending_buff
+            pending_free_pack_to_keep = getattr(self.game.d20_boon, 'pending_free_pack', None)
+
         if not getattr(self.game, 'from_d20_intensify', False):
             self.game.intensified_locked_die_idx = -1
             self.game.roll_harmony_active = False
@@ -48,14 +56,22 @@ class GameState(State):
         else:
             self.game.from_d20_intensify = False  # consume the flag (keep effects for this blind)
             print("DEBUG: Came from D20 roll — kept intensified effects")
-        # FIXED: Skip only if from rune (not fresh/resume)
-        if self.game.last_state_was_rune:  # Game entry - preserve hand, skip init
-            print("DEBUG: From game rune – skipping init pull")  # TEMP
-            self.game.last_state_was_rune = False
-            self.game.has_rolled = True
-            return
+
+        # RESTORE the pending reward data (this was the missing piece)
+        if pending_buff_to_keep is not None and hasattr(self.game, 'd20_boon') and self.game.d20_boon:
+            self.game.d20_boon.pending_buff = pending_buff_to_keep
+            self.game.d20_boon.pending_free_pack = pending_free_pack_to_keep
+            print("DEBUG: Restored pending_buff for Tier 1 success reward")
+
+                    # === CLEAN TIER 1 REWARD APPLICATION (no duplication) ===
+        if hasattr(self.game, 'pending_type_mult') and self.game.pending_type_mult:
+            if not hasattr(self.game, 'hand_multipliers'):
+                self.game.hand_multipliers = {}
+            self.game.hand_multipliers.update(self.game.pending_type_mult)
+            print(f"DEBUG: Applied Tier 1 reward to hand_multipliers: {self.game.pending_type_mult}")
+            del self.game.pending_type_mult  # consume
         
-        # === APPLY TIER 1 BONUS (isolated path — Prism Pack cannot touch this) ===
+        """# === APPLY TIER 1 BONUS (isolated path — Prism Pack cannot touch this) ===
         if hasattr(self.game, 'tier1_disabled_hand') and self.game.tier1_disabled_hand:
             disabled = self.game.tier1_disabled_hand
             if not hasattr(self.game, 'hand_multipliers'):
@@ -64,7 +80,8 @@ class GameState(State):
             self.game.temp_message = f"Tier 1 Success! +2× on {disabled} this blind!"
             self.game.temp_message_start = time.time()
             print(f"DEBUG: Applied Tier 1 +2x on '{disabled}' (Prism Pack untouched)")
-            # Do NOT delete this flag yet — it will be cleared after one use in scoring
+            # Consume the flag so it only applies once
+            del self.game.tier1_disabled_hand """
 
         # NEW: Carry pending buff to this blind's first hand (e.g., Hue Dimming 2x)
         if hasattr(self.game, 'pending_buff_mult') and self.game.pending_buff_mult != 1.0:
@@ -118,11 +135,11 @@ class GameState(State):
 
                 self.game.new_turn()
 
-        # NEW: Carry type-specific buff (e.g., tier 1: +2x for blocked type on first next-blind hand)
+        """# NEW: Carry type-specific buff (e.g., tier 1: +2x for blocked type on first next-blind hand)
         if hasattr(self.game, 'pending_type_mult') and self.game.pending_type_mult:
             self.game.temp_type_mult = self.game.pending_type_mult  # e.g., {'Large Straight': 2.0}
             print(f"DEBUG: Applied carried type buff: {self.game.temp_type_mult}")
-            del self.game.pending_type_mult  # Consume
+            del self.game.pending_type_mult  # Consume """
             
         # FIXED: Removed else: new_turn() – rare case covered by fresh
         self.game.update_advantage_flag()  # Refresh after entering state

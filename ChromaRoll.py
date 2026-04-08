@@ -515,10 +515,11 @@ class ChromaRollGame:
                     else:
                         modifier_parts.append(dagger_text + " (disabled)")
 
-                # Prism Pack hand boost
-                hand_boost = self.hand_multipliers.get(hand_type, 1.0)
-                if hand_boost > 1.0:
-                    modifier_parts.append(f"{hand_type} {hand_boost:.1f}x")
+# Prism Pack hand boost
+                # (OLD CODE — removed to prevent tooltip duplication)
+                # hand_boost = self.hand_multipliers.get(hand_type, 1.0)
+                # if hand_boost > 1.0:
+                #     modifier_parts.append(f"{hand_type} {hand_boost:.1f}x")
 
                 if modifier_parts:
                     self.current_modifier_text = "Modifiers: " + " + ".join(modifier_parts)
@@ -737,6 +738,15 @@ class ChromaRollGame:
         # In advance_blind (ChromaRoll.py ~line 1620, after other resets)
         self.bag[:] = [copy.deepcopy(d) for d in self.full_bag]  # Refill bag from owned template
         print(f"DEBUG: Bag after refill in advance_blind: {len(self.bag)}")  # Should be 25
+        print(f"DEBUG: advance_blind START → pending_buff exists? {bool(self.d20_boon.pending_buff if hasattr(self, 'd20_boon') and self.d20_boon else False)}")
+
+                # === D20 SUCCESS REWARDS: Apply here ONCE after blind win ===
+        if hasattr(self, 'd20_boon') and self.d20_boon and self.d20_boon.pending_buff:
+            self.d20_boon.apply_pending_rewards(self)
+            print("DEBUG: Applied D20 success rewards after blind win")
+        else:
+            print("DEBUG: No pending D20 rewards to apply (normal on non-intensified blinds)")
+
         if self.current_boss_effect and self.current_boss_effect['name'] == 'Charm Eclipse':
             self.disabled_charms = list(range(len(self.equipped_charms)))  # Ensure all current charms disabled
 
@@ -796,6 +806,10 @@ class ChromaRollGame:
         if hasattr(self, 'pending_buff_mult'):
             # Keep for next; decrement duration if multi-blind (e.g., for Crit Success)
             pass  # Already queued
+
+                # Clean up D20 boon for next blind
+        if hasattr(self, 'd20_boon') and self.d20_boon:
+            self.d20_boon.reset_for_new_blind()
 
         # DEBUG: Final hands after all
         # print(f"DEBUG: Final hands_left after advance_blind: {self.hands_left}")
@@ -1567,33 +1581,6 @@ class ChromaRollGame:
             self.lucky_triggers = 0
             self.blind_won = True  # Set win flag if not already
 
-            # In win block (after self.coins += total_coins)
-            if hasattr(self, 'intensified_buff') and self.intensified_buff:
-                buff = self.intensified_buff
-                # Apply immediate (e.g., coins)
-                self.coins += buff.get('coins', 0)
-                # Queue pack for next shop
-                if buff.get('free_pack'):
-                    self.pending_free_pack = buff['free_pack']  # Add to defaults; consume in generate_shop
-                # Temp mults (store for next blind/hand)
-                if 'mult_this' in buff:
-                    self.temp_intensified_mult = buff['mult_this']  # Apply in calculate_score
-                if 'mult_next' in buff:
-                    self.pending_buff_mult = buff['mult_next']  # Set in advance_blind
-                if 'mult_next_2' in buff:
-                    self.pending_buff_mult = buff['mult_next_2']
-                    self.intensify_buff_duration = 2  # Counter; decrement in advance_blind
-                # NEW: Queue "next hand" (e.g., Hue Dimming 2x on first hand of next blind)
-                if 'mult_next_hand' in buff:
-                    self.pending_buff_mult = buff['mult_next_hand']  # e.g., 2.0; overrides if multiple
-                if buff.get('extra_discard'):
-                    self.discards_left += buff.get('extra_discard')
-                if buff.get('extra_reroll'):
-                    self.rerolls_left += buff.get('extra_reroll')
-                    print(f"DEBUG: Added {buff.get('extra_reroll', 0)} reroll(s) from {buff.get('name', 'Unknown')}")  # TEMP
-                del self.intensified_buff  # Clear
-                print(f"DEBUG: Rewarded {buff.get('name', 'Unknown')}: {buff}")  # TEMP: Safe name access
-
             # NEW: Increment Turtle rounds_passed on round win (early, to avoid exits; for next enter)
             # print("DEBUG: Win block reached—checking Turtle increment")
             turtle_incremented = False
@@ -1618,14 +1605,6 @@ class ChromaRollGame:
                 end_prompt = EndPromptState(self)
                 self.state_machine.change_state(end_prompt)
                 return  # Exit early
-
-            # === FIXED & FULLY ISOLATED TIER 1 BONUS (completely separate from Prism Pack) ===
-            if hasattr(self, 'd20_boon') and self.d20_boon is not None:
-                if hasattr(self.d20_boon, 'disabled_hand_type_for_next'):
-                    disabled = self.d20_boon.disabled_hand_type_for_next
-                    if disabled:
-                        self.tier1_disabled_hand = disabled          # ← dedicated variable
-                        print(f"DEBUG: Tier 1 Success - Set tier1_disabled_hand = '{disabled}'")
 
             # Normal win: Show popup
             self.popup_message = (f"{self.current_blind} Blind Beaten! Score: {self.round_score}/{int(self.get_blind_target())}\n"
@@ -1670,37 +1649,6 @@ class ChromaRollGame:
             else:
                 # Game over - transition to state
                 self.state_machine.change_state(GameOverState(self))
-
-# === TIER 1 SUCCESS: FREE PRISM PACK ===
-        print("DEBUG: Checking for Tier 1 Prism Fracture reward...")
-        if hasattr(self, 'd20_boon') and self.d20_boon is not None:
-            print(f"DEBUG: d20_boon exists | outcome = {self.d20_boon.outcome}")
-            
-            # Check using the intensified_buff (more reliable, since it survives longer)
-            if hasattr(self, 'intensified_buff') and self.intensified_buff:
-                buff = self.intensified_buff
-                print(f"DEBUG: Found intensified_buff: {buff}")
-                if buff.get('free_pack') == 'prism':
-                    print("DEBUG: Prism Fracture free_pack detected in buff!")
-                    if hasattr(self.d20_boon, 'apply_pending_rewards'):
-                        self.d20_boon.apply_pending_rewards(self)
-                    self.has_free_prism_pack = True
-                    print("DEBUG: Tier 1 Prism Fracture success — has_free_prism_pack = True (queued for shop)")
-                else:
-                    print("DEBUG: No 'free_pack' in buff")
-            else:
-                print("DEBUG: No intensified_buff present")
-        else:
-            print("DEBUG: No d20_boon or d20_boon is None")
-
-        if hasattr(self, 'intensified_buff') and self.intensified_buff is not None:
-            buff = self.intensified_buff
-            self.mult += buff.get('mult', 0)  # e.g., +2x
-            # Add other buff effects (e.g., self.coins += buff.get('coins', 0))
-            print(f"DEBUG: Applied intensified buff: {buff}")  # TEMP: Confirm on use
-            del self.intensified_buff  # Clear after apply
-        else:
-            print("DEBUG: No intensified buff to apply")  # TEMP: Confirm skip
 
     def toggle_hold(self, index):
         """Toggles hold state for a die. Supports Roll Flow advantage + Fate's Favor with mutually exclusive hold."""
@@ -2011,7 +1959,8 @@ class ChromaRollGame:
             pack_id = 0 if self.pending_free_pack == 'prism' else 3  # Basic Prism or Dice
             self.available_packs.append(pack_id)
             print(f"DEBUG: Added free {self.pending_free_pack} pack (ID {pack_id}) - available_packs now: {self.available_packs}")
-            del self.pending_free_pack
+            if hasattr(self, 'pending_free_pack'):
+                del self.pending_free_pack
 
         # Compute weights per charm: base rarity * stake modifier
         charm_weights = []

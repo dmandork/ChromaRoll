@@ -1,0 +1,295 @@
+ChromaRoll Full Project Bible & Comprehensive Scope Document
+Version: April 2026 (Fully Merged with RollOutcomesD20.txt + Current Codebase)
+
+Introduction
+
+1.1 Purpose
+This document serves as the single source of truth for the entire ChromaRoll project. It combines the original PRD, the detailed D20 Boon System specification from RollOutcomesD20.txt, the current codebase state (including the newly provided debug.py), and exhaustive explanations of every major file, method, and mechanic. It is designed so that any developer or AI (including future Grok sessions) can instantly understand the full architecture, current completion status, exact location of every critical piece of logic, and known interaction risks.
+1.2 Scope
+
+Core loop: dice rolling, hand formation, scoring, 108 fully implemented charms, pouches/bags, boss effects, shop, challenges, progression.
+New core feature: D20 Boon System (optional intensification with 5 tiered outcomes).
+Game ends after round 8 with option for endless mode.
+Achievements/unlocks, bag unlock conditions, tutorial expansions, special final boss challenges.
+Out-of-scope: multiplayer, advanced AI opponents, real-money purchases.
+Target platforms: Desktop (PC via Steam) and Mobile (Android).
+
+1.3 Audience
+
+Players: Casual to strategic gamers who enjoy roguelike dice mechanics with risk/reward depth.
+Developers: You and any contributors working on the project or future ports.
+
+1.4 Assumptions and Dependencies
+
+Dependencies: Pygame for graphics/input, assets in /assets/.
+Assumptions: Mouse/touch controls, local JSON saves, no online features initially.
+
+
+Game Overview
+
+2.1 Key Mechanics
+ChromaRoll is a roguelike dice-poker game inspired by Balatro and Yahtzee. Players roll 5 colored dice, hold/reroll/discard to form poker-style hands, and score against escalating blind targets. Charms provide powerful modifiers, bags give starting advantages, and boss effects add challenge. The D20 Boon System allows players to intensify challenges for high-risk/high-reward outcomes. The game runs for 8 rounds (phases) before offering endless mode.
+2.2 D20 Boon System Overview
+The D20 Boon System is an optional risk/reward mechanic accessed on the Challenges Screen. Players can choose to intensify a minor or major challenge (skipping the normal shop/coins) in exchange for rolling a d20 that determines one of 5 tiered outcomes. Color fusion (optional) modifies the outcome for additional strategy. Low rolls are punishing but offer strong comeback potential; high rolls are powerful buffs. All effects are temporary.
+The 5 d20 Outcomes (exact as defined in RollOutcomesD20.txt):
+1-4: Crit Fail – Prism Fracture
+
+Base Effect: +50% score target; randomly disable one hand type this challenge only.
+With Color Fusion: Disable ties to fused color (hands using fused color are exempt).
+Success Reward: +2× multiplier on the disabled hand type for the next challenge + free Prism Pack in the next shop.
+
+5-8: Challenging – Hue Dimming
+
+Base Effect: +25% score target; one random color scores -20% this challenge.
+With Color Fusion: Targets the fused color (-20%), but success brightens it (+30% next challenge).
+Success Reward: +2× multiplier on the next hand +20 coins.
+
+9-12: Neutral – Roll Harmony
+
+Base Effect: +8% score target; one random die is locked (cannot be rerolled this round).
+With Color Fusion: Lock applies to fused-color dice.
+Success Reward: +1.5× multiplier for this entire challenge +1 extra discard.
+
+13-16: Favorable – Roll Flow
+
+Base Effect: -12% score target; +1 extra reroll this round + advantage on 1 chosen die (spawns a duplicate above it).
+With Color Fusion: Advantage prioritizes fused-color die.
+Success Reward: +2.5× multiplier this challenge + free full discard (reset all 5 dice).
+
+17-20: Crit Success – Chroma Radiance
+
+Base Effect: -25% score target; all colors score +30% this challenge.
+With Color Fusion: Fused color explodes to +50% and acts as wildcard next hand.
+Success Reward: +4× multiplier for the next 2 challenges +50 coins + achievement progress.
+
+
+Functional Requirements
+
+3.1 Core Gameplay Loop
+Splash Screen → Bag Selection → Challenges Screen (option to apply D20 boon) → Game Screen (rolling, holding, scoring) → Shop Screen (unless boon used) → next challenge. After round 8 → victory screen with endless mode prompt.
+3.2 Game End & Endless Mode
+After beating round 8 boss, display victory screen with score summary, achievements unlocked. Prompt “Continue to Endless Mode?” (yes/no). If yes, infinite rounds with escalating phases (e.g., +10% difficulty per round, new random bosses). Track high scores.
+3.3 Achievements & Unlockables
+Track stats (e.g., hands played, scores achieved) via savegame.py. Achievements like “Three of a Kind Master: Play 100 Three of a Kind” unlock charms/bags. Half+ of 108 charms are progression-locked.
+3.4 Special Final Boss Challenges
+For round 8 boss: Unique effects (e.g., “Ultimate Glitch: Disable 2 charms + shuffle dice”). Multi-stage or combined effects from prior bosses.
+3.5 Data Structures
+Hand Types, CHARMS_POOL (108 entries), BOSS_EFFECTS, POUCHES, DICE_DESCRIPTIONS, MYSTIC_RUNES.
+3.6 Saving/Loading
+Extend to include achievements, unlocks, endless mode scores.
+3.7 Debug Mode
+Test new features (e.g., force boons/d20 rolls, instant unlocks). In Challenges Screen (debug mode): Dropdown menu in upper left to select phase for testing; menu in bottom right to jump to boss and change boss effect. Variables changeable for testing: force specific hand colors, high/unlimited coins, unlimited rolls, etc. In Shop Screen (debug mode): Button for debug menu with 3 options to obtain charms, prisms, extra dice.
+3.8 D20 Boon System (detailed in section 2.2)
+3.9 Full Charm Catalog (108 total – ALL implemented and functional)
+All 108 charms are now fully implemented and functional in data.py as CHARMS_POOL. Below is the complete list with name and basic description for every charm:
+Common Charms
+
+Basic Charm: +10 to all final scores.
+Red Greed Charm: +5 score per Red die scored.
+Blue Lust Charm: +5 score per Blue die scored.
+Green Wrath Charm: +5 score per Green die scored.
+Purple Glutton Charm: +5 score per Purple die scored.
+Yellow Jolly Charm: +5 score per Yellow die scored.
+Zany Charm: +40 score if hand contains a 3 of a Kind.
+Mad Charm: +30 score if hand contains a 2 Pair.
+Crazy Charm: +35 score if hand contains a Small or Large Straight.
+Sly Charm: +50 base score if hand contains a Pair.
+Debt Charm: Allows going into negative coins for shop buys (up to -20).
+Even Stevens Charm: +5 score per even-valued die scored.
+Oddball Charm: +5 score per odd-valued die scored.
+Interest Idol: +1 coin per 10 coins held at round end.
+Wild Warden: Rainbow dice gain +1 coin when wilding a mono.
+Greedy Gambler: +0.5 mult for Red dice scored.
+Economy Echo: +1 coin per unused hand at round end.
+Whirlwind Wild: Rainbows in hand grant free reroll on one die (once per blind).
+Buy Boon: Pay 2 coins per +/-1 shift to a die face once per turn (max 2 shifts).
+Disadvantage Dice: -1 to one die face, but +0.5 mult overall.
+Joker Die: +4 mult.
+Reserved Relic: Each high face (4-6) held has 1 in 2 chance for 1 coin.
+
+Uncommon Charms
+
+Droll Charm: +0.5 mult to monochrome bonuses.
+Half Charm: +20 score if hand uses 3 or fewer dice.
+Four Fingers Charm: Small Straights can be made with 3 dice; Large with 4.
+Golden Touch Charm: +2 coins per Gold die held in score.
+Silver Lining Charm: +2 coins per Silver die not held in score.
+Rainbow Prism Charm: +0.5 mult to rainbow bonuses.
+Interest Booster Charm: Increases max coins for interest calculation by 20.
+Advantage Amulet: After discard phase, roll a duplicate for the center die; choose which to hold.
+Envy Echo: +0.5 mult for Green dice scored.
+Gluttony Glyph: +0.5 mult for Purple dice scored.
+Yellow Prism: +0.5 mult for Yellow dice scored.
+Face Forgery: Treat 2s as wild for kinds if scored.
+Enhance Elixir: +0.25 mult per enhancement on scored dice.
+Discard Dynamo: +0.5 mult per discard used.
+Rune Recycler: Reuse one rune per shop.
+Kind King: Kings (6s) count as wild for kinds.
+Echo Ember: +2 coins per unused discard.
+Triple Threat: +0.5 mult for Three of a Kind.
+Stat Roller: Adds the sum of all dice faces in the hand to the base score.
+Saving Throw: Avoid break on Glass dice with a successful "save" (roll >3).
+Homebrew Hazard: Random encounter: 1/6 chance for bonus charm.
+Bardic Blade: +0.5 mult per color in rainbow hand.
+Druid’s Dream: +coins equal to greens in hand.
+Familiar’s Foresight: Once per blind, in discard phase swap 1 die with any in bag.
+Spellbook Scribe: Scribe a rune to tray if scored with a magic number "3".
+Necromancer’s Needle: 50% chance to revive a random destroyed die.
+Wee Widget: +2 mult and +20 score per charm equipped.
+Ice Shard: +100 score. -5 score per hand played.
+Hiker Hex: Each scored die permanently gains +4 score value.
+Square Sphere: +4 score if hand uses exactly 4 dice.
+Cloud Cube: Earn 1 coin per 6 dice in bag at end of round.
+Rocket Rune: Earn 1 coin at round end. Gains +2 when boss defeated.
+Gift Glyph: Adds 1 coin sell value to all charms and runes at round end.
+Erosion Edge: +2 mult per die below 25 in bag.
+Castle Cube: +3 score per discarded color die. Color changes per round.
+Acrobat Amulet: +2 mult on final discard of round.
+Monopoly Mortgage: Sell a charm for double coins but lock it for one round.
+
+Rare Charms
+
+Mime Charm: Retrigger effects of held dice.
+Fragile Fortune Charm: Reduces Glass die break chance to 10%, but if it breaks, lose 5 coins.
+Clever Charm: +80 base score if hand contains a 2 Pair.
+Devious Charm: +100 base score if hand contains a Small or Large Straight.
+Full House Party Charm: +150 base score if hand contains a Full House.
+Quadruple Threat Charm: +200 base score if hand contains a 4 of a Kind.
+Reroll Recycler Charm: Gain 1 extra reroll if you use a discard.
+Fate’s Favor: Once per round, reroll a die with advantage.
+Synergy Scroll: Retrigger enhancements on special colors.
+Break Buffer: Glass dice break only on 1,2,3 (33% chance if low value).
+Luchador Lens: Sell this to disable current boss effect.
+Dragon’s Dice: If all reds, +1 mult but risk burn (10% break on all dice).
+Final Flourish: +2 mult on last hand of round.
+UNO Skip: Skip one boss effect per run.
+Life Milestone: +0.5 mult per stake milestone reached.
+
+Legendary Charms
+
+Stencil Charm: +0.5 mult per empty charm slot.
+Dagger Charm: Sacrifice a charm to the right and add 0.1 mult per its cost permanently (max +5).
+Gambler’s Grimoire: Cast a random mystic rune effect for free once per shop.
+Ace’s Aura: Aces (1s) retrigger scoring once.
+Retrigger Rune: Retrigger scoring on kinds.
+Sorcerer’s Surge: Random +2x to +5x mult on kinds (rolled once per turn).
+Cloak of Cunning: Saves you from losing the game once (destroyed on use, repeat blind).
+Triboulet Token: Scored dice with faces 5 or 6 give +1 mult.
+Flower Pot Prism: +2 mult if scored dice are all one color.
+Glass Globe: +2 mult if hand contains Glass dice.
+Obelisk Orb: +0.2 mult per consecutive hand without your most-played type.
+Burglar Bag: When blind selected, +3 hands but lose all discards.
+Final Forge: +3 mult on last hand if it includes an enhancement.
+Critical Hit: If all dice 6, +6 mult and +50 coins.
+UNO Draw 2: Gain 2 extra rerolls once per blind.
+
+3.10 Current Completion Status
+
+Core loop, dice rolling, scoring, 108 charms fully implemented and functional
+D20 Boon System: fully coded and integrated
+Shop, challenges, game screen, pause, states, saving/loading, debug mode, boss effects all complete
+WIP / Planned: Bag unlock conditions, full achievements screen, final tutorial expansions, endless mode polish, final boss variants
+
+3.11 Charm Interaction Analysis (Potential Problem Areas Needing Testing)
+After reviewing all 108 charms against the current code (ChromaRoll.py, game.py, scoring.py, d20_boon.py, debug.py), here are the highest-risk interactions that need focused testing:
+High Priority (Test Immediately)
+
+Mime Charm + Glass dice / Fragile Fortune: Mime retriggers held Glass dice → double break chance + double mult/penalty.
+Mime Charm + Gold/Silver: Retriggers coin gains on held/not-held dice (can lead to massive coin spikes).
+Dagger Charm: Sacrifice order depends on equipped list position. Dragging charms can unpredictably change which charm is sacrificed.
+Hiker Hex + permanent bonuses (Ice Shard, Lucky Labyrinth, Square Sphere): Multiple permanent scaling effects may stack or conflict in scoring.
+Turtle Token + Burglar Bag: Hands decay timing vs. +3 hands on blind start can lead to negative or incorrect hand counts.
+Stencil Charm: Depends on exact equipped count and max_charms; empty slots must be calculated correctly after drags/sells.
+Cloak of Cunning: One-time loss prevention destroys the charm and repeats the blind — must not trigger multiple times or on final boss.
+Luchador Lens: Only disables non-final bosses; must not work on round 8 boss.
+Buy Boon / Disadvantage Dice / Whirlwind Wild: Selection modes, coin costs, and shift limits must not leak between turns or blinds.
+Rune Recycler + any mystic rune: Reuse flag must reset properly per shop/blind and not allow infinite reuse.
+
+Medium Priority
+
+Synergy Scroll + Mime: Retriggering enhancements on special colors while Mime is active.
+UNO Draw 2 / UNO Skip: Per-blind flags must not carry over between blinds or runs.
+Necromancer’s Needle + destroyed dice tracking: Revive logic must work with full_bag sync.
+Sorcerer’s Surge: Random mult per turn — must reset correctly on new_turn.
+
+Low Priority
+
+Most color-specific charms (Greedy Gambler, Envy Echo, etc.) are straightforward but should be tested with rainbow/wild dice.
+Permanent scaling charms (Ice Shard, Square Sphere, etc.) need long-run testing for balance.
+
+
+File Structure & Detailed File Explanations
+
+Root Folder (ChromaRollPython)
+
+ChromaRoll.py (main entry point – ~127 KB)
+This is the heart of the game. It defines the ChromaRollGame class that holds all global state and orchestrates the entire game.
+Key methods and what they do:
+init(): Initializes Pygame, loads all icons/sounds/fonts into caches, sets up audio, creates D20BoonSystem, loads charm icon paths, calls _init_defaults().
+_init_defaults(): Resets all core variables (bag, full_bag, rolls, held, multipliers, flags, etc.) for a fresh game or reset.
+new_turn(): Draws a new hand, resets holds/rerolls/discards, applies per-turn charm effects (Sorcerer’s Surge, Turtle Token, etc.), handles Roll Harmony lock.
+roll_hand() / reroll(): Performs actual dice rolls with animation and boss effect handling.
+score_and_new_turn(): Core scoring logic — calls evaluate_hand, accumulates coins/interest/runes/Luck’s Locket/Echo Ember, handles Tier 1 Prism Fracture reward, shows win popup or triggers game over/Cloak of Cunning.
+advance_blind(): Moves to next blind/stake, refills bag, applies boss effects, resets D20 flags, handles Turtle/Burglar Bag.
+generate_shop(): Creates shop charms and packs with weighted rarity, handles free Prism Pack from Tier 1.
+apply_rune_effect(): Applies mystic runes to selected dice.
+refresh_bag(): Syncs modifications from bag back to full_bag after rune changes.
+toggle_hold(): Toggles hold on dice with special logic for advantage/Fate’s Favor.
+run(): Main 60 FPS game loop (event handling → update → draw).
+
+states/game.py (main gameplay state – 54 KB)
+Handles everything that happens while actively playing a blind.
+Key methods and what they do:
+enter(): Called when entering the game screen — resets D20 flags, applies Tier 1 bonus, Turtle Token, Burglar Bag, Marble Mystic, forces fresh hand draw, resets advantage/Fates flags.
+update(dt): Handles timers (break effects, temp messages), auto-rolls advantage die.
+draw(): Calls draw_game_screen, overlays popups, draws buttons, advantage/Fates rects, tooltips, Buy Boon/Disadvantage arrows.
+handle_event(event): Processes all mouse input: dice clicks (hold/discard), charm activations (Fate’s Favor, Buy Boon, Disadvantage Dice, Whirlwind Wild, UNO Draw 2, Luchador Lens), bag swap for Familiar’s Foresight, tray rune clicks, button clicks.
+update_die_rects(): Recalculates precise clickable rectangles for hand dice, bag dice, advantage die, and Fate’s Favor die every frame.
+
+states/debug.py (debug menu – 24 KB)
+Provides in-game debug tools for rapid testing.
+Key classes and what they do:
+DebugMenuState: Main debug menu with buttons to access charm/prism/rune debug screens.
+DebugCharmState: Scrollable list of all charms with search box; clicking adds any charm to equipped (bypasses normal limits for testing).
+DebugPrismState: Allows boosting any hand type multiplier instantly.
+DebugRuneSelectState: Lists all mystic runes; selecting one proceeds to dice selection.
+DebugDiceSelectForRune: Lets you select dice for rune application in debug mode (bypasses normal limits).
+TextBox: Reusable search/input box used in charm debug screen.
+This file is extremely useful for isolating charm interactions and testing edge cases without playing full runs.
+
+data.py (32 KB)
+Pure data file containing CHARMS_POOL (all 108 charms), HAND_TYPES, BOSS_EFFECTS, POUCHES, DICE_DESCRIPTIONS, etc.
+d20_boon.py (9 KB)
+Full D20 Boon System logic: roll handling, tier outcomes, fusion, pending rewards.
+scoring.py (35 KB)
+The complete scoring engine: evaluate_hand function (hand detection, all charm processing, modifiers, dimmed/chroma logic, advantage die).
+constants.py (9 KB)
+All UI/layout constants, colors, sizes, THEME dictionary.
+screens.py (115 KB)
+All pure drawing functions (draw_game_screen, draw_shop_screen, draw_dice, draw_buttons, tooltips, popups, etc.).
+utils.py (4 KB)
+Helper functions (resource_path, tint_image, draw_rounded_element, wrap_text).
+savegame.py (14 KB)
+JSON save/load system for all game progress.
+
+states/ subfolder
+Contains one file per screen state (each inherits from base.py): game.py, shop.py, d20_roll.py, blinds.py, rune.py, pack_select.py, pause.py, splash.py, tutorial.py, end_prompt.py, game_over.py, debug.py, and supporting files like confirm_sell.py, dice_select.py, etc.
+assets/
+Contains all images, icons, fonts, and audio files.
+
+Non-Functional Requirements
+Performance: 60 FPS; optimize for Android (lower res).
+Accessibility: Touch adaptations; color-blind options.
+Audio: SFX; mute toggle.
+Technical Requirements
+
+6.1 Porting Plan
+PC (Steam): Use PyInstaller to build executable. Integrate Steamworks SDK for achievements.
+Android: Use BeeWare or Kivy to port Python code. Adapt mouse to touch. Package as APK via buildozer.
+6.2 Architecture
+Modular; extend data.py for new features. Add blank d20 PNG to /assets/ for boon rendering.
+
+Roadmap and Next Steps
+Short-term: Polish bag unlocks, full achievements screen, endless mode, final boss variants.
+Medium-term: Tutorial expansions, balance passes on all 108 charms.
+Long-term: Android/PC ports.
