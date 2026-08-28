@@ -223,6 +223,7 @@ def draw_game_screen(game):
             game.broken_dice = []
             game.break_effect_start = 0
     draw_text(game)
+    draw_d20_hud(game)
 
     draw_bag_visual(game)
     # Add equipped charms drawing loop here (with grayscale for disabled)
@@ -278,9 +279,17 @@ def draw_game_screen(game):
             if charm['type'] == 'retrigger_special':
                 tooltip_text += "\nPreview: Retriggers special color effects"
             if charm['type'] == 'mult_per_enhance':
-                enhance_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die.get('enhancements'))
-                mult_add = charm['value'] * enhance_count
-                tooltip_text += f"\nPreview: +{mult_add:.1f} ({enhance_count} enhancements)"
+                enhance_name = charm.get('enhance') or charm.get('enh')
+                if enhance_name:
+                    bag = getattr(game, 'full_bag', None) or getattr(game, 'bag', []) or []
+                    enhance_count = sum(1 for d in bag if d and enhance_name in (d.get('enhancements') or []))
+                    mult_add = charm['value'] * enhance_count
+                    tooltip_text += f"\nPreview: +{mult_add:.1f} ({enhance_count} {enhance_name} in bag)"
+                else:
+                    held = [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i] and d is not None]
+                    enhance_count = sum(len(die.get('enhancements') or []) for die, _ in held)
+                    mult_add = charm['value'] * enhance_count
+                    tooltip_text += f"\nPreview: +{mult_add:.1f} ({enhance_count} enhancements)"
             if charm['type'] == 'discard_mult':
                 discards_used = getattr(game, 'discards_used_this_round', 0)
                 mult_add = charm['value'] * discards_used
@@ -581,9 +590,17 @@ def draw_shop_screen(game, skip_tooltips=False):
             if charm['type'] == 'retrigger_special':
                 tooltip_text += "\nPreview: Retriggers special color effects"
             if charm['type'] == 'mult_per_enhance':
-                enhance_count = sum(1 for die, _ in [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i]] if die.get('enhancements'))
-                mult_add = charm['value'] * enhance_count
-                tooltip_text += f"\nPreview: +{mult_add:.1f} ({enhance_count} enhancements)"
+                enhance_name = charm.get('enhance') or charm.get('enh')
+                if enhance_name:
+                    bag = getattr(game, 'full_bag', None) or getattr(game, 'bag', []) or []
+                    enhance_count = sum(1 for d in bag if d and enhance_name in (d.get('enhancements') or []))
+                    mult_add = charm['value'] * enhance_count
+                    tooltip_text += f"\nPreview: +{mult_add:.1f} ({enhance_count} {enhance_name} in bag)"
+                else:
+                    held = [(d, v) for i, (d, v) in enumerate(game.rolls) if game.held[i] and d is not None]
+                    enhance_count = sum(len(die.get('enhancements') or []) for die, _ in held)
+                    mult_add = charm['value'] * enhance_count
+                    tooltip_text += f"\nPreview: +{mult_add:.1f} ({enhance_count} enhancements)"
             if charm['type'] == 'discard_mult':
                 discards_used = getattr(game, 'discards_used_this_round', 0)
                 mult_add = charm['value'] * discards_used
@@ -692,16 +709,17 @@ def draw_shop_screen(game, skip_tooltips=False):
     game.screen.blit(pack_title, (panel_x + inner_padding, shop_charms_y + constants.CHARM_BOX_HEIGHT + 20))  # Below shop charms
     pack_y = shop_charms_y + constants.CHARM_BOX_HEIGHT + 50 # Space below charms
     pack_rects = []
-    pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9, 0]  # FIXED: Append 0 for Recycler pack_idx=9
-    pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5] # Append rune pack choices
+    pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9, 0, 0]  # idx 10 = FREE D20 prism
+    pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5, 1, 5]
     pack_names = [
         "Basic Prism (1 of 2)", "Standard Prism (1 of 3)", "Premium Prism (1 of 5)",
         "Dice Pack (1 of 3)", "Dice Pack (1 of 4)", "Special Dice Pack (1 of 3)",
         "Basic Rune Pack (1 of 3)", "Mega Rune Pack (1 of 5)", "Super Rune Pack (2 of 5)",
-        "Reused Rune (Free)"  # NEW: For pack_idx=9 (Recycler)
-    ] # Append rune pack names
-    pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5, 1]  # FIXED: Append 1 for single reused rune
-    pack_select_num = [1, 1, 1, 1, 1, 1, 1, 1, 2, 1]  # FIXED: Append 1 for single
+        "Reused Rune (Free)",
+        "FREE Prism Pack (D20 Reward)",
+    ]
+    pack_select_num = [1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1]
+
     pack_x_start = panel_x + inner_padding # Left-aligned
     pack_x = pack_x_start
     for pack_idx in game.available_packs:
@@ -711,6 +729,11 @@ def draw_shop_screen(game, skip_tooltips=False):
         # Draw icon centered (your existing logic)
         if pack_idx in [0,1,2]:
             draw_prism_pack_icon(game, pack_idx, pack_rect.x, pack_rect.y + 10)
+        elif pack_idx == 10:
+            draw_prism_pack_icon(game, 2, pack_rect.x, pack_rect.y + 10)
+            pygame.draw.rect(game.screen, (255, 215, 0), pack_rect, 3, border_radius=6)
+            free_lbl = getattr(game, 'tiny_font', game.small_font).render("FREE", True, (255, 215, 0))
+            game.screen.blit(free_lbl, (pack_rect.centerx - free_lbl.get_width() // 2, pack_rect.bottom - 18))
         elif pack_idx in [3,4,5]:
             cycle = constants.BASE_COLORS if pack_idx in [3,4] else constants.SPECIAL_COLORS
             draw_pack_icon(game, pack_rect, pack_choices_num[pack_idx], cycle)
@@ -1131,9 +1154,14 @@ def draw_dice(game):
         ]
         draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=inner_content)
 
-        # New: Green border if in selecting mode for Fate's Favor
-        if game.selecting_fates_die:
+        # New: Green border if in selecting mode for Fate's Favor or Roll Flow
+        if game.selecting_fates_die or getattr(game, 'selecting_advantage_die', False):
             pygame.draw.rect(game.screen, (0, 255, 0), rect, 2)  # Green selector on all dice
+
+        # Fusion: gold ring on fused-color dice during an intensified blind
+        boon = getattr(game, 'd20_boon', None)
+        if boon and boon.active and boon.fused_color and die.get('color') == boon.fused_color:
+            pygame.draw.rect(game.screen, constants.COLORS.get(boon.fused_color, (255, 215, 0)), rect.inflate(6, 6), 2, border_radius=constants.DIE_BORDER_RADIUS + 2)
 
         # Held highlight + D20 Tier 3 (Roll Harmony) locked die
         is_locked = hasattr(game, 'intensified_locked_die_idx') and i == game.intensified_locked_die_idx
@@ -1145,8 +1173,9 @@ def draw_dice(game):
 
         # Draw advantage duplicate if in rolling phase (Roll Flow / Amulet)
         if not game.is_discard_phase and game.has_advantage and game.advantage_value is not None:
-            # Use the selected index (from Roll Flow or Amulet) — falls back to center only if somehow missing
-            adv_index = getattr(game, 'fates_advantage_index', 2) if hasattr(game, 'fates_advantage_index') and game.fates_advantage_index != -1 else 2
+            adv_index = getattr(game, 'd20_advantage_index', -1)
+            if adv_index < 0:
+                adv_index = 2
             x = start_x + adv_index * (constants.DIE_SIZE + 20)
             adv_y = (game.height - constants.DIE_SIZE - 100) - constants.DIE_SIZE - 10
             adv_size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held_advantage else constants.DIE_SIZE
@@ -1426,6 +1455,23 @@ def draw_text(self):
         score_y += (len(self.current_modifier_lines) - 1) * (self.small_font.get_height() + 2)
     score_text = self.small_font.render(f"Score: {self.round_score}/{int(self.get_blind_target())}", True, THEME['text'])
     self.screen.blit(score_text, (50, score_y))
+
+
+def draw_d20_hud(game):
+    """Live D20 banner under the score so fusion / intensifies are visible in play."""
+    boon = getattr(game, 'd20_boon', None)
+    if not boon:
+        return
+    lines = boon.hud_lines() if hasattr(boon, 'hud_lines') else []
+    if not lines:
+        return
+    font = getattr(game, 'tiny_font', game.small_font)
+    x = 50
+    y = 210
+    for line in lines[:4]:
+        surf = font.render(line[:70], True, constants.THEME.get('highlight', (255, 215, 0)))
+        game.screen.blit(surf, (x, y))
+        y += 18
 
 def draw_charm_die(game, rect, charm, index=None):
     """Draws a charm as a die with icon inside. Grays out if disabled using built-in Pygame transform."""

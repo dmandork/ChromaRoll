@@ -102,6 +102,13 @@ def save_game(game):
 
         # New for Gambler's Grimoire
         'used_rune_cast_this_shop': game.used_rune_cast_this_shop,
+        'd20_boon': game.d20_boon.to_dict() if hasattr(game, 'd20_boon') and game.d20_boon else {},
+        'fused_color': getattr(game, 'fused_color', None),
+        'has_free_prism_pack': getattr(game, 'has_free_prism_pack', False),
+        'target_mult': getattr(game, 'target_mult', 1.0),
+        'd20_advantage_index': getattr(game, 'd20_advantage_index', -1),
+        'selecting_advantage_die': getattr(game, 'selecting_advantage_die', False),
+        '_d20_prism_in_current_shop': getattr(game, '_d20_prism_in_current_shop', False),
     }
     try:
         with open('save.json', 'w') as f:
@@ -229,6 +236,18 @@ def load_game(game):
         game.equipped_charms = copy.deepcopy(save_data.get('equipped_charms', []))
         game.disabled_charms = save_data.get('disabled_charms', [])
         print(f"Debug: Loaded equipped_charms = {[c['name'] for c in game.equipped_charms]}, disabled = {game.disabled_charms}")  # ADD: Check load
+
+        from d20_boon import D20BoonSystem
+        if not hasattr(game, 'd20_boon') or game.d20_boon is None:
+            game.d20_boon = D20BoonSystem()
+        game.d20_boon.from_dict(save_data.get('d20_boon', {}))
+        game.fused_color = save_data.get('fused_color', None)
+        game.has_free_prism_pack = save_data.get('has_free_prism_pack', False)
+        game.target_mult = save_data.get('target_mult', 1.0)
+        game.d20_advantage_index = save_data.get('d20_advantage_index', -1)
+        game.selecting_advantage_die = save_data.get('selecting_advantage_die', False)
+        game._d20_prism_in_current_shop = save_data.get('_d20_prism_in_current_shop', False)
+        game.d20_boon.sync_legacy_flags(game)
 
         # In load_game, remove/replace the existing if-block with:
         game.apply_boss_face_shuffle()

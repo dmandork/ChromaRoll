@@ -36,50 +36,26 @@ class GameState(State):
     def enter(self):
         print(f"DEBUG: Equipped charms in GameState.enter: {[c['name'] for c in self.game.equipped_charms]}")
         print(f"DEBUG: GameState enter – is_resuming: {self.game.is_resuming}, last_state_was_rune: {self.game.last_state_was_rune}, rolls len: {len(self.game.rolls)}, bag len: {len(self.game.bag)}")  # TEMP
-        print(f"DEBUG: GameState.enter() → d20_boon.pending_buff = {self.game.d20_boon.pending_buff if hasattr(self.game, 'd20_boon') and self.game.d20_boon else None}")
-                # === D20 RESET - Clear ALL intensified effects for new blind ===
-        # BUT PROTECT pending_buff / pending_free_pack so rewards can be applied in advance_blind
-        pending_buff_to_keep = None
-        pending_free_pack_to_keep = None
-        if hasattr(self.game, 'd20_boon') and self.game.d20_boon:
-            pending_buff_to_keep = self.game.d20_boon.pending_buff
-            pending_free_pack_to_keep = getattr(self.game.d20_boon, 'pending_free_pack', None)
 
-        if not getattr(self.game, 'from_d20_intensify', False):
-            self.game.intensified_locked_die_idx = -1
-            self.game.roll_harmony_active = False
-            self.game.intensified_dimmed_color = None
-            self.game.intensified_disabled_type = None
-            self.game.intensified_global_color_mult = 1.0
-            self.game.intensified_buff = None
-            print("DEBUG: D20 flags reset for new blind")
+        resuming = bool(
+            self.game.is_resuming
+            or self.game.last_state_was_rune
+            or getattr(self.game, 'from_shop_rune_use', False)
+        )
+
+        if not resuming:
+            # Fresh blind: apply queued D20 win-rewards UNLESS this IS the intensified
+            # blind (those queues belong to the blind AFTER we beat this one).
+            if hasattr(self.game, 'd20_boon') and self.game.d20_boon:
+                if not self.game.d20_boon.active:
+                    self.game.d20_boon.begin_next_blind(self.game)
+                self.game.d20_boon.sync_legacy_flags(self.game)
+
         else:
-            self.game.from_d20_intensify = False  # consume the flag (keep effects for this blind)
-            print("DEBUG: Came from D20 roll — kept intensified effects")
+            if hasattr(self.game, 'd20_boon') and self.game.d20_boon:
+                self.game.d20_boon.sync_legacy_flags(self.game)
 
-        # RESTORE the pending reward data (this was the missing piece)
-        if pending_buff_to_keep is not None and hasattr(self.game, 'd20_boon') and self.game.d20_boon:
-            self.game.d20_boon.pending_buff = pending_buff_to_keep
-            self.game.d20_boon.pending_free_pack = pending_free_pack_to_keep
-            print("DEBUG: Restored pending_buff for Tier 1 success reward")
-        
-        """# === APPLY TIER 1 BONUS (isolated path — Prism Pack cannot touch this) ===
-        if hasattr(self.game, 'tier1_disabled_hand') and self.game.tier1_disabled_hand:
-            disabled = self.game.tier1_disabled_hand
-            if not hasattr(self.game, 'hand_multipliers'):
-                self.game.hand_multipliers = {}
-            self.game.hand_multipliers[disabled] = 2.0
-            self.game.temp_message = f"Tier 1 Success! +2× on {disabled} this blind!"
-            self.game.temp_message_start = time.time()
-            print(f"DEBUG: Applied Tier 1 +2x on '{disabled}' (Prism Pack untouched)")
-            # Consume the flag so it only applies once
-            del self.game.tier1_disabled_hand """
-
-        # NEW: Carry pending buff to this blind's first hand (e.g., Hue Dimming 2x)
-        if hasattr(self.game, 'pending_buff_mult') and self.game.pending_buff_mult != 1.0:
-            self.game.temp_intensify_mult = self.game.pending_buff_mult
-            print(f"DEBUG: Applied carried buff to first hand: x{self.game.temp_intensify_mult}")  # TEMP
-            del self.game.pending_buff_mult  # Consume
+        self.game.entering_fresh_blind = False
         if self.game.from_shop_rune_use:  # Shop entry - force fresh pull
             print("DEBUG: From shop rune – forcing fresh pull")  # TEMP
             self.game.from_shop_rune_use = False
@@ -186,8 +162,16 @@ class GameState(State):
         self.game.swap_source_index = -1
         self.game.selecting_bag_die = False 
 
-        self.show_instruction_popup = False 
-        
+        self.show_instruction_popup = False
+
+        # D20 extras after Burglar/Turtle so they cannot be wiped.
+        if (not resuming) and hasattr(self.game, 'd20_boon') and self.game.d20_boon:
+            self.game.d20_boon.grant_this_blind_resources(self.game)
+            if self.game.d20_boon.flow_advantage and self.game.d20_boon.active:
+                if getattr(self.game, 'd20_advantage_index', -1) < 0:
+                    self.game.selecting_advantage_die = True
+            self.game.d20_boon.sync_legacy_flags(self.game)
+
 
     def update(self, dt):
         # Handle animations/timers (e.g., break effects, temp messages)
@@ -372,6 +356,23 @@ class GameState(State):
                 # print("DEBUG: Buy Boon confirmed early; used up")
                 return
 
+            # Roll Flow: pick an advantage die BEFORE normal hold/discard so the
+            # same click does not also toggle hold.
+            if (not self.game.is_discard_phase
+                    and getattr(self.game, 'selecting_advantage_die', False)
+                    and getattr(self.game, 'd20_advantage_index', -1) < 0):
+                for i, die_rect in enumerate(self.game.hand_die_rects):
+                    if die_rect.collidepoint(mouse_pos):
+                        self.game.d20_advantage_index = i
+                        self.game.has_advantage = True
+                        self.game.advantage_value = random.randint(1, 6)
+                        self.game.held_advantage = False
+                        self.game.selecting_advantage_die = False
+                        self.game.temp_message = f"Advantage on die {i+1}! Click the copy above to hold it."
+                        self.game.temp_message_start = time.time()
+                        print(f"DEBUG: Selected die {i} for Roll Flow advantage: {self.game.advantage_value}")
+                        return
+
             # Dice clicks (using visual hand_die_rects[i] for precise hits)
             for i, die_rect in enumerate(self.game.hand_die_rects):
                 if die_rect.collidepoint(mouse_pos):
@@ -393,7 +394,9 @@ class GameState(State):
                             self.game.toggle_hold(i)
                             
                             # === ROLL FLOW ADVANTAGE (Tier 4) - dynamic exclusion ===
-                            adv_index = getattr(self.game, 'fates_advantage_index', -1)
+                            adv_index = getattr(self.game, 'd20_advantage_index', -1)
+                            if adv_index < 0:
+                                adv_index = 2 if self.game.has_advantage else -1
                             if adv_index != -1 and self.game.has_advantage:
                                 if i == adv_index and self.game.held[i]:
                                     self.game.held_advantage = False  # Unhold advantage if original is held
@@ -401,25 +404,11 @@ class GameState(State):
                             # print(f"Debug: Toggled die {i} - held[{i}] = {self.game.held[i]}")  # Debug for 3rd die
                         break  # Stop after handling one die click
 
-            # NEW: Roll Flow advantage selection (roll phase only, first hand)
-            if not self.game.is_discard_phase and hasattr(self.game, 'selecting_advantage_die') and self.game.selecting_advantage_die:
-                for i in range(NUM_DICE_IN_HAND):
-                    die_rect = self.game.hand_die_rects[i]
-                    if die_rect.collidepoint(mouse_pos):
-                        # Spawn advantage copy above (reuse Amulet logic)
-                        self.game.has_advantage = True
-                        self.game.advantage_value = random.randint(1, 6)
-                        self.game.held_advantage = False  # Start unheld
-                        self.game.fates_advantage_index = i  # Reuse for pos (or new flag)
-                        self.game.selecting_advantage_die = False  # Exit mode
-                        self.game.temp_message = f"Advantage on die {i+1}! Choose to hold."
-                        self.game.temp_message_start = time.time()
-                        print(f"DEBUG: Selected die {i} for Roll Flow advantage: {self.game.advantage_value}")
-                        break
-
-            # Advantage choice clicks (Roll Flow) - recalculate rect on-the-fly so click detection matches visual position
+            # Advantage choice clicks (Roll Flow / Amulet) - match the drawn copy
             if not self.game.is_discard_phase and self.game.has_advantage and self.game.advantage_value is not None:
-                adv_index = getattr(self.game, 'fates_advantage_index', 2)
+                adv_index = getattr(self.game, 'd20_advantage_index', -1)
+                if adv_index < 0:
+                    adv_index = 2
                 
                 # Recalculate start_x exactly like draw_dice does
                 total_dice_width = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
@@ -441,9 +430,6 @@ class GameState(State):
                     
                     print(f"DEBUG: Toggled advantage on die {adv_index + 1} - held_advantage = {self.game.held_advantage}")
                     self.game.update_hand_text()
-                # REMOVED: elif center_die_rect toggle (handled precisely in main loop above)
-            
-            
             # Fate's Favor advantage toggle
             if not self.game.is_discard_phase and self.game.fates_advantage_index != -1 and self.game.fates_advantage_value is not None:
                 fates_rect = getattr(self.game, 'fates_advantage_die_rect', None)  # Safe access

@@ -72,22 +72,35 @@ def evaluate_hand(game, is_preview=True):
     original_rolls = held_rolls[:]
     modifier_desc = []
 
-    # === HUE DIMMING (D20 Tier 2) - Flat -20% if ANY dimmed die is used ===
+    boon = getattr(game, 'd20_boon', None)
+
+    # Wildcard: fused color acts as Rainbow for color bonuses this hand
+    if boon and boon.wildcard_color:
+        wild = boon.wildcard_color
+        rewritten = []
+        for die, val in held_rolls:
+            if die.get('color') == wild:
+                d = die.copy()
+                d['color'] = 'Rainbow'
+                rewritten.append((d, val))
+            else:
+                rewritten.append((die, val))
+        held_rolls = rewritten
+
+    held_colors = [die.get('color') for die, _ in held_rolls]
+
+    # Hue Dimming — applied ONCE at the end via boon.dim_factor, not here
     dimmed_mult = 1.0
-    dimmed_count = 0
 
-    if hasattr(game, 'intensified_dimmed_color') and game.intensified_dimmed_color:
-        dimmed_color = game.intensified_dimmed_color
-        dimmed_count = sum(1 for die, _ in held_rolls if die.get('color') == dimmed_color)
-        if dimmed_count > 0:
-            dimmed_mult = 0.8
-            modifier_desc.append(f"Dimmed {dimmed_color}: x0.8 score (-20%)")
-
-    # === ADVANTAGE / FATE'S FAVOR - ADD AFTER STRAIGHT DETECTION ===
+    # === ADVANTAGE / FATE'S FAVOR / D20 ROLL FLOW ===
     if game.has_advantage and game.held_advantage:
-        original_die = game.rolls[2][0]
-        advantage_die = original_die.copy()  # Copy the full die object so color is preserved
-        held_rolls.append((advantage_die, game.advantage_value))
+        adv_idx = getattr(game, 'd20_advantage_index', -1)
+        if adv_idx < 0:
+            adv_idx = 2  # Advantage Amulet: center die
+        if 0 <= adv_idx < len(game.rolls) and game.rolls[adv_idx][0]:
+            original_die = game.rolls[adv_idx][0]
+            advantage_die = original_die.copy()
+            held_rolls.append((advantage_die, game.advantage_value))
 
     if game.fates_advantage_index != -1 and game.held_fates_advantage:
         original_die = game.rolls[game.fates_advantage_index][0]
@@ -412,14 +425,25 @@ def evaluate_hand(game, is_preview=True):
                 modifier_desc.append(f"{charm['name']} +{mult_add} ({count} {charm['color']})")
 
         elif charm['type'] == 'mult_conditional':
-            if 'local_turns' not in charm:
-                charm['local_turns'] = 0
-            local_turn = charm['local_turns']
-            every = charm.get('every', 6)
-            if local_turn % every == 0:
-                mult_add = charm['value']
-                charm_mult_add += mult_add
-                modifier_desc.append(f"{charm['name']} +{mult_add}")
+            # Flower Pot (mono), Glass Globe (glass), Loyalty Luck (every N turns)
+            if charm.get('mono'):
+                actual = [die.get('color') for die, _ in held_rolls if die.get('color') != 'Rainbow']
+                if held_rolls and len(set(actual)) <= 1:
+                    charm_mult_add += charm['value']
+                    modifier_desc.append(f"{charm['name']} +{charm['value']} (mono)")
+            elif charm.get('glass'):
+                if any(die.get('color') == 'Glass' for die, _ in held_rolls):
+                    charm_mult_add += charm['value']
+                    modifier_desc.append(f"{charm['name']} +{charm['value']} (glass)")
+            elif charm.get('every'):
+                if 'local_turns' not in charm:
+                    charm['local_turns'] = 0
+                local_turn = charm['local_turns']
+                every = charm['every']
+                if local_turn > 0 and local_turn % every == 0:
+                    mult_add = charm['value']
+                    charm_mult_add += mult_add
+                    modifier_desc.append(f"{charm['name']} +{mult_add}")
 
         elif charm['type'] == 'mult_per_face':
             count = sum(1 for _, v in held_rolls if v in charm['faces'])
@@ -480,10 +504,18 @@ def evaluate_hand(game, is_preview=True):
                 game.extra_coins += green_count
                 modifier_desc.append(f"{charm['name']} +{green_count} coins ({green_count} {charm['color']})")
 
-        elif charm['type'] == 'retrigger' and 'hands' in charm and 'kinds' in charm['hands']:
-            if hand_type in ['3 of a Kind', '4 of a Kind', '5 of a Kind']:
+        elif charm['type'] == 'retrigger':
+            hands = charm.get('hands')
+            is_kinds = hands == 'kinds' or (isinstance(hands, str) and 'kinds' in hands) or (
+                isinstance(hands, (list, tuple)) and 'kinds' in hands
+            )
+            if is_kinds and hand_type in ['3 of a Kind', '4 of a Kind', '5 of a Kind']:
                 retrigger_mult *= 2
                 modifier_desc.append(f"{charm['name']} x2 (kinds retrigger)")
+            elif charm.get('target') == 'final_hand':
+                if getattr(game, 'is_last_hand', False) or getattr(game, 'hands_left', 99) == 1:
+                    retrigger_mult *= 2
+                    modifier_desc.append(f"{charm['name']} x2 (final hand)")
 
         elif charm['type'] == 'advantage_choice':
             pass  # handled elsewhere
@@ -509,11 +541,22 @@ def evaluate_hand(game, is_preview=True):
             pass
 
         elif charm['type'] == 'mult_per_enhance':
-            total_enhancements = sum(len(die.get('enhancements', [])) for die, _ in held_rolls)
-            mult_add = charm['value'] * total_enhancements
-            if mult_add > 0:
-                charm_mult_add += mult_add
-                modifier_desc.append(f"{charm['name']} +{mult_add} ({total_enhancements} enhancements)")
+            enhance_name = charm.get('enhance') or charm.get('enh')
+            if enhance_name:
+                # Steel Seal: count that enhancement across the owned bag
+                bag = getattr(game, 'full_bag', None) or getattr(game, 'bag', []) or []
+                count = sum(1 for d in bag if d and enhance_name in (d.get('enhancements') or []))
+                mult_add = charm['value'] * count
+                if mult_add > 0:
+                    charm_mult_add += mult_add
+                    modifier_desc.append(f"{charm['name']} +{mult_add} ({count} {enhance_name} in bag)")
+            else:
+                # Enhance Elixir: per enhancement on scored dice
+                total_enhancements = sum(len(die.get('enhancements') or []) for die, _ in held_rolls)
+                mult_add = charm['value'] * total_enhancements
+                if mult_add > 0:
+                    charm_mult_add += mult_add
+                    modifier_desc.append(f"{charm['name']} +{mult_add} ({total_enhancements} enhancements)")
 
         elif charm['type'] == 'discard_mult':
             mult_add = charm['value'] * getattr(game, 'discards_used_this_round', 0)
@@ -586,9 +629,7 @@ def evaluate_hand(game, is_preview=True):
             pass
 
         elif charm['type'] == 'mult_final_discard':
-            if not is_preview and getattr(game, 'is_final_discard', False):
-                charm_mult_add += charm['value']
-                modifier_desc.append(f"{charm['name']} +{charm['value']} (final discard)")
+            pass  # applied once via game.final_discard_mult — do not stack here
 
         elif charm['type'] == 'score_per_coin':
             charm_chips += charm['value'] * game.coins
@@ -610,42 +651,31 @@ def evaluate_hand(game, is_preview=True):
         elif charm['type'] == 'score_decay':
             if 'hands_played' not in charm:
                 charm['hands_played'] = 0
-            preview_hands = charm['hands_played'] + (0 if is_preview else 1)
+            # Preview must match the actual upcoming score: always treat this as hand N+1.
+            preview_hands = charm['hands_played'] + 1
             decay_bonus = max(0, charm['start'] - (charm['decay'] * (preview_hands - 1)))
             charm_chips += decay_bonus
             modifier_desc.append(f"{charm['name']} +{decay_bonus} (hand {preview_hands})")
 
         elif charm['type'] == 'score_conditional':
             if len(held_rolls) == charm['dice']:
-                charm_chips += charm['value']
-                charm_chips += charm.get('permanent_bonus', 0)
+                this_add = charm['value'] + charm.get('permanent_bonus', 0)
+                charm_chips += this_add
+                modifier_desc.append(f"{charm['name']} +{this_add} ({len(held_rolls)} dice)")
 
         elif charm['type'] == 'die_bonus_perm':
             pass
 
-    # Intensified disabled type
-    if hasattr(game, 'intensified_disabled_type') and game.intensified_disabled_type:
-        if hand_type == game.intensified_disabled_type:
-            base_score = 0
-            modifier_desc.append(f"Blocked {hand_type}: 0 score—adapt!")
-            final_score = 0
+    # Intensified disabled type (fusion: hands that include the exempt color still score)
+    held_colors_now = [die.get('color') for die, _ in held_rolls]
+    if boon and boon.is_hand_blocked(hand_type, held_colors_now):
+        base_score = 0
+        modifier_desc.append(f"Blocked {hand_type}: 0 score—adapt!")
+        final_score = 0
 
     # Per-die score_bonus
     for die, _ in held_rolls:
         charm_chips += die.get('score_bonus', 0)
-
-    # === D20 HUE DIMMING - +30% to the specific color NEXT BLIND ONLY ===
-    if hasattr(game, 'next_blind_color_mults') and game.next_blind_color_mults:
-        for color, mult in list(game.next_blind_color_mults.items()):
-            count = sum(1 for die, _ in held_rolls if die.get('color') == color)
-            if count > 0:
-                color_bonus = (mult - 1.0)   # e.g. +0.3 for 30%
-                charm_color_mult_add += color_bonus
-                modifier_desc.append(f"{color} +{int(color_bonus*100)}% (D20 Hue Dimming)")
-
-        # === Clear after this blind is finished ===
-        # This makes the +30% apply for the FULL next blind, then disappear forever
-        game.next_blind_color_mults = {}
 
     total_modifier = base_modifier + charm_color_mult_add + rune_mult_add + charm_mult_add
 
@@ -661,21 +691,16 @@ def evaluate_hand(game, is_preview=True):
     total_modifier += game.final_discard_mult
     if game.final_discard_mult > 0:
         modifier_desc.append(f"Acrobat Amulet +{game.final_discard_mult}")
+        if not is_preview:
+            game.final_discard_mult = 0
+            game.is_final_discard = False
 
-    # === Hand-Type Multipliers: Prism Pack (additive) + D20 Tier 1 (multiplicative ONLY) ===
-    prism_mult = game.hand_multipliers.get(hand_type, 1.0)
-    d20_mult = 1.0
-    if hasattr(game, 'pending_type_mult') and hand_type in game.pending_type_mult:
-        d20_mult = game.pending_type_mult[hand_type]
-
-    # Prism Pack stays additive (exactly like every other bonus)
-    if prism_mult > 1.0:
-        total_modifier += (prism_mult - 1.0)
-        modifier_desc.append(f"{hand_type} {prism_mult:.1f}x (Prism Pack)")
-
-    # D20 Tier 1 is kept separate — we will multiply with it later
-    if d20_mult > 1.0:
-        modifier_desc.append(f"{hand_type} {d20_mult:.1f}x (D20 Tier 1)")
+    # === Hand-Type Multipliers (Prism Pack only — D20 type bonus is separate) ===
+    if hand_type in game.hand_multipliers:
+        full_mult = game.hand_multipliers[hand_type]
+        total_modifier += full_mult - 1
+        if full_mult > 1.0:
+            modifier_desc.append(f"{hand_type} {full_mult:.1f}x (Prism)")
 
     silence_glass = game.current_blind == 'Boss' and game.current_boss_effect and game.current_boss_effect['name'] == 'Special Silence'
     glass_count = sum(1 for die, _ in held_rolls if die['color'] == 'Glass')
@@ -703,17 +728,25 @@ def evaluate_hand(game, is_preview=True):
                 retrigger_mult *= 2
                 modifier_desc.append(f"{charm['name']} x2 (retrigger)")
 
-    # === TIER 5 CHROMA RADIANCE - Simple +30% to final score (LAST STEP) ===
-    is_chroma_radiance = False
-    if hasattr(game, 'd20_boon') and game.d20_boon is not None:
-        if game.d20_boon.outcome and game.d20_boon.outcome.get('name') == 'Chroma Radiance':
-            is_chroma_radiance = True
-    if getattr(game, 'intensified_global_color_mult', 1.0) > 1.0:
-        is_chroma_radiance = True
+    # === D20 Boon extras (single place, no double-dim) ===
+    d20_mult = 1.0
+    if boon:
+        colors_for_boon = [die.get('color') for die, _ in original_rolls]
+        if boon.is_hand_blocked(hand_type, colors_for_boon):
+            final_score = 0
+            modifier_desc.append(f"Blocked {hand_type}: 0 score—adapt!")
+            modifier_desc = ", ".join(modifier_desc) if modifier_desc else "None"
+            return hand_type, 0, modifier_desc, 0, charm_chips, charm_color_mult_add
 
-    chroma_mult = 1.3 if is_chroma_radiance else 1.0
-    if chroma_mult > 1.0:
-        modifier_desc.append("Chroma Radiance +30% all colors")
+        dim = boon.dim_factor(colors_for_boon)
+        extra = boon.extra_score_mult(hand_type, consume_next_hand=not is_preview)
+        color_m = boon.color_score_mult(colors_for_boon)
+        d20_mult = dim * extra * color_m
+        for note in boon.modifier_notes(hand_type, colors_for_boon):
+            if note not in modifier_desc:
+                modifier_desc.append(note)
+
+    chroma_mult = 1.0  # radiance is inside boon.color_score_mult now
 
     # Final score assembly
     final_score = int(((base_score * dimmed_mult) + charm_chips + rune_chips) * (1 + total_modifier) * retrigger_mult * chroma_mult * d20_mult)

@@ -147,14 +147,19 @@ class BlindsState(State):
                 self.game.is_discard_phase = True  # Start with discard
                 self.game.has_rolled = False
                 self.game.bag[:] = [copy.deepcopy(d) for d in self.game.full_bag]  # Refill bag
+                self.game.entering_fresh_blind = True
+                if hasattr(self.game, 'd20_boon') and self.game.d20_boon:
+                    self.game.d20_boon.begin_next_blind(self.game)
                 self.game.state_machine.change_state(GameState(self.game))
                 return
 
             # NEW: Single intensify button for current blind
             if self.intensify_rect and self.intensify_rect.collidepoint(mouse_pos):
                 from .d20_roll import D20RollState
-                self.game.state_machine.change_state(D20RollState(self.game, self.game.current_blind))  # Trigger for current
+                self.game.entering_fresh_blind = True
+                self.game.state_machine.change_state(D20RollState(self.game, self.game.current_blind))
                 return
+
 
             if DEBUG:
                 # Existing boss dropdown handling

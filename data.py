@@ -273,34 +273,30 @@ ENH_EFFECTS = {
 }
 
 D20_OUTCOMES = [
-    # 1-4: Crit Fail
+    # Static table. Randomization happens in d20_boon.apply_roll, never at import.
     {'min': 1, 'max': 4, 'outcome': {
         'name': 'Prism Fracture', 'desc': 'High risk: +50% target, disable 1 hand type this blind.',
-        'downside': {'target_mult': 1.5, 'disabled_type': random.choice(HAND_TYPES)},  # e.g., 'Small Straight'
-        'buff': {'mult_next': 2.0, 'free_pack': 'prism'}  # Reward on win
+        'downside': {'target_mult': 1.5},
+        'buff': {},
     }},
-    # 5-8: Challenging
     {'min': 5, 'max': 8, 'outcome': {
-        'name': 'Hue Dimming', 'desc': 'Moderate: +25% target, -20% on random color this blind.',
-        'downside': {'target_mult': 1.25, 'dimmed_color_mult': 0.8, 'dimmed_color': random.choice(BASE_COLORS)},
-        'buff': {'mult_next_hand': 2.0, 'coins': 20}
+        'name': 'Hue Dimming', 'desc': 'Moderate: +25% target, -20% on one color this blind.',
+        'downside': {'target_mult': 1.25},
+        'buff': {},
     }},
-    # 9-12: Neutral 
     {'min': 9, 'max': 12, 'outcome': {
         'name': 'Roll Harmony', 'desc': 'Balanced: +8% target, lock 1 die this blind.',
-        'downside': {'target_mult': 1.08, 'locked_die_idx': random.randint(0, 4)},
-        'buff': {'mult_this': 1.5, 'extra_discard': 1}  # +1 extra discard on win
+        'downside': {'target_mult': 1.08},
+        'buff': {},
     }},
-    # 13-16: Favorable
     {'min': 13, 'max': 16, 'outcome': {
         'name': 'Roll Flow', 'desc': 'Ease: -12% target, +1 reroll + advantage on 1 die this blind.',
-        'downside': {'target_mult': 0.88},  # Negative = ease
-        'buff': {'mult_this': 2.5, 'extra_discard': 5, 'extra_reroll': 1}  # +1 reroll on win
+        'downside': {'target_mult': 0.88},
+        'buff': {},
     }},
-    # 17-20: Crit Success
     {'min': 17, 'max': 20, 'outcome': {
         'name': 'Chroma Radiance', 'desc': 'Big win: -25% target, +30% score this blind.',
         'downside': {'target_mult': 0.75, 'global_color_mult': 1.3},
-        'buff': {'mult_next_2': 4.0, 'coins': 50}  # Dropped achievement; add back later if wanted
-    }}
+        'buff': {},
+    }},
 ]

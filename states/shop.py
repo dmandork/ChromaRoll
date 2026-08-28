@@ -10,6 +10,8 @@ from constants import *  # For THEME, BUTTON_WIDTH, SHOP_REROLL_COST, etc.
 from utils import draw_rounded_element, resource_path, wrap_text  # For UI/buttons
 from screens import draw_shop_screen, draw_custom_button, draw_tooltip  # For main shop drawing/buttons
 from data import CHARMS_POOL  # For charm generation/packs
+import data
+
 from states.base import State
 from states.rune import RuneUseState, RuneSelectState  # FIXED: Lazy import at top of handle_event (for IDE/Pylance)
 
@@ -76,40 +78,7 @@ class ShopState(State):
             self.game.temp_message = f"Rune Recycler: {pending_rune['name']} available in shop!"
             self.game.temp_message_start = time.time()
 
-        # Free Prism Pack from Crit Fail comeback
-        if getattr(self.game, 'pending_prism_pack', False):
-            prism_pack = {
-                'name': 'Prism Pack (FREE!)',
-                'cost': 0,
-                'free': True,
-                'desc': 'Crit Fail comeback reward!\nContains powerful prism/rainbow items.',
-                'type': 'prism_pack'  # you can check this in buy logic later
-            }
-            self.game.shop_charms.append(prism_pack)  # appears in normal charm shop slots
-            self.game.pending_prism_pack = False
-            self.game.temp_message = "Crit Fail comeback: Free Prism Pack in shop!"
-            self.game.temp_message_start = time.time()
-
-        # === TIER 1 D20 SUCCESS - Free Prism Pack (Prism Fracture) ===
-        if getattr(self.game, 'has_free_prism_pack', False):
-            self.game.has_free_prism_pack = False
-            
-            # Add as a special FREE charm that opens a pack when bought
-            free_prism_reward = {
-                'name': 'FREE Prism Pack',
-                'cost': 0,
-                'free': True,
-                'type': 'prism_pack',
-                'desc': 'Tier 1 Prism Fracture Success Reward!\nContains powerful prism and rainbow items.',
-                'rarity': 'Legendary',
-                'is_free_prism': True   # Flag for buy logic
-            }
-            
-            self.game.shop_charms.append(free_prism_reward)
-            
-            self.game.temp_message = "Tier 1 Success! FREE Prism Pack added to shop!"
-            self.game.temp_message_start = time.time()
-            print("DEBUG: Tier 1 Free Prism Pack added as special charm in shop_charms")
+        # Free Prism Pack is added in generate_shop as pack index 10 (pack row), not as a charm.
 
     def update(self, dt):
         pass  # Expand for animations if needed
@@ -217,6 +186,9 @@ class ShopState(State):
             # Handle continue to blinds
             if self.continue_rect and self.continue_rect.collidepoint(mouse_pos):
                 self.game.shop_charms = []  # Clear shop
+                self.game._d20_prism_in_current_shop = False
+                if 10 in getattr(self.game, 'available_packs', []):
+                    self.game.available_packs = [p for p in self.game.available_packs if p != 10]
                 # FIXED: Set dummy rolls for new GameState (avoids fresh pull)
                 self.game.rolls = [(None, 0) for _ in range(5)]  # Dummy empty
                 self.game.hand = [None] * 5  # Clear hand
@@ -286,9 +258,9 @@ class ShopState(State):
                     return
 
             # Pack buys
-            pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9]
-            pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5]
-            pack_select_num = [1, 1, 1, 1, 1, 1, 1, 1, 2]
+            pack_costs = [3, 5, 7, 3, 5, 9, 4, 7, 9, 0, 0]
+            pack_choices_num = [2, 3, 5, 3, 4, 3, 3, 5, 5, 1, 5]
+            pack_select_num = [1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1]
 
             for pack_rect, pack_idx in self.pack_rects or []:
                 if pack_rect.collidepoint(mouse_pos):
@@ -319,6 +291,21 @@ class ShopState(State):
                             if hasattr(self.game, '_recycler_used_this_shop'):
                                 delattr(self.game, '_recycler_used_this_shop')
                         self.game.temp_message_start = time.time()
+                        return
+
+                    # FREE Prism Pack from D20 Prism Fracture (pack index 10)
+                    elif pack_idx == 10:
+                        from states.pack_select import PackSelectState
+                        self.game.pack_choices = random.sample(data.HAND_TYPES, 5)
+                        if 10 in self.game.available_packs:
+                            self.game.available_packs.remove(10)
+                        self.game.has_free_prism_pack = False
+                        self.game._d20_prism_in_current_shop = False
+                        if hasattr(self.game, 'd20_boon') and self.game.d20_boon:
+                            self.game.d20_boon.free_prism_pack = False
+                        self.game.temp_message = "Free Prism Pack opened! (D20 Prism Fracture)"
+                        self.game.temp_message_start = time.time()
+                        self.game.state_machine.change_state(PackSelectState(self.game))
                         return
 
                     # === SPECIAL: Free Prism Pack from Tier 1 ===

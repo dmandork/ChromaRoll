@@ -297,6 +297,13 @@ class ChromaRollGame:
         self.use_advantage = False
         self.center_die_rect = None
         self.advantage_die_rect = None
+        self.d20_advantage_index = -1  # Roll Flow selected die; -1 = Amulet center
+        self.selecting_advantage_die = False
+        self.fused_color = None
+        self.has_free_prism_pack = False
+        self.target_mult = 1.0
+        self.intensified_locked_die_idx = -1
+        self._d20_prism_in_current_shop = False
         self.initial_auto_roll_done = False  # For auto-roll in rolling phase
         self.original_center_value = None  # Save original 3rd die value for revert
 
@@ -467,6 +474,7 @@ class ChromaRollGame:
         self.discards_used_this_round = 0  # Track for Discard Drake/Acrobat Amulet
         self.rerolls_left_initial = 3
         self.final_discard_mult = 0  # NEW: For Acrobat Amulet (+2 on last discard)
+        self.cloak_used_this_game = False  # Once per run; reset only in reset_game
         self.hand_play_counts = {ht: 0 for ht in data.HAND_TYPES}  # Track counts per hand type
 
     def update_hand_text(self):
@@ -486,16 +494,24 @@ class ChromaRollGame:
                 self.current_modifier_text = f"Modifiers: {modifier_desc}"
 
                 # BLOCKED type warning
-                if hasattr(self, 'intensified_disabled_type') and self.intensified_disabled_type:
-                    self.current_hand_text = f"BLOCKED: {self.intensified_disabled_type}\n" + self.current_hand_text
-                    if hand_type == self.intensified_disabled_type:
-                        self.current_hand_text += f" (0 score—adapt!)"
+                boon = getattr(self, 'd20_boon', None)
+                blocked_type = boon.disabled_hand_type if boon else getattr(self, 'intensified_disabled_type', None)
+                if blocked_type:
+                    exempt = boon.exempt_color if boon else None
+                    extra = f" (exempt if {exempt})" if exempt else ""
+                    self.current_hand_text = f"BLOCKED: {blocked_type}{extra} — " + self.current_hand_text
+                    held_cols = [die['color'] for die, _ in held_rolls]
+                    if boon and boon.is_hand_blocked(hand_type, held_cols):
+                        self.current_hand_text += " (0 score—adapt!)"
+                    elif hand_type == blocked_type and not exempt:
+                        self.current_hand_text += " (0 score—adapt!)"
 
                 # Dimmed warning
-                if hasattr(self, 'intensified_dimmed_color') and self.intensified_dimmed_color:
-                    affected = any(die['color'] == self.intensified_dimmed_color for die, _ in held_rolls)
+                dim_color = boon.dimmed_color if boon else getattr(self, 'intensified_dimmed_color', None)
+                if dim_color:
+                    affected = any(die['color'] == dim_color for die, _ in held_rolls)
                     if affected:
-                        self.current_hand_text += f" — Dimmed {self.intensified_dimmed_color}: -20% values!"
+                        self.current_hand_text += f" — Dimmed {dim_color}: -20% values!"
 
                 # Build modifier parts
                 modifier_parts = []
@@ -516,7 +532,10 @@ class ChromaRollGame:
                         modifier_parts.append(dagger_text + " (disabled)")
 
 # Prism Pack hand boost
-                # NEW — temporary D20 bonus
+                # (OLD CODE — removed to prevent tooltip duplication)
+                # hand_boost = self.hand_multipliers.get(hand_type, 1.0)
+                # if hand_boost > 1.0:
+                #     modifier_parts.append(f"{hand_type} {hand_boost:.1f}x")
 
                 if modifier_parts:
                     self.current_modifier_text = "Modifiers: " + " + ".join(modifier_parts)
@@ -528,9 +547,9 @@ class ChromaRollGame:
         self.current_modifier_lines = wrap_text(self.small_font, self.current_modifier_text, max_width=450)
 
     def update_advantage_flag(self):
-        self.has_advantage = any(charm['type'] == 'advantage_choice' for charm in self.equipped_charms)
-        # if DEBUG:
-            # print("Debug: Advantage flag updated to", self.has_advantage)
+        amulet = any(charm['type'] == 'advantage_choice' for charm in self.equipped_charms)
+        flow_picked = getattr(self, 'd20_advantage_index', -1) >= 0
+        self.has_advantage = amulet or flow_picked
 
     def toggle_mute(self):
         self.mute = not self.mute
@@ -621,9 +640,11 @@ class ChromaRollGame:
             target *= endless_bonus
         
         # NEW: Apply D20 target_mult if set (intensify downside, e.g., x1.5)
-        if hasattr(self, 'target_mult') and self.target_mult != 1.0:
+        boon = getattr(self, 'd20_boon', None)
+        if boon and boon.active and boon.target_mult != 1.0:
+            target *= boon.target_mult
+        elif hasattr(self, 'target_mult') and self.target_mult != 1.0:
             target *= self.target_mult
-            # print(f"DEBUG: Intensified target: base {int(target / self.target_mult)} -> {int(target)} (x{self.target_mult})")  # TEMP
         
         return int(math.ceil(target))
 
@@ -638,6 +659,7 @@ class ChromaRollGame:
             self.current_stake += 1
             self.current_blind = 'Small'
             self.upcoming_boss_effect = None  # Reset preview for new round/stake
+            self.stake_milestones = getattr(self, 'stake_milestones', 0) + 1
 
         self.confirmed_hands_this_round = 0
 
@@ -650,6 +672,7 @@ class ChromaRollGame:
 
         # NEW: Reset Acrobat Amulet flag per blind
         self.final_discard_mult = 0
+        self.discards_used_this_round = 0
 
         # NEW: Reset Spellbook Scribe flag per blind
         if hasattr(self, '_scribe_used_this_blind'):
@@ -663,35 +686,23 @@ class ChromaRollGame:
         if hasattr(self, '_recycler_used_this_blind'):
             delattr(self, '_recycler_used_this_blind')
 
-        # NEW: Clear intensify states
-        for attr in ['intensified_disabled_type', 'intensified_dimmed_color', 'intensified_locked_die_idx', 'intensified_global_color_mult', 'target_mult']:
+        # D20: pay out win rewards, then clear this-blind effects.
+        # Do this BEFORE round_score is zeroed so we never multiply a 0 score.
+        if hasattr(self, 'd20_boon') and self.d20_boon:
+            if self.d20_boon.active:
+                self.d20_boon.on_blind_won(self)
+            self.d20_boon.end_this_blind(self)
+
+        # Clear leftover intensify attributes (boon.sync already reset the live ones)
+        for attr in ['from_d20_intensify', 'intensified_buff', 'temp_intensify_mult',
+                     'pending_buff_mult', 'pending_type_mult', 'tier1_disabled_hand']:
             if hasattr(self, attr):
-                delattr(self, attr)
-        if hasattr(self, 'temp_intensify_mult'):
-            del self.temp_intensify_mult
-
-        # In advance_blind (after resets)
-        # FIXED: Decrement buff duration only if set (tier 5 'next 2')
-        if hasattr(self, 'intensify_buff_duration') and self.intensify_buff_duration > 0:
-            self.intensify_buff_duration -= 1
-            if self.intensify_buff_duration > 0:
-                # Carry pending_mult for remaining duration
-                self.pending_buff_mult = 4.0  # e.g., tier 5 x4
-                print(f"DEBUG: Buff duration now {self.intensify_buff_duration} - carried pending_mult: {self.pending_buff_mult}")
-            else:
-                print("DEBUG: Buff duration expired - cleared")
-                del self.intensify_buff_duration
-        else:
-            print("DEBUG: No buff duration to decrement")  # TEMP: Confirm skip
-
-        # NEW: Clear D20 intensify state post-blind
-        if hasattr(self, 'target_mult'):
-            del self.target_mult
-        if hasattr(self, 'temp_intensify_mult'):
-            del self.temp_intensify_mult
-        if hasattr(self, 'from_d20_intensify'):
-            del self.from_d20_intensify
-        self.intensified_buff = None  # Already cleared in enter, but safety
+                try:
+                    delattr(self, attr)
+                except Exception:
+                    pass
+        self.intensified_buff = None
+        self._d20_discards_applied = False
 
         # Generate preview if starting Small
         if self.current_blind == 'Small':
@@ -735,14 +746,6 @@ class ChromaRollGame:
         # In advance_blind (ChromaRoll.py ~line 1620, after other resets)
         self.bag[:] = [copy.deepcopy(d) for d in self.full_bag]  # Refill bag from owned template
         print(f"DEBUG: Bag after refill in advance_blind: {len(self.bag)}")  # Should be 25
-        print(f"DEBUG: advance_blind START → pending_buff exists? {bool(self.d20_boon.pending_buff if hasattr(self, 'd20_boon') and self.d20_boon else False)}")
-
-                # === D20 SUCCESS REWARDS: Apply here ONCE after blind win ===
-        if hasattr(self, 'd20_boon') and self.d20_boon and self.d20_boon.pending_buff:
-            self.d20_boon.apply_pending_rewards(self)
-            print("DEBUG: Applied D20 success rewards after blind win")
-        else:
-            print("DEBUG: No pending D20 rewards to apply (normal on non-intensified blinds)")
 
         if self.current_boss_effect and self.current_boss_effect['name'] == 'Charm Eclipse':
             self.disabled_charms = list(range(len(self.equipped_charms)))  # Ensure all current charms disabled
@@ -772,10 +775,13 @@ class ChromaRollGame:
             else:
                 i += 1
 
-        self.cloak_used_this_game = False  # Set in init if needed
+        # Cloak of Cunning is once per run — do NOT reset cloak_used_this_game here.
 
         # NEW: Rune Recycler - Reuse one random tray rune per shop (once per shop flag)
-        recycler_active = any(charm['type'] == 'rune_reuse' and idx not in self.disabled_charms for idx, charm in enumerate(self.equipped_charms))  # FIXED: self.disabled_charms
+        recycler_active = any(
+            charm['type'] == 'rune_reuse' and idx not in self.disabled_charms
+            for idx, charm in enumerate(self.equipped_charms)
+        )
         if recycler_active and any(self.rune_tray) and not getattr(self, '_recycler_used_this_shop', False):
             # Pick random non-None rune
             non_none_runes = [r for r in self.rune_tray if r is not None]
@@ -801,13 +807,7 @@ class ChromaRollGame:
 
         # NEW: Preserve pending buffs across blinds (for "next 2")
         if hasattr(self, 'pending_buff_mult'):
-            # Keep for next; decrement duration if multi-blind (e.g., for Crit Success)
-            pass  # Already queued
-
-                # Clean up D20 boon for next blind
-        if hasattr(self, 'd20_boon') and self.d20_boon:
-            self.d20_boon.reset_for_new_blind()
-            self.boon_hand_type_mult = {}   # clear for the next blind
+            pass
 
         # DEBUG: Final hands after all
         # print(f"DEBUG: Final hands_left after advance_blind: {self.hands_left}")
@@ -821,6 +821,9 @@ class ChromaRollGame:
         self.hand = self.draw_hand()
         self.turn_initialized = True
         self.rerolls_left = MAX_REROLLS
+        boon = getattr(self, 'd20_boon', None)
+        if boon and boon.active and boon.extra_rerolls_per_hand:
+            self.rerolls_left += boon.extra_rerolls_per_hand
         self.rolls = [(die, 1) for die in self.hand]  # Start with value 1 (single pip)
         self.held = [False] * NUM_DICE_IN_HAND
         self.held_advantage = False
@@ -830,8 +833,8 @@ class ChromaRollGame:
         self.lucky_triggers = 0  # Reset to 0 each new turn/hand
         self.turn += 1
         self.discard_used_this_round = False  # Reset per hand
-        # In new_turn (after self.discard_used_this_round = False)
-        # NEW: Increment per-charm local turns for equipped charms
+        self.first_discard_this_turn = True
+        # In new_turn (after self.discard_used_this_round = False)        # NEW: Increment per-charm local turns for equipped charms
         # Increment per-charm local turns for equipped charms
         self.used_buy_boon_this_turn = False
         self.selecting_buy_boon_die = False
@@ -874,10 +877,16 @@ class ChromaRollGame:
             # Reset per-turn trackers if needed
             self.boss_reroll_count = 0
         
-        # === ROLL HARMONY - Random locked die every new hand ===
-        if getattr(self, 'roll_harmony_active', False):
+        # === ROLL HARMONY - lock a die every new hand ===
+        if boon and boon.harmony_active:
+            lock_idx = boon.pick_harmony_lock(self.rolls)
+            self.intensified_locked_die_idx = lock_idx
+            self.roll_harmony_active = True
+            print(f"[D20] NEW locked die for this hand: #{lock_idx + 1}")
+        elif getattr(self, 'roll_harmony_active', False):
             self.intensified_locked_die_idx = random.randint(0, 4)
             print(f"[D20] NEW locked die for this hand: #{self.intensified_locked_die_idx + 1}")
+
 
     def roll_hand(self):
         """Rolls each die in the hand, returning list of (die, value)."""
@@ -989,10 +998,6 @@ class ChromaRollGame:
             if not DEBUG_UNLIMITED_REROLLS:  # FIXED: Custom flag
                 self.rerolls_left -= 1
             self.update_hand_text()  # Update after reroll
-            # === ROLL HARMONY (D20 Tier 3) - Choose new locked die on every reroll ===
-            if hasattr(self, 'd20_boon') and getattr(self.d20_boon, 'roll_harmony_active', False):
-                self.intensified_locked_die_idx = random.randint(0, 4)
-                print(f"[D20 DEBUG] Locked die chosen on reroll: #{self.intensified_locked_die_idx + 1}")
             self.boss_reroll_count += 1  # Track for Break Surge
         else:
             # Score and advance hand or end round
@@ -1167,7 +1172,16 @@ class ChromaRollGame:
                         self.temp_message = "Discard Cap: Max 2 dice per discard - deselect some to proceed"
                         self.temp_message_start = time.time()
                         return  # Skip discard
-            # Then normal
+            # Capture discarded dice BEFORE they are overwritten (Trading Token)
+            discarded_dice = []
+            for i in selected_indices:
+                old = None
+                if i < len(self.rolls) and self.rolls[i] and self.rolls[i][0]:
+                    old = self.rolls[i][0]
+                elif i < len(self.hand):
+                    old = self.hand[i]
+                if old:
+                    discarded_dice.append(old)
             # Draw new dice
             new_dice = self.draw_hand(selected_count)
             # Replace at the selected positions with value 1 (single pip)
@@ -1178,31 +1192,34 @@ class ChromaRollGame:
             self.discard_selected = [False] * NUM_DICE_IN_HAND
             self.discards_left -= 1
             self.discard_used_this_round = True
-            # NEW: Acrobat Amulet - +2 mult if this was the final discard (only if equipped and not disabled)
-            has_acrobat = False
+            self.discards_used_this_round = getattr(self, 'discards_used_this_round', 0) + 1
+            # Acrobat Amulet: +value mult on the next score after the last discard of the round
+            acrobat_val = 0
             for idx, charm in enumerate(self.equipped_charms):
-                if charm['name'] == 'Acrobat Amulet' and idx not in self.disabled_charms:
-                    has_acrobat = True
+                if charm['type'] == 'mult_final_discard' and idx not in self.disabled_charms:
+                    acrobat_val = charm.get('value', 2)
                     break
-            if has_acrobat and self.discards_left == 0:
-                self.final_discard_mult = 2  # Or charm['value'] if you want to use the data.py value
-                self.temp_message = "Acrobat Amulet: +2 mult on next score (final discard)!"
+            if acrobat_val and self.discards_left == 0:
+                self.final_discard_mult = acrobat_val
+                self.temp_message = f"Acrobat Amulet: +{acrobat_val} mult on next score (final discard)!"
                 self.temp_message_start = time.time()
             self.update_hand_text()
-            self.discard_used_this_round = True
-            # Trading Token: Destroy 1 die for coins on first discard
+            # Trading Token: Destroy the discarded die (not the replacement) for coins on first 1-die discard
             if self.first_discard_this_turn and selected_count == 1:
                 self.first_discard_this_turn = False
-                for charm in self.equipped_charms:
-                    if charm['type'] == 'discard_destroy_coin':
-                        destroyed_die = self.hand[selected_indices[0]]  # The selected die
-                        self.bag = [d for d in self.bag if d['id'] != destroyed_die['id']]
-                        self.full_bag = [d for d in self.full_bag if d['id'] != destroyed_die['id']]
-                        self.coins += charm['value']  # +3
-                        self.temp_message = f"Destroyed die for +{charm['value']} coins!"
-                        self.temp_message_start = time.time()
-                        print(f"DEBUG: Trading Token destroy die ID {destroyed_die['id']} in hand{self.turn}, full_bag now {len(self.full_bag)}")
-                        break  # Assume one charm
+                for idx, charm in enumerate(self.equipped_charms):
+                    if charm['type'] == 'discard_destroy_coin' and idx not in self.disabled_charms:
+                        destroyed_die = discarded_dice[0] if discarded_dice else None
+                        if destroyed_die:
+                            die_id = destroyed_die.get('id')
+                            self.bag = [d for d in self.bag if d.get('id') != die_id]
+                            self.full_bag = [d for d in self.full_bag if d.get('id') != die_id]
+                            self.destroyed_dice.append(destroyed_die.copy())
+                            self.coins += charm['value']  # +3
+                            self.temp_message = f"Destroyed die for +{charm['value']} coins!"
+                            self.temp_message_start = time.time()
+                            print(f"DEBUG: Trading Token destroy die ID {die_id}, full_bag now {len(self.full_bag)}")
+                        break
             # New: Grant extra reroll if Recycler equipped and discard used
             recycler_count = sum(1 for c in self.equipped_charms if c['type'] == 'reroll_recycler')
             if recycler_count > 0:
@@ -1238,11 +1255,28 @@ class ChromaRollGame:
         self.discard_selected = [False] * NUM_DICE_IN_HAND
         self.update_hand_text()
 
-        # === ROLL HARMONY (D20 Tier 3) - Choose new locked die AFTER "Start Roll" ===
-        if hasattr(self, 'd20_boon') and getattr(self.d20_boon, 'roll_harmony_active', False):
-            old_idx = getattr(self, 'intensified_locked_die_idx', -1)
-            self.intensified_locked_die_idx = random.randint(0, 4)
-            print(f"[D20 DEBUG] Start Roll - Old locked: {old_idx} → NEW locked die #{self.intensified_locked_die_idx + 1}")
+        # === ROLL HARMONY — lock AFTER the first real roll; keep through rerolls ===
+        if hasattr(self, 'd20_boon') and getattr(self.d20_boon, 'harmony_active', False):
+            lock_idx = self.d20_boon.pick_harmony_lock(self.rolls)
+            self.intensified_locked_die_idx = lock_idx
+            print(f"[D20] Locked die after Start Roll: #{lock_idx + 1}")
+
+        # === ROLL FLOW — fusion auto-picks a fused-color die; otherwise player clicks ===
+        boon = getattr(self, 'd20_boon', None)
+        if boon and boon.flow_advantage and boon.active and getattr(self, 'd20_advantage_index', -1) < 0:
+            pref = boon.preferred_advantage_index(self.rolls)
+            if pref is not None:
+                self.d20_advantage_index = pref
+                self.has_advantage = True
+                self.advantage_value = random.randint(1, 6)
+                self.held_advantage = False
+                self.selecting_advantage_die = False
+                self.temp_message = f"Fusion: advantage on {boon.fused_color} die #{pref + 1}"
+                self.temp_message_start = time.time()
+            else:
+                self.selecting_advantage_die = True
+                self.temp_message = "Roll Flow: click a die to give it advantage"
+                self.temp_message_start = time.time()
 
     def score_and_new_turn(self):
         """Manually scores and starts a new turn."""
@@ -1276,19 +1310,12 @@ class ChromaRollGame:
 
         
 
-        # NEW: Increment Ice Shard hands_played on score (per played hand, no reset)
+        # Ice Shard decay is applied inside evaluate_hand (score_decay). Only increment here.
         for charm in self.equipped_charms:
             if charm['name'] == 'Ice Shard':
                 if 'hands_played' not in charm:
                     charm['hands_played'] = 0
                 charm['hands_played'] += 1
-
-        # Apply Ice Shard decay to this hand's score
-        for charm in self.equipped_charms:
-            if charm['name'] == 'Ice Shard':
-                hands_played = charm['hands_played']
-                decay_bonus = max(0, charm['start'] - (charm['decay'] * (hands_played - 1)))
-                self.round_score += decay_bonus
 
         # NEW: Increment Loyalty Luck local_turns on score (per played turn)
         for charm in self.equipped_charms:
@@ -1297,20 +1324,13 @@ class ChromaRollGame:
                     charm['local_turns'] = 1  # Safety (shouldn't hit)
                 else:
                     charm['local_turns'] += 1
-                # print(f"DEBUG: Loyalty Luck local_turns now {charm['local_turns']} after score")  # Temp—remove after
 
-        # Apply Square Sphere permanent bonus on charm if equipped, not disabled, and exactly 4 dice scored
-        for idx, charm in enumerate(self.equipped_charms):
-            if charm['name'] == 'Square Sphere' and idx not in self.disabled_charms:
-                if len(held_rolls) == 4:
-                    charm['permanent_bonus'] = charm.get('permanent_bonus', 0) + charm['value']
-                    # print("Square Sphere charm bonus applied (4 dice): now", charm['permanent_bonus'])  # Debug
-                break
-
+        # Square Sphere: scale permanent_bonus AFTER this hand is scored so this hand
+        # gets value + previous permanent only (evaluate_hand already added both).
         for idx, charm in enumerate(self.equipped_charms):
             if charm['type'] == 'score_conditional' and idx not in self.disabled_charms:
-                self.permanent_score_bonus = getattr(self, 'permanent_score_bonus', 0) + charm['value']
-                # print("Square Sphere permanent bonus applied: now", self.permanent_score_bonus)  # Debug, remove later
+                if len(held_rolls) == charm.get('dice', 4):
+                    charm['permanent_bonus'] = charm.get('permanent_bonus', 0) + charm['value']
                 break
 
         # Apply Lucky Labyrinth permanent bonus on charm if equipped and triggers >0
@@ -1531,7 +1551,7 @@ class ChromaRollGame:
             
             # NEW: Echo Ember coins (unused discards at end)
             echo_ember_bonus = 0
-            for charm in self.equipped_charms:
+            for idx, charm in enumerate(self.equipped_charms):
                 if charm['type'] == 'coin_per_discard' and idx not in self.disabled_charms:
                     echo_ember_bonus += charm['value'] * self.discards_left  # Unused discards
             echo_ember_line = f"Echo Coins: ${echo_ember_bonus}\n" if echo_ember_bonus > 0 else ""
@@ -1554,7 +1574,7 @@ class ChromaRollGame:
 
             # For popup (add to dollar line):
             coin_gen_dollars = '$' * coin_gen_bonus if coin_gen_bonus > 0 else ''
-            coin_gen_line = f"Echo Coins: {coin_gen_dollars}\n" if coin_gen_bonus > 0 else ""
+            coin_gen_line = f"Unused Hands: {coin_gen_dollars}\n" if coin_gen_bonus > 0 else ""
 
             # Total coins including accumulated Luck's Locket, base lucky, and runes
             total_coins = remains_coins + interest + self.extra_coins + self.round_locket_coins + self.round_base_lucky_coins + total_rune_coins + coin_gen_bonus + echo_ember_bonus
@@ -1604,6 +1624,23 @@ class ChromaRollGame:
                 self.state_machine.change_state(end_prompt)
                 return  # Exit early
 
+            d20_line = ""
+            if getattr(self, 'd20_boon', None) and self.d20_boon.active:
+                bits = []
+                if self.d20_boon.pending_coins:
+                    bits.append(f"+${self.d20_boon.pending_coins} D20")
+                if self.d20_boon.pending_free_prism:
+                    bits.append("Free Prism Pack in shop")
+                if self.d20_boon.pending_hand_type_mult:
+                    ht = next(iter(self.d20_boon.pending_hand_type_mult))
+                    bits.append(f"+2x {ht} next blind")
+                if self.d20_boon.pending_hand_mult_next > 1.0:
+                    bits.append(f"x{self.d20_boon.pending_hand_mult_next} next hand")
+                if self.d20_boon.pending_hand_mult_blinds > 0:
+                    bits.append(f"x{self.d20_boon.pending_hand_mult_blinds_value} next {self.d20_boon.pending_hand_mult_blinds} blinds")
+                if bits:
+                    d20_line = "D20 reward: " + ", ".join(bits) + "\n"
+
             # Normal win: Show popup
             self.popup_message = (f"{self.current_blind} Blind Beaten! Score: {self.round_score}/{int(self.get_blind_target())}\n"
                                 f"Hands left: {hands_dollars}\n"
@@ -1615,7 +1652,9 @@ class ChromaRollGame:
                                 f"{rune_block}"  # NEW: Rune gains block
                                 f"{coin_gen_line}"  # Coin Generation charms
                                 f"{echo_ember_line}"  # NEW: Echo Ember from unused discards
+                                f"{d20_line}"
                                 f"Coins gained: {total_dollars}")
+
             self.show_popup = True
         elif self.hands_left > 0:
             self.new_turn()  # Next hand in round
@@ -1664,7 +1703,9 @@ class ChromaRollGame:
         self.held[index] = not self.held[index]
 
         # === ROLL FLOW ADVANTAGE (Tier 4) - Mutually exclusive hold ===
-        adv_index = getattr(self, 'fates_advantage_index', -1)
+        adv_index = getattr(self, 'd20_advantage_index', -1)
+        if adv_index < 0 and self.has_advantage:
+            adv_index = 2
         if adv_index != -1 and self.has_advantage:
             if index == adv_index:  # Clicked the original selected die
                 if self.held[index] and self.held_advantage:
@@ -1692,7 +1733,7 @@ class ChromaRollGame:
         return button_rects
 
     def check_equipped_charms(self):
-        self.has_advantage = any(charm['type'] == 'advantage_choice' for charm in self.equipped_charms)
+        self.update_advantage_flag()
         # Call this after equipping or loading charms
 
     def draw_dagger_icon(self, rect):
@@ -1926,6 +1967,7 @@ class ChromaRollGame:
 
     def generate_shop(self):
         self.shop_reroll_cost = 5
+        had_free_prism = getattr(self, '_d20_prism_in_current_shop', False)
         all_packs = [0,1,2,3,4,5] + [6,7,8]  # Assume 0-5 existing, 6-8 for rune packs
         weights = [1]*6 + [1, 0.8, 0.3]  # Lower for Super
         self.available_packs = random.choices(all_packs, weights=weights, k=2 + any(tag['name'] == 'Voucher Tag' for tag in self.active_tags))  # Extra if Voucher Tag
@@ -1959,6 +2001,22 @@ class ChromaRollGame:
             print(f"DEBUG: Added free {self.pending_free_pack} pack (ID {pack_id}) - available_packs now: {self.available_packs}")
             if hasattr(self, 'pending_free_pack'):
                 del self.pending_free_pack
+
+        boon = getattr(self, 'd20_boon', None)
+        want_free = (
+            had_free_prism
+            or (boon and boon.free_prism_pack)
+            or getattr(self, 'has_free_prism_pack', False)
+        )
+        if want_free:
+            if 10 not in self.available_packs:
+                self.available_packs.append(10)
+            self._d20_prism_in_current_shop = True
+            if boon:
+                boon.free_prism_pack = False
+            self.has_free_prism_pack = False
+            print("DEBUG: Added FREE Prism Pack (D20) as pack index 10")
+
 
         # Compute weights per charm: base rarity * stake modifier
         charm_weights = []

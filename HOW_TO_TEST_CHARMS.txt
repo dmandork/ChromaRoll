@@ -1,0 +1,119 @@
+ChromaRoll Pass A+B — drop-in files
+===================================
+
+Replace these files in your repo with the copies in this zip
+(keep the same folder layout: tests/ stays nested).
+
+  scoring.py
+  ChromaRoll.py
+  screens.py
+  tests/test_charm_pass_ab.py
+
+Headless check (no pygame window needed — the test stubs pygame):
+
+  python tests/test_charm_pass_ab.py
+  python tests/test_d20_boon.py
+
+What this pass fixes
+--------------------
+Pass A — charms that shared a type string were firing the WRONG effect,
+and two counters were never incremented so the charms always showed +0.
+
+  Flower Pot Prism / Glass Globe / Loyalty Luck
+      All used type 'mult_conditional'. Loyalty's "every 6 turns" path
+      ate the other two. They now branch on mono / glass / every.
+
+  Steel Seal / Enhance Elixir
+      Both used type 'mult_per_enhance'. Elixir counted scored-die
+      enhancements; Steel Seal now counts Steel in the whole bag.
+
+  Retrigger Rune / Dusk Die
+      Both used type 'retrigger'. Dusk now only x2 on the FINAL hand;
+      Rune still x2 on 3/4/5 of a Kind.
+
+  Discard Drake
+      discards_used_this_round is now incremented in discard().
+      +1 mult per discard used this blind.
+
+  Life Milestone
+      stake_milestones now +1 when you beat a Boss and the stake goes up.
+
+Pass B — run-breaking / silent-wrong scoring
+
+  Cloak of Cunning
+      Was reset every blind, so it could save you over and over.
+      Now once per run (clears on New Game).
+
+  Square Sphere
+      Was applying chips more than once per 4-dice hand.
+      This hand gets value + current permanent; permanent grows AFTER score.
+
+  Echo Ember
+      Win payout used a leftover `idx` from an earlier loop, so disabled
+      charms could pay (or the wrong slot was checked). Now enumerate().
+
+  Trading Token
+      Destroyed the REPLACEMENT die. Now destroys the discarded one
+      and adds it to destroyed_dice (Needle can revive it).
+
+  Acrobat Amulet
+      Could apply twice (charm type + final_discard_mult). Type is now
+      a no-op; the stored bonus applies once and is consumed on score.
+
+  Ice Shard
+      evaluate_hand already added the decay chips, then score_and_new_turn
+      added them AGAIN. Second add is gone. Preview of hand 1 is +100.
+
+  Rune Recycler
+      recycler_active was stuck on a comment line, so beating a blind
+      NameError-crashed in advance_blind. Assignment is restored.
+
+In-game checks (DEBUG shop is on)
+---------------------------------
+1. Buy Flower Pot Prism. Score 5 same-color dice → "+2 (mono)" in mods.
+   Mix colors → it stays off. It must NOT pop every 6th hand. (passed)
+
+2. Buy Glass Globe. Score any Glass die → "+2 (glass)". No Glass → off. (passed)
+
+3. Buy Loyalty Luck. Play 6 hands (across blinds is fine). 6th scored
+   hand should show "+3". Hands 1–5 should not. (passed)
+
+4. Enhance a bag die with Steel, buy Steel Seal → "+0.2 (1 Steel in bag)"
+   even if that die is not in the scored hand. Enhance Elixir only counts
+   enhancements on the dice you actually score. (passed)
+
+5. Retrigger Rune on a 3oak → "x2 (kinds retrigger)" any hand.
+   Dusk Die → "x2 (final hand)" only when Hands Left is 1.
+
+6. Discard Drake: discard twice, then score → "+2 (2 discards)".
+   Counter resets next blind.
+
+7. Beat a Boss. Life Milestone tooltip / mods should tick up +0.5
+   starting the next stake. Small/Big wins do not increment it.
+
+8. Cloak: fail a blind once → saved, Cloak destroyed, same blind repeats.
+   Fail again → game over. Beating other blinds in between must NOT
+   refresh Cloak.
+
+9. Square Sphere: score exactly 4 dice. First time +4 chips. Next 4-dice
+   hand +8, then +12, … 3-dice or 5-dice hands add nothing (permanent
+   still sits on the charm).
+
+10. Trading Token: first discard of a turn, exactly 1 die → that die
+    is gone from the bag, +3 coins. The new die that filled the slot stays.
+
+11. Acrobat: spend your LAST discard, then score → "+2" once, then gone.
+
+12. Ice Shard: first scored hand +100 chips, second +95, third +90.
+    Preview on the play screen should match those numbers.
+
+13. Echo Ember: beat a blind with unused discards → "Echo Coins" on the
+    win popup, $2 each. Disabled Echo (Charm Eclipse) pays 0.
+
+14. Beat any blind with Rune Recycler equipped and a rune in the tray —
+    game must NOT crash; a free reused rune can show as shop pack 9.
+
+Not in this pass (ask when you want them)
+-----------------------------------------
+Pass C  overlapping UI (Intensify vs Continue, play HUD, win popup, shop packs)
+Pass D  leftover stubs: Castle Cube, Saving Throw, Space Sphere, Monopoly Mortgage
