@@ -38,6 +38,13 @@ class D20BoonSystem:
         roll = self.roll
         fused = self.fused_color
 
+        # === RESET ALL TIER-SPECIFIC STATE FOR EVERY NEW ROLL ===
+        # This fixes old Tier 1 (or any tier) leaking when you re-roll the D20
+        self.disabled_hand_type = None
+        self.dimmed_color = None
+        self.prefer_color = None
+        self.pending_free_pack = None
+
         for tier in D20_OUTCOMES:
             if tier['min'] <= roll <= tier['max']:
                 base_outcome = tier['outcome'].copy()
@@ -68,8 +75,7 @@ class D20BoonSystem:
             color = fused or random.choice(BASE_COLORS)
             self.dimmed_color = color
             full_desc_parts[0] += f" ({color} dice)"
-            full_desc_parts.append(" | Success: +2× mult next hand +$20 +30% that color next blind")
-            buff['hand_mult_next'] = 2.0
+            full_desc_parts.append(" | Success: +$20 and +30% that color next blind")
             buff['coins'] = 20
             buff['color_mult_next'] = {color: 1.3}
 
@@ -120,7 +126,10 @@ class D20BoonSystem:
         # Coins
         if 'coins' in buff:
             game.coins += buff['coins']
-            game.temp_message += f" +${buff['coins']} (D20)"
+            if game.temp_message is None:
+                game.temp_message = f" +${buff['coins']} (D20)"
+            else:
+                game.temp_message += f" +${buff['coins']} (D20)"
 
         # This-blind multipliers (already applied in scoring for most tiers)
         if 'hand_mult_this' in buff:
@@ -169,3 +178,7 @@ class D20BoonSystem:
         self.outcome = None
         self.pending_buff = None
         self.pending_free_pack = None
+        self.disabled_hand_type = None
+        self.dimmed_color = None
+        self.prefer_color = None
+        # Add any new tier-specific variables here in the future

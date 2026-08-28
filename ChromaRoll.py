@@ -487,7 +487,7 @@ class ChromaRollGame:
 
                 # BLOCKED type warning
                 if hasattr(self, 'intensified_disabled_type') and self.intensified_disabled_type:
-                    self.current_hand_text = f"BLOCKED: {self.intensified_disabled_type} — " + self.current_hand_text
+                    self.current_hand_text = f"BLOCKED: {self.intensified_disabled_type}\n" + self.current_hand_text
                     if hand_type == self.intensified_disabled_type:
                         self.current_hand_text += f" (0 score—adapt!)"
 
@@ -516,10 +516,7 @@ class ChromaRollGame:
                         modifier_parts.append(dagger_text + " (disabled)")
 
 # Prism Pack hand boost
-                # (OLD CODE — removed to prevent tooltip duplication)
-                # hand_boost = self.hand_multipliers.get(hand_type, 1.0)
-                # if hand_boost > 1.0:
-                #     modifier_parts.append(f"{hand_type} {hand_boost:.1f}x")
+                # NEW — temporary D20 bonus
 
                 if modifier_parts:
                     self.current_modifier_text = "Modifiers: " + " + ".join(modifier_parts)
@@ -810,6 +807,7 @@ class ChromaRollGame:
                 # Clean up D20 boon for next blind
         if hasattr(self, 'd20_boon') and self.d20_boon:
             self.d20_boon.reset_for_new_blind()
+            self.boon_hand_type_mult = {}   # clear for the next blind
 
         # DEBUG: Final hands after all
         # print(f"DEBUG: Final hands_left after advance_blind: {self.hands_left}")

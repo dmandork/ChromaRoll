@@ -15,7 +15,7 @@ class D20RollState(State):
         self.d20_image = pygame.image.load(resource_path('assets/icons/D20.png')).convert_alpha()  # Blank base
         orig_w, orig_h = self.d20_image.get_size()
         self.d20_image = pygame.transform.smoothscale(self.d20_image, (orig_w // 2, orig_h // 2))  # Shrink by half
-        self.d20_rect = self.d20_image.get_rect(center=(game.width // 2, game.height // 2))
+        self.d20_rect = self.d20_image.get_rect(center=(game.width // 2, game.height // 2 - 80))
         self.roll_start_time = time.time()
         self.roll_duration = 2.0  # Shorten to 2 seconds
         self.roll_result = None  # Final 1-20
@@ -30,13 +30,14 @@ class D20RollState(State):
             elapsed = time.time() - self.roll_start_time
             if elapsed >= self.roll_duration:
                 self.roll_result = random.randint(1, 20)
-                self.outcome = self.get_outcome(self.roll_result)  # FIXED: Set for desc preview
-                self.phase = 'done'  # To done (desc visible, no flags yet)
-        elif self.phase == 'reveal':
-            elapsed = time.time() - self.reveal_start_time
-            if elapsed >= 2.0:  # Show outcome for 2s, then done
+                
+                # === NEW: Build the FULL reward description immediately ===
+                if hasattr(self.game, 'd20_boon'):
+                    self.game.d20_boon.roll = self.roll_result
+                    self.game.d20_boon._apply_outcome()   # This creates the rich "Success: ..." text
+                
+                self.outcome = self.get_outcome(self.roll_result)
                 self.phase = 'done'
-                self.apply_downside()  # Immediate effects (e.g., target change)
 
     def draw(self):
         self.game.screen.fill(THEME['background'])
@@ -52,23 +53,58 @@ class D20RollState(State):
             text_rect = text.get_rect(center=self.d20_rect.center)
             self.game.screen.blit(text, text_rect)
         elif self.phase == 'done':
+            # Draw the roll number on the D20
             text = self.font.render(str(self.roll_result), True, THEME['text'])
             text_rect = text.get_rect(center=self.d20_rect.center)
             self.game.screen.blit(text, text_rect)
-            # Show outcome desc below (persistent)
-            if self.outcome:
-                desc = f"{self.outcome['name']}: {self.outcome['desc']}"
-                desc_text = self.small_font.render(desc, True, THEME['text'])
-                self.game.screen.blit(desc_text, (self.game.width // 2 - desc_text.get_width() // 2, self.d20_rect.bottom + 20))
 
-        # Done button (after reveal) - FIXED: Guard hasattr
-        self.accept_rect = None  # Reset each draw
-        if self.phase == 'done':
-            button_rect = pygame.Rect(self.game.width // 2 - 100, self.game.height - 100, 200, 50)
+            # === CLEAN SPLIT LAYOUT (the one you liked) ===
+            if hasattr(self.game, 'd20_boon') and self.game.d20_boon.outcome:
+                boon = self.game.d20_boon
+                outcome = boon.outcome
+
+                # 1. Outcome name (gold)
+                name_text = self.small_font.render(outcome['name'], True, (255, 215, 0))
+                name_rect = name_text.get_rect(centerx=self.game.width // 2, 
+                                             y=self.d20_rect.bottom + 30)
+                self.game.screen.blit(name_text, name_rect)
+
+                # 2. Split description cleanly
+                desc_parts = outcome['desc'].split(" | ", 1)
+                if len(desc_parts) == 2:
+                    downside_line = desc_parts[0].strip()
+                    success_line  = desc_parts[1].strip()          # ← FIXED: no extra "Success:"
+                else:
+                    downside_line = outcome['desc']
+                    success_line = ""
+
+                # Downside line
+                down_text = self.small_font.render(downside_line, True, THEME['text'])
+                down_rect = down_text.get_rect(centerx=self.game.width // 2, 
+                                             y=name_rect.bottom + 12)
+                self.game.screen.blit(down_text, down_rect)
+
+                # Success line (green)
+                if success_line:
+                    succ_text = self.small_font.render(success_line, True, (100, 255, 100))
+                    succ_rect = succ_text.get_rect(centerx=self.game.width // 2, 
+                                                 y=down_rect.bottom + 8)
+                    self.game.screen.blit(succ_text, succ_rect)
+                    button_y = succ_rect.bottom + 45
+                else:
+                    button_y = down_rect.bottom + 45
+
+            else:
+                button_y = self.game.height - 100
+
+            # Button
+            button_rect = pygame.Rect(self.game.width // 2 - 100, button_y, 200, 50)
             pygame.draw.rect(self.game.screen, (100, 100, 100), button_rect)
             button_text = self.small_font.render("Accept & Proceed", True, THEME['text'])
-            self.game.screen.blit(button_text, (button_rect.centerx - button_text.get_width() // 2, button_rect.centery - button_text.get_height() // 2))
-            self.accept_rect = button_rect  # For click
+            self.game.screen.blit(button_text, 
+                (button_rect.centerx - button_text.get_width() // 2,
+                 button_rect.centery - button_text.get_height() // 2))
+            self.accept_rect = button_rect
 
         # NEW: DEBUG Tier Selector (upper left, like blinds dropdown)
         if DEBUG:
@@ -119,11 +155,17 @@ class D20RollState(State):
                     for tier in range(1, 6):
                         opt_rect = pygame.Rect(10, y_offset, 120, 25)
                         if opt_rect.collidepoint(mouse_pos):
-                            self.roll_result = tier * 4 - 2  # e.g., Tier 1:2 (1-4), Tier 5:18 (17-20)
-                            self.outcome = self.get_outcome(self.roll_result)  # Re-apply (for desc)
-                            self.debug_tier_open = False  # Close on tier select
+                            self.roll_result = tier * 4 - 2
+                            
+                            # === FIXED: Sync the real D20BoonSystem so text updates ===
+                            if hasattr(self.game, 'd20_boon'):
+                                self.game.d20_boon.roll = self.roll_result
+                                self.game.d20_boon._apply_outcome()   # This updates the full description
+                            
+                            self.outcome = self.get_outcome(self.roll_result)
+                            self.debug_tier_open = False
                             print(f"DEBUG: Forced Tier {tier} - result: {self.roll_result}, outcome: {self.outcome['name']}")
-                            break  # Stop after select
+                            break
                         y_offset += 27
 
     def get_outcome(self, roll):

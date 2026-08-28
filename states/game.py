@@ -62,14 +62,6 @@ class GameState(State):
             self.game.d20_boon.pending_buff = pending_buff_to_keep
             self.game.d20_boon.pending_free_pack = pending_free_pack_to_keep
             print("DEBUG: Restored pending_buff for Tier 1 success reward")
-
-                    # === CLEAN TIER 1 REWARD APPLICATION (no duplication) ===
-        if hasattr(self.game, 'pending_type_mult') and self.game.pending_type_mult:
-            if not hasattr(self.game, 'hand_multipliers'):
-                self.game.hand_multipliers = {}
-            self.game.hand_multipliers.update(self.game.pending_type_mult)
-            print(f"DEBUG: Applied Tier 1 reward to hand_multipliers: {self.game.pending_type_mult}")
-            del self.game.pending_type_mult  # consume
         
         """# === APPLY TIER 1 BONUS (isolated path — Prism Pack cannot touch this) ===
         if hasattr(self.game, 'tier1_disabled_hand') and self.game.tier1_disabled_hand:

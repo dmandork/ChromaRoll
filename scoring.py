@@ -72,18 +72,16 @@ def evaluate_hand(game, is_preview=True):
     original_rolls = held_rolls[:]
     modifier_desc = []
 
-    # === DIMMED COLOR FIX (Hue Dimming from D20) ===
+    # === HUE DIMMING (D20 Tier 2) - Flat -20% if ANY dimmed die is used ===
     dimmed_mult = 1.0
     dimmed_count = 0
-    dimmed_adjust = 1.0
 
     if hasattr(game, 'intensified_dimmed_color') and game.intensified_dimmed_color:
         dimmed_color = game.intensified_dimmed_color
         dimmed_count = sum(1 for die, _ in held_rolls if die.get('color') == dimmed_color)
         if dimmed_count > 0:
             dimmed_mult = 0.8
-            dimmed_adjust = 0.8
-            modifier_desc.append(f"Dimmed {dimmed_color} x{dimmed_count}: x0.8 score")
+            modifier_desc.append(f"Dimmed {dimmed_color}: x0.8 score (-20%)")
 
     # === ADVANTAGE / FATE'S FAVOR - ADD AFTER STRAIGHT DETECTION ===
     if game.has_advantage and game.held_advantage:
@@ -636,6 +634,19 @@ def evaluate_hand(game, is_preview=True):
     for die, _ in held_rolls:
         charm_chips += die.get('score_bonus', 0)
 
+    # === D20 HUE DIMMING - +30% to the specific color NEXT BLIND ONLY ===
+    if hasattr(game, 'next_blind_color_mults') and game.next_blind_color_mults:
+        for color, mult in list(game.next_blind_color_mults.items()):
+            count = sum(1 for die, _ in held_rolls if die.get('color') == color)
+            if count > 0:
+                color_bonus = (mult - 1.0)   # e.g. +0.3 for 30%
+                charm_color_mult_add += color_bonus
+                modifier_desc.append(f"{color} +{int(color_bonus*100)}% (D20 Hue Dimming)")
+
+        # === Clear after this blind is finished ===
+        # This makes the +30% apply for the FULL next blind, then disappear forever
+        game.next_blind_color_mults = {}
+
     total_modifier = base_modifier + charm_color_mult_add + rune_mult_add + charm_mult_add
 
     """ # Temp type mult, Acrobat, Prism Pack, Glass, etc.
@@ -651,15 +662,20 @@ def evaluate_hand(game, is_preview=True):
     if game.final_discard_mult > 0:
         modifier_desc.append(f"Acrobat Amulet +{game.final_discard_mult}")
 
-    # === Hand-Type Multipliers (D20 Tier 1 + Prism Pack) ===
-    # Shows the FULL multiplier (e.g. 2.0x) with clear D20 label
-    if hand_type in game.hand_multipliers:
-        full_mult = game.hand_multipliers[hand_type]
-        total_modifier += full_mult - 1          # math stays correct
-        if full_mult > 1.0:
-            # Remove any older line for this hand type (prevents duplication)
-            modifier_desc = [line for line in modifier_desc if not (hand_type in line and "x" in line)]
-            modifier_desc.append(f"{hand_type} {full_mult:.1f}x (D20 Tier 1)")
+    # === Hand-Type Multipliers: Prism Pack (additive) + D20 Tier 1 (multiplicative ONLY) ===
+    prism_mult = game.hand_multipliers.get(hand_type, 1.0)
+    d20_mult = 1.0
+    if hasattr(game, 'pending_type_mult') and hand_type in game.pending_type_mult:
+        d20_mult = game.pending_type_mult[hand_type]
+
+    # Prism Pack stays additive (exactly like every other bonus)
+    if prism_mult > 1.0:
+        total_modifier += (prism_mult - 1.0)
+        modifier_desc.append(f"{hand_type} {prism_mult:.1f}x (Prism Pack)")
+
+    # D20 Tier 1 is kept separate — we will multiply with it later
+    if d20_mult > 1.0:
+        modifier_desc.append(f"{hand_type} {d20_mult:.1f}x (D20 Tier 1)")
 
     silence_glass = game.current_blind == 'Boss' and game.current_boss_effect and game.current_boss_effect['name'] == 'Special Silence'
     glass_count = sum(1 for die, _ in held_rolls if die['color'] == 'Glass')
@@ -700,13 +716,7 @@ def evaluate_hand(game, is_preview=True):
         modifier_desc.append("Chroma Radiance +30% all colors")
 
     # Final score assembly
-    final_score = int(((base_score * dimmed_mult) + charm_chips + rune_chips) * (1 + total_modifier) * retrigger_mult * chroma_mult)
-
-    # Dimmed final scale
-    if dimmed_count > 0:
-        dimmed_scale = dimmed_adjust ** (dimmed_count / len(original_rolls))
-        final_score = int(final_score * dimmed_scale)
-        modifier_desc.append(f"Dimmed {dimmed_count}/{len(original_rolls)}: -{int((1 - dimmed_scale) * 100)}% total")
+    final_score = int(((base_score * dimmed_mult) + charm_chips + rune_chips) * (1 + total_modifier) * retrigger_mult * chroma_mult * d20_mult)
 
     modifier_desc = ", ".join(modifier_desc) if modifier_desc else "None"
 
