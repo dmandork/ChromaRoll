@@ -284,7 +284,7 @@ class ChromaRollGame:
         self.boss_rainbow_color = None  # For Rainbow Restriction: fixed color for the round
         self.boss_shuffled_faces = {}  # Die ID to shuffled faces for Face Shuffle
         self.upcoming_boss_effect = None  # Preview of the Boss effect for the current round
-        self.upcoming_boss_effect = random.choice(data.BOSS_EFFECTS)  # Initial preview for first round
+        self.upcoming_boss_effect = data.pick_boss_effect(getattr(self, 'current_stake', 1))  # Initial preview for first round
 
         self.debug_boss_dropdown_open = False  # Flag for dropdown panel
         self.debug_boss_scroll_offset = 0  # For scrolling long list
@@ -481,7 +481,7 @@ class ChromaRollGame:
         self.boss_rainbow_color = None  # For Rainbow Restriction: fixed color for the round
         self.boss_shuffled_faces = {}  # Die ID to shuffled faces for Face Shuffle
         self.upcoming_boss_effect = None  # Preview of the Boss effect for the current round
-        self.upcoming_boss_effect = random.choice(data.BOSS_EFFECTS)  # Initial preview for first round
+        self.upcoming_boss_effect = data.pick_boss_effect(getattr(self, 'current_stake', 1))  # Initial preview for first round
         self.debug_boss_dropdown_open = False  # Flag for dropdown panel
         self.debug_boss_scroll_offset = 0  # For scrolling long list
         self.debug_boss_selected = None  # Temp for selection
@@ -747,10 +747,10 @@ class ChromaRollGame:
 
         # Generate preview if starting Small
         if self.current_blind == 'Small':
-            self.upcoming_boss_effect = random.choice(data.BOSS_EFFECTS)  # Pre-generate for preview
+            self.upcoming_boss_effect = data.pick_boss_effect(self.current_stake)  # Pre-generate for preview
 
         if self.current_blind == 'Boss':
-            self.current_boss_effect = self.upcoming_boss_effect or random.choice(data.BOSS_EFFECTS)  # Use preview if set
+            self.current_boss_effect = self.upcoming_boss_effect or data.pick_boss_effect(self.current_stake)
             if self.current_boss_effect['name'] == 'Charm Glitch' and self.equipped_charms:
                 self.disabled_charms = [random.randint(0, len(self.equipped_charms) - 1)]  # Disable one
             elif self.current_boss_effect['name'] == 'Charm Eclipse':

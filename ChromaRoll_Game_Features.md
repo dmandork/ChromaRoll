@@ -141,11 +141,11 @@ Choose one of eight pouches. Locked pouches (Black, Ghost, Erratic, Plasma) show
 
 ### Blinds
 
-Three boxes: Small, Big, Boss. Current blind is highlighted. Each shows its score target. Boss shows the upcoming effect. **Intensify** (D20) sits beside **Continue** with a 24px gap (Pass C). Intensify opens the D20 roll screen. Continue / selecting the current blind enters play. Debug (if on): stake dropdown, jump-to-boss.
+Three tall cards (Small gold-green, Big amber, Boss crimson). Current is gold-bordered **UP NEXT**; past blinds are dimmed **CLEARED**. Boss name + desc live *inside* the Boss card. Header: `STAKE N`, pouch pip, coins, eight stake dots. **Intensify** (optional D20, outline) beside **Continue** (green). Equipped charms stay at the play-screen left (`PLAY_CHARM_Y`); the dice bag and rune tray stay top-right. Debug (DBG tab, stake jumper, jump-to-boss) is hidden until the DBG tab is opened.
 
 ### Play (game)
 
-Left column, top-down (Pass C layout):
+Left column, top-down (Pass C layout), with a casino-table visual (wood rail, gold pinstripe, felt inlay, center score plaque, dice betting spots, rail plaques for hands/discards/rolls, chip-stack coins, PAY TABLE plate). Click targets are unchanged.
 
 1. Equipped charms (clickable — Fate’s Favor, Buy Boon, Disadvantage, Whirlwind, UNO Draw 2, Luchador, Familiar’s Foresight).
 2. HUD: hand type preview, modifiers, score vs target, D20 leftover lines.
@@ -154,7 +154,7 @@ Left column, top-down (Pass C layout):
 
 Top-right: **dice bag** (always visible here) and the two-slot **rune tray**. Hover a bag die with enhancements or Hiker Hex bonus for a tooltip. Hover a charm for name + desc + live values (no duplicated “Preview:” lines).
 
-Win popup (520px wide) lists remaining-hand coins, remaining-discard coins, interest, extras (Gold/Silver/Echo/unused hands), rune gains, D20 reward line.
+Win popup is a gold felt plaque (not a gray box): blind name, score, payout ledger (`$$$$` shown as `$4`), green Continue. Shop uses the same wood rail / gold pinstripe / felt inlay, `$1,000,010` coins, gold-bordered buy/sell, PAYTABLE plate. Shop debug sits behind the DBG tab.
 
 ### D20 roll
 
@@ -493,44 +493,52 @@ Synergy Scroll retriggers enhancements on held special-color dice when you score
 
 ## 10. Boss effects
 
-One is rolled as `upcoming_boss_effect` and applied when the Boss blind starts. Luchador (sold) replaces a non-final boss with a dummy “DISABLED”. UNO Skip jumps past a non-final boss blind entirely.
+One is rolled as `upcoming_boss_effect` from the **stake pool** and applied when the Boss blind starts. Luchador (sold) replaces a non-final boss with a dummy “DISABLED”. UNO Skip jumps past a non-final boss blind entirely.
 
-| Effect | Difficulty | What it does |
-|---|---|---|
-| Hold Ban | Hard | You cannot hold any dice between rerolls. |
-| Reroll Ration | Easy | Rerolls left reduced by 1 for the round. |
-| Discard Drought | Easy | Discards left reduced by 1 for the round. |
-| Reroll Penalty | Easy | Each reroll costs 1 coin (deducted immediately). |
-| Hold Limit | Medium | You can only hold up to 3 dice between rerolls. |
-| Discard Cap | Easy | Discard phase limited to 2 dice max per use. |
-| Score Dip | Easy | Base hand scores reduced by 10% for the round. |
-| Target Bump | Medium | Blind target increased by 20%. |
-| Color Fade | Medium | No monochrome or rainbow bonuses applied this round. |
-| Fragile Flip | Medium | Glass dice break chance increased to 50%. |
-| Charm Glitch | Medium | One random equipped charm is disabled for the round. |
-| Face Shuffle | Medium | Dice faces are randomized (e.g., non-standard values like duplicates or missing numbers). |
-| Coin Freeze | Medium | No extra coins from Gold/Silver this round. |
-| Rainbow Restriction | Medium | Rainbow dice only count as one fixed color (random per round) for bonuses. |
-| Glass Guard | Medium | Glass dice cannot be held (auto-unheld after rolls). |
-| Charm Tax | Medium | Each equipped charm reduces hands left by 0.5 (rounded down). |
-| Mono Mixup | Medium | Monochrome bonuses halved if more than one color is present (even Rainbows). |
-| Reroll Rebound | Medium | After each reroll, one random held die is unheld. |
-| Hand Trim | Hard | Hands left reduced by 1 for the round. |
-| Break Surge | Hard | Glass break chance increases by 10% per reroll used. |
-| Special Silence | Hard | All special die effects disabled (no Gold coins, Silver extras, Glass mult, Rainbow wild). |
-| Die Drain | Hard | One random die is removed from your hand after each reroll, and pulling a new one from the bag. |
-| Charm Eclipse | Hard | All equipped charms are disabled for the round. |
-| Value Vault | Hard | All rolled values are inverted (1=6, 2=5, etc.), messing with straights and high/low strategies. |
-| Blind Boost | Hard | Blind target increased by 30%, but +1 extra discard. |
-| Special Swap | Hard | All special dice effects are inverted (e.g., Gold gives coins when not held, Silver when held). |
-| Discard Delay | Hard | Discard phase only available after first reroll. |
-| Multiplier Mute | Hard | All multipliers (charms, hands, colors) capped at x1.5. |
-| Bag Bottleneck | Hard | Bag refills only half full after depletion (fewer redraw options). |
-| Hold Hazard | Hard | Held dice have a 20% chance to reroll anyway on next roll. |
+| Stakes | Pool |
+|---|---|
+| 1–2 | Easy |
+| 3–4 | Easy + Medium |
+| 5–6 | Easy + Medium + Hard |
+| 7–8 | Medium + Hard |
+| 9+ Endless | Hard only |
+
+**Intensify** is grayed on Stake 1 (`Unlocks at Stake 2`). Clicks do nothing until Stake 2.
+
+| Effect | Diff | From | What it does |
+|---|---|---|---|
+| Reroll Ration | Easy | 1 | −1 reroll |
+| Discard Drought | Easy | 1 | −1 discard |
+| Reroll Penalty | Easy | 1 | Each reroll costs 1 coin |
+| Discard Cap | Easy | 1 | Discard at most 2 dice |
+| Score Dip | Easy | 1 | −10% base hand scores |
+| Coin Freeze | Easy | 1 | No Gold/Silver extra coins |
+| Hold Limit | Medium | 3 | Hold at most 3 dice |
+| Target Bump | Medium | 3 | Target +20% |
+| Color Fade | Medium | 3 | No mono/rainbow bonuses |
+| Fragile Flip | Medium | 3 | Glass break chance 50% |
+| Charm Glitch | Medium | 3 | One random charm disabled |
+| Face Shuffle | Medium | 3 | Faces randomized |
+| Rainbow Restriction | Medium | 3 | Rainbow locked to one color |
+| Glass Guard | Medium | 3 | Glass cannot be held |
+| Mono Mixup | Medium | 3 | Mono halved if mixed colors |
+| Reroll Rebound | Medium | 3 | One held die unheld after each reroll |
+| Discard Delay | Medium | 3 | Discard only after first reroll |
+| Blind Boost | Medium | 3 | Target +30%, +1 discard |
+| Hold Ban | Hard | 5 | Cannot hold |
+| Hand Trim | Hard | 5 | −1 hand |
+| Break Surge | Hard | 5 | Glass break +10% per reroll |
+| Special Silence | Hard | 5 | Special die effects off |
+| Die Drain | Hard | 5 | Lose a die after each reroll |
+| Charm Eclipse | Hard | 5 | All charms disabled |
+| Value Vault | Hard | 5 | Faces inverted (1↔6) |
+| Special Swap | Hard | 5 | Special effects inverted |
+| Multiplier Mute | Hard | 5 | All multipliers capped at ×1.5 |
+| Bag Bottleneck | Hard | 5 | Bag refills half full |
+| Hold Hazard | Hard | 5 | Held dice 20% reroll anyway |
+| Charm Tax | Hard | 5 | −0.5 hands per equipped charm (rounded down) |
 
 Stake 8 boss cannot be Luchador-disabled or UNO-skipped. Special final-boss variants (stacked effects, multi-phase) are still planned.
-
----
 
 ## 11. D20 Boon System
 

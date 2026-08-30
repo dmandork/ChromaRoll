@@ -1,0 +1,32 @@
+HOW TO TEST — Stake / blinds visual pass
+========================================
+
+Drop over your ChromaRoll folder:
+
+  screens.py
+  states/blinds.py
+  tests/test_blinds_ui.py
+  HOW_TO_TEST_STAKE_UI.txt
+  ChromaRoll_Game_Features.md
+
+Headless:
+
+  python tests/test_blinds_ui.py
+
+In game
+-------
+1. New Game → pick a pouch → blinds screen.
+2. Charms (if you have any later in the run) sit top-left, same as play.
+   Bag + rune tray sit top-right, same as play. They should not jump.
+3. Three tall cards: Small / Big / Boss. Current says UP NEXT with a gold
+   border. Cleared cards say CLEARED and sit darker.
+4. Boss name and description are inside the purple/red card. Hover for the
+   full text.
+5. Header: STAKE N, pouch color pip, $ coins, eight dots (current stake
+   is the hollow-gold one).
+6. Continue is the green button. Intensify is the muted one with
+   "optional D20 boon" above it. Locked after you roll.
+7. DEBUG: only a small DBG tab bottom-left. Open it for Win/Lose, stake
+   jumper, Select Boss, Jump to Boss. Closed, the screen should look clean.
+
+Tweaks welcome — this was a visual pass, click behavior is unchanged.

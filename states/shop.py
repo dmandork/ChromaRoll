@@ -7,7 +7,7 @@ import copy
 import os
 from constants import *  # For THEME, BUTTON_WIDTH, SHOP_REROLL_COST, etc.
 from utils import draw_rounded_element, resource_path, wrap_text  # For UI/buttons
-from screens import draw_shop_screen, draw_custom_button, draw_tooltip  # For main shop drawing/buttons
+from screens import draw_shop_screen, draw_custom_button, draw_tooltip, draw_play_debug_bar
 from data import CHARMS_POOL  # For charm generation/packs
 import data
 from scoring import dice_pack_choices
@@ -129,6 +129,7 @@ class ShopState(State):
         self.charm_rects = []  # Store debug panel rects
         self.tray_rects = []  # For tray clicks
         self.debug_button_rect = None  # New for debug menu button
+        self.debug_tab_rects = []
 
     def enter(self):
         resuming = bool(getattr(self.game, 'is_resuming', False))
@@ -197,25 +198,28 @@ class ShopState(State):
         # Calc tray_rects for clicks (match screens.py) - FIXED: No recalc, use from unpack
         # print("DEBUG: shop self.tray_rects from unpack:", self.tray_rects)  # TEMP - confirm new rects
 
-        # Debug button (bottom-right to avoid prism packs)
+        # Debug (DBG tab). The two shop cheat buttons only show when the tab is open.
+        self.debug_tab_rects = []
+        self.debug_rect = None
+        self.debug_button_rect = None
         if DEBUG:
-            button_x = self.game.width - DEBUG_BUTTON_SIZE[0] - 50  # Bottom-right
-            button_y = self.game.height - DEBUG_BUTTON_SIZE[1] - 50
-            self.debug_rect = pygame.Rect(button_x, button_y, *DEBUG_BUTTON_SIZE)
-            draw_custom_button(self.game, self.debug_rect, DEBUG_BUTTON_TEXT, 
-                            is_hover=self.debug_rect.collidepoint(pygame.mouse.get_pos()))
-            
-            # Draw debug panel if open
-            if self.debug_panel_open:
-                self.charm_rects = self.draw_debug_panel()
+            self.debug_tab_rects = draw_play_debug_bar(self.game)
+            if getattr(self.game, 'debug_play_open', False):
+                button_x = self.game.width - DEBUG_BUTTON_SIZE[0] - 50
+                button_y = self.game.height - DEBUG_BUTTON_SIZE[1] - 50
+                self.debug_rect = pygame.Rect(button_x, button_y, *DEBUG_BUTTON_SIZE)
+                draw_custom_button(self.game, self.debug_rect, DEBUG_BUTTON_TEXT,
+                                   is_hover=self.debug_rect.collidepoint(pygame.mouse.get_pos()))
+                if self.debug_panel_open:
+                    self.charm_rects = self.draw_debug_panel()
+                else:
+                    self.charm_rects = []
+                if DEBUG_MENU_IN_SHOP:
+                    self.debug_button_rect = pygame.Rect(button_x, button_y - 60, 150, 50)
+                    draw_custom_button(self.game, self.debug_button_rect, "Debug Menu",
+                                       is_hover=self.debug_button_rect.collidepoint(pygame.mouse.get_pos()))
             else:
                 self.charm_rects = []
-
-            # Add this: New debug menu button (e.g., next to existing debug button)
-            if DEBUG and DEBUG_MENU_IN_SHOP:
-                # Position: Below or beside existing debug button (adjust coords as needed)
-                self.debug_button_rect = pygame.Rect(button_x, button_y - 60, 150, 50)  # Above existing, example
-                draw_custom_button(self.game, self.debug_button_rect, "Debug Menu", is_hover=self.debug_button_rect.collidepoint(pygame.mouse.get_pos()))
 
     def handle_event(self, event):
         from states.blinds import BlindsState  # Lazy import here - loads only when method runs
@@ -244,6 +248,14 @@ class ShopState(State):
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
+            if DEBUG:
+                for rect, action in self.debug_tab_rects or []:
+                    if rect.collidepoint(mouse_pos):
+                        if action == 'toggle':
+                            self.game.debug_play_open = not bool(getattr(self.game, 'debug_play_open', False))
+                        else:
+                            self.game.debug_run_play_action(action)
+                        return
             
             # Handle debug button
             if DEBUG and self.debug_rect and self.debug_rect.collidepoint(mouse_pos):
@@ -286,7 +298,7 @@ class ShopState(State):
                         return
             
             # Handle new debug menu button click
-            if DEBUG and DEBUG_MENU_IN_SHOP and self.debug_button_rect.collidepoint(mouse_pos):
+            if DEBUG and DEBUG_MENU_IN_SHOP and self.debug_button_rect and self.debug_button_rect.collidepoint(mouse_pos):
                 from states.debug import DebugMenuState  # Lazy import
                 self.game.state_machine.change_state(DebugMenuState(self.game))  # New state below
                 return

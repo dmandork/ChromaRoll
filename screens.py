@@ -11,11 +11,171 @@ from data import ENH_DESC  # For enhancement descriptions in tooltips
 
 
 # Play-screen layout (1024x600). Keep the left column flowing downward.
-PLAY_PAD = 12
-PLAY_CHARM_Y = 8
-PLAY_BAG_Y = 12
+# Inset past the wood rail so charms/bag/rune tray sit on the felt.
+TABLE_RAIL = 16
+PLAY_PAD = TABLE_RAIL + 8
+PLAY_CHARM_Y = TABLE_RAIL + 10
+PLAY_BAG_Y = TABLE_RAIL + 18
 HUD_TEXT_WIDTH = 500
 WIN_POPUP_WIDTH = 520
+
+# Casino table (play screen). Charms/bag/dice slots stay put.
+TABLE_WOOD = (96, 54, 24)
+TABLE_WOOD_DARK = (52, 28, 12)
+TABLE_GOLD = (212, 176, 72)
+TABLE_FELT_INLAY = (16, 76, 28)
+TABLE_PLAQUE = (24, 44, 20)
+
+
+def _format_coins(n):
+    try:
+        return f"${int(n):,}"
+    except (TypeError, ValueError):
+        return f"${n}"
+
+
+def _payout_row(line):
+    """Turn 'Hands left: $$$$' into ('Hands left', '$4') for the win plaque."""
+    line = (line or "").strip()
+    if not line:
+        return None
+    if ':' not in line:
+        return ('', line)
+    label, rest = line.split(':', 1)
+    rest = rest.strip()
+    if rest and set(rest) == {'$'}:
+        rest = f"${len(rest)}"
+    return (label.strip(), rest)
+
+
+def play_die_slot(game, i):
+    """Unscaled slot for hand die i. Same formula draw_dice / GameState clicks use."""
+    total = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
+    start_x = (game.width - total) // 2
+    x = start_x + i * (constants.DIE_SIZE + 20)
+    y = game.height - constants.DIE_SIZE - 100
+    return pygame.Rect(x, y, constants.DIE_SIZE, constants.DIE_SIZE)
+
+
+def draw_table_felt(game):
+    """Wood rail + gold pinstripe + felt inlay. Does not move any click targets."""
+    w, h = game.width, game.height
+    game.screen.fill(TABLE_WOOD_DARK)
+    pygame.draw.rect(game.screen, TABLE_WOOD, pygame.Rect(4, 4, w - 8, h - 8))
+    rail = TABLE_RAIL
+    felt = pygame.Rect(rail, rail, w - 2 * rail, h - 2 * rail)
+    pygame.draw.rect(game.screen, constants.THEME['background'], felt)
+    pygame.draw.rect(game.screen, TABLE_GOLD, felt, 2)
+    inlay = felt.inflate(-14, -14)
+    if inlay.width > 40 and inlay.height > 40:
+        pygame.draw.rect(game.screen, TABLE_FELT_INLAY, inlay, border_radius=32)
+
+
+def draw_dice_spots(game):
+    """Blackjack-style betting boxes under the five dice. Hold/discard/lock live here only."""
+    held = getattr(game, 'held', []) or []
+    marked = getattr(game, 'discard_selected', []) or []
+    locked_idx = getattr(game, 'intensified_locked_die_idx', None)
+    for i in range(constants.NUM_DICE_IN_HAND):
+        spot = play_die_slot(game, i).inflate(12, 12)
+        fill, border, width = (10, 48, 18), TABLE_GOLD, 2
+        if i < len(marked) and marked[i]:
+            fill, border, width = (70, 22, 22), (220, 60, 60), 3
+        elif locked_idx is not None and i == locked_idx:
+            fill, border, width = (22, 78, 30), (255, 215, 0), 3
+        elif i < len(held) and held[i]:
+            fill, border, width = (22, 78, 30), (90, 210, 90), 3
+        pygame.draw.rect(game.screen, fill, spot, border_radius=18)
+        pygame.draw.rect(game.screen, border, spot, width, border_radius=18)
+
+
+def _plaque_hand_name(game):
+    text = getattr(game, 'current_hand_text', '') or ''
+    if text.startswith('BLOCKED'):
+        return text.split('—')[0].strip()[:42]
+    if text.startswith('Current Hand: '):
+        return text[len('Current Hand: '):].split(' (')[0].strip()
+    return ''
+
+
+def _plaque_preview(game):
+    """Hand name, this-roll preview total, and '60 base + 0 charms' detail."""
+    text = getattr(game, 'current_hand_text', '') or ''
+    name = _plaque_hand_name(game)
+    preview = None
+    detail = ''
+    if ' = ' in text and 'total' in text.lower():
+        try:
+            tail = text.rsplit(' = ', 1)[-1]
+            digits = ''.join(c for c in tail if c.isdigit() or c == '-')
+            if digits and digits != '-':
+                preview = int(digits)
+        except ValueError:
+            preview = None
+    if '(' in text and ')' in text:
+        detail = text[text.find('(') + 1:text.find(')')]
+        detail = detail.replace('.0 charms', ' charms').replace('.0 ', ' ')
+    if getattr(game, 'is_discard_phase', False) or name in ('', 'Nothing'):
+        return name or 'Nothing', None, ''
+    return name, preview, detail
+
+
+def draw_score_plaque(game):
+    """Center score plaque: blind, round/target, this-roll preview if submitted."""
+    gold = TABLE_GOLD
+    text = constants.THEME['text']
+    w, h = 340, 186
+    dice_top = game.height - constants.DIE_SIZE - 100
+    band_top = PLAY_CHARM_Y + constants.CHARM_SIZE + 8
+    x = (game.width - w) // 2
+    y = band_top + max(4, (dice_top - band_top - h) // 2)
+    rect = pygame.Rect(x, y, w, h)
+    draw_rounded_element(game.screen, rect, TABLE_PLAQUE, border_color=gold, border_width=2, radius=12)
+    inner = rect.inflate(-10, -10)
+    pygame.draw.rect(game.screen, gold, inner, 1, border_radius=8)
+    cx = rect.centerx
+    limit = inner.bottom - 6
+
+    def line(font, msg, color, gap=1):
+        nonlocal_y = line.y
+        if not font or nonlocal_y >= limit:
+            return
+        surf = font.render(str(msg), True, color)
+        if nonlocal_y + surf.get_height() > limit:
+            return
+        game.screen.blit(surf, (cx - surf.get_width() // 2, nonlocal_y))
+        line.y = nonlocal_y + surf.get_height() + gap
+
+    line.y = inner.y + 6
+    blind = getattr(game, 'current_blind', 'Small') or 'Small'
+    line(game.tiny_font, f"{blind.upper()} BLIND", gold, 2)
+    try:
+        target = int(game.get_blind_target())
+    except Exception:
+        target = 0
+    score = int(getattr(game, 'round_score', 0) or 0)
+    line(game.font, f"{score}  /  {target}", text, 4)
+    hand_name, preview, detail = _plaque_preview(game)
+    if getattr(game, 'is_discard_phase', False):
+        line(game.tiny_font, "discard phase", (170, 180, 170), 2)
+    elif hand_name and hand_name != 'Nothing':
+        line(game.small_font, hand_name, text, 2)
+        if preview is not None:
+            line(game.small_font, f"this roll  {preview}", gold, 2)
+            # Only show banked total when some score is already on the table.
+            if score > 0 and target:
+                line(game.tiny_font, f"if scored  {score + preview} / {target}", (200, 200, 170), 1)
+        if detail:
+            line(game.tiny_font, detail, (170, 180, 170), 1)
+    else:
+        line(game.tiny_font, "hold dice to preview", (170, 180, 170), 2)
+    mod = getattr(game, 'current_modifier_text', '') or ''
+    if mod.startswith('Modifiers: '):
+        mod = mod[len('Modifiers: '):]
+    if mod and mod != 'None':
+        for wrapped in wrap_text(game.tiny_font, mod, w - 28)[:2]:
+            line(game.tiny_font, wrapped, (210, 200, 150), 1)
+    return rect
 
 
 def bag_geometry(game, origin=None):
@@ -452,6 +612,8 @@ def draw_game_screen(game):
     """Draws the main game screen."""
     game.screen.fill(constants.THEME['background'])
     mouse_pos = pygame.mouse.get_pos()
+    draw_table_felt(game)
+    draw_dice_spots(game)
     draw_dice(game)
     if game.broken_dice and game.break_icon:
         current_time = time.time()
@@ -501,7 +663,7 @@ def draw_game_screen(game):
     hud_y = PLAY_CHARM_Y + constants.CHARM_SIZE + 6
     dice_top = game.height - constants.DIE_SIZE - 100
     hud_limit = dice_top - 36
-    hud_y = draw_text(game, hud_y, hud_limit)
+    draw_score_plaque(game)
     draw_d20_hud(game, hud_y, hud_limit)
 
     draw_buttons(game)
@@ -532,9 +694,14 @@ def draw_game_screen(game):
         game.width - constants.MULTIPLIERS_BUTTON_SIZE - 10,
         game.height - constants.MULTIPLIERS_BUTTON_SIZE - 100,
         constants.MULTIPLIERS_BUTTON_SIZE, constants.MULTIPLIERS_BUTTON_SIZE)
-    pygame.draw.rect(game.screen, (100, 100, 100), multipliers_button_rect)
-    button_text = game.tiny_font.render("M", True, (constants.THEME['text']))
-    game.screen.blit(button_text, (multipliers_button_rect.x + 20, multipliers_button_rect.y + 15))
+    pygame.draw.rect(game.screen, TABLE_WOOD, multipliers_button_rect, border_radius=8)
+    pygame.draw.rect(game.screen, TABLE_GOLD, multipliers_button_rect, 2, border_radius=8)
+    pay = game.tiny_font.render("PAY", True, TABLE_GOLD)
+    table_lbl = game.tiny_font.render("TABLE", True, TABLE_GOLD)
+    game.screen.blit(pay, (multipliers_button_rect.centerx - pay.get_width() // 2,
+                           multipliers_button_rect.y + 8))
+    game.screen.blit(table_lbl, (multipliers_button_rect.centerx - table_lbl.get_width() // 2,
+                                 multipliers_button_rect.y + 24))
     if multipliers_button_rect.collidepoint(mouse_pos):
         panel_x = game.width - constants.MULTIPLIERS_PANEL_WIDTH - 10
         panel_y = game.height - constants.MULTIPLIERS_PANEL_HEIGHT - constants.MULTIPLIERS_BUTTON_SIZE - 120
@@ -587,16 +754,16 @@ def draw_game_screen(game):
 def draw_shop_screen(game, skip_tooltips=False):
     """Draws the shop screen with equipped charms (sell), equipped charms (buy), and Prism Packs."""
     mouse_pos = pygame.mouse.get_pos()
-    game.screen.fill(constants.THEME['background'])
+    draw_table_felt(game)
 
-    # Reposition "Shop" text to top left, above equipped charms
-    shop_y = 8
-    shop_text = game.font.render("Shop", True, (constants.THEME['text']))
+    # Header inset so it sits on the felt, not the wood rail
+    shop_y = TABLE_RAIL + 8
+    shop_text = game.font.render("SHOP", True, TABLE_GOLD)
     shop_text_x = 50
     game.screen.blit(shop_text, (shop_text_x, shop_y))
 
-    coins_y = shop_y + 36
-    coins_text = game.font.render(f"Coins: {game.coins}", True, (constants.THEME['text']))
+    coins_y = shop_y + 34
+    coins_text = game.font.render(_format_coins(game.coins), True, TABLE_GOLD)
     coins_text_x = 50
     game.screen.blit(coins_text, (coins_text_x, coins_y))
 
@@ -623,10 +790,11 @@ def draw_shop_screen(game, skip_tooltips=False):
     game.shop_bag_panel_rect = None
 
     # Continue top-right first so tray/multipliers can sit around it
-    continue_x = game.width - constants.BUTTON_WIDTH - 12
-    continue_y = 10
+    continue_x = game.width - constants.BUTTON_WIDTH - TABLE_RAIL - 8
+    continue_y = TABLE_RAIL + 8
     continue_rect = pygame.Rect(continue_x, continue_y, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
-    draw_custom_button(game, continue_rect, "Continue", is_hover=continue_rect.collidepoint(mouse_pos))
+    draw_custom_button(game, continue_rect, "Continue", is_hover=continue_rect.collidepoint(mouse_pos),
+                       fill_color=constants.THEME.get('yes_button', (0, 150, 0)))
 
     tray_width = 2 * constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING
     tray_x = continue_rect.x - tray_width - 12
@@ -649,10 +817,8 @@ def draw_shop_screen(game, skip_tooltips=False):
     panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
 
     # Draw panel background with rounded corners
-    pygame.draw.rect(game.screen, constants.UI_PANEL_COLOR, panel_rect, border_radius=15)
-
-    # Draw black border with rounded corners
-    pygame.draw.rect(game.screen, (0, 0, 0), panel_rect, width=2, border_radius=15)
+    pygame.draw.rect(game.screen, TABLE_FELT_INLAY, panel_rect, border_radius=15)
+    pygame.draw.rect(game.screen, TABLE_GOLD, panel_rect, width=2, border_radius=15)
 
     # Equipped charms horizontal at top (outside panel)
     equipped_title = game.small_font.render("Equipped Charms", True, (constants.THEME['text']))
@@ -685,7 +851,8 @@ def draw_shop_screen(game, skip_tooltips=False):
         sell_label = game.tiny_font.render(f"Sell: {sell_val}", True, (constants.THEME['text']))
         game.screen.blit(sell_label, (eq_rect.x + 2, eq_rect.y + constants.CHARM_SIZE + 2))
         sell_rect = pygame.Rect(eq_rect.x + constants.CHARM_SIZE - 50, eq_rect.y + constants.CHARM_SIZE + 1, 48, 20)
-        pygame.draw.rect(game.screen, (150, 0, 0), sell_rect)
+        pygame.draw.rect(game.screen, (150, 36, 36), sell_rect, border_radius=4)
+        pygame.draw.rect(game.screen, TABLE_GOLD, sell_rect, 1, border_radius=4)
         sell_text = game.tiny_font.render("Sell", True, (constants.THEME['text']))
         game.screen.blit(sell_text, (sell_rect.x + 10, sell_rect.y + 3))
         sell_rects.append(sell_rect)
@@ -725,7 +892,8 @@ def draw_shop_screen(game, skip_tooltips=False):
             cost_label = game.tiny_font.render(f"Cost: {charm['cost']}", True, (constants.THEME['text']))
             game.screen.blit(cost_label, (shop_rect.x + 5, shop_rect.y + constants.CHARM_BOX_HEIGHT - 30))
             buy_rect = pygame.Rect(shop_rect.x + constants.CHARM_BOX_WIDTH - 60, shop_rect.y + constants.CHARM_BOX_HEIGHT - 30, 50, 20)
-            pygame.draw.rect(game.screen, (0, 150, 0), buy_rect)
+            pygame.draw.rect(game.screen, (0, 130, 50), buy_rect, border_radius=4)
+            pygame.draw.rect(game.screen, TABLE_GOLD, buy_rect, 1, border_radius=4)
             buy_text = game.tiny_font.render("Buy", True, (constants.THEME['text']))
             game.screen.blit(buy_text, (buy_rect.x + 10, buy_rect.y + 3))
             buy_rects.append(buy_rect)
@@ -824,15 +992,21 @@ def draw_shop_screen(game, skip_tooltips=False):
             draw_tooltip(game, bag_toggle.x, bag_toggle.bottom + 6, "Show dice bag")
 
     if not bag_open:
-        mult_title = game.tiny_font.render("Hand Multipliers", True, (constants.THEME['text']))
-        mult_x = game.width - 190
-        mult_y = continue_rect.bottom + 8
+        mult_x = game.width - 200
+        mult_y = continue_rect.bottom + 10
+        rows = list(game.hand_multipliers.items())
+        box_h = 22 + len(rows) * 16 + 8
+        box = pygame.Rect(mult_x - 8, mult_y - 4, 188, min(box_h, 240 - mult_y))
+        pygame.draw.rect(game.screen, TABLE_PLAQUE, box, border_radius=8)
+        pygame.draw.rect(game.screen, TABLE_GOLD, box, 1, border_radius=8)
+        mult_title = game.tiny_font.render("PAYTABLE", True, TABLE_GOLD)
         game.screen.blit(mult_title, (mult_x, mult_y))
         y_offset = mult_y + 18
-        for ht, mult in game.hand_multipliers.items():
-            if y_offset + 16 > 240:
+        for ht, mult in rows:
+            if y_offset + 16 > box.bottom - 4:
                 break
-            mult_text = game.tiny_font.render(f"{ht}: x{mult:.1f}", True, (constants.THEME['text']))
+            col = TABLE_GOLD if float(mult) > 1.0 else constants.THEME['text']
+            mult_text = game.tiny_font.render(f"{ht}: x{mult:.1f}", True, col)
             game.screen.blit(mult_text, (mult_x, y_offset))
             y_offset += 16
     else:
@@ -840,148 +1014,330 @@ def draw_shop_screen(game, skip_tooltips=False):
 
     return continue_rect, sell_rects, buy_rects, equipped_rects, shop_rects, pack_rects, reroll_rect, tray_rects
 
+BLIND_ORDER = ['Small', 'Big', 'Boss']
+BLIND_CARD_STYLE = {
+    'Small': {
+        'fill': (28, 68, 36), 'fill_now': (42, 96, 50), 'fill_past': (20, 40, 24),
+        'accent': (212, 180, 72),
+    },
+    'Big': {
+        'fill': (56, 62, 28), 'fill_now': (78, 88, 38), 'fill_past': (34, 38, 20),
+        'accent': (220, 150, 52),
+    },
+    'Boss': {
+        'fill': (78, 28, 32), 'fill_now': (104, 36, 40), 'fill_past': (44, 22, 24),
+        'accent': (220, 70, 70),
+    },
+}
+
+
+def blind_status(current_blind, name):
+    try:
+        ci = BLIND_ORDER.index(current_blind)
+        ni = BLIND_ORDER.index(name)
+    except ValueError:
+        return 'future'
+    if ni < ci:
+        return 'past'
+    if ni == ci:
+        return 'current'
+    return 'future'
+
+
+def blinds_layout(game):
+    """Stake-screen geometry. Charms/bag keep play-screen positions."""
+    bag_rect, tray_rects = bag_geometry(game)
+    n_charms = len(getattr(game, 'equipped_charms', []) or [])
+    title_h, meta_h, gap = 40, 26, 10
+    header_block = title_h + meta_h + gap
+    if n_charms:
+        header_y = PLAY_CHARM_Y + constants.CHARM_SIZE + 8
+    else:
+        header_y = PLAY_BAG_Y + 2
+    btn_y = game.height - constants.BUTTON_HEIGHT - 28
+    cards_top = max(header_y + header_block, bag_rect.bottom + 12)
+    cards_bottom = btn_y - 28
+    if cards_top > cards_bottom - 160:
+        cards_top = min(cards_top, cards_bottom - 160)
+    card_h = max(160, cards_bottom - cards_top)
+    card_w, gap_x = 210, 20
+    total = 3 * card_w + 2 * gap_x
+    start_x = max(20, (game.width - total) // 2)
+    cards = [
+        pygame.Rect(start_x + i * (card_w + gap_x), cards_top, card_w, card_h)
+        for i in range(3)
+    ]
+    btn_gap = 24
+    btn_total = constants.BUTTON_WIDTH * 2 + btn_gap
+    btn_x = game.width // 2 - btn_total // 2
+    return {
+        'bag': bag_rect,
+        'tray': tray_rects,
+        'header_y': header_y,
+        'header_block': header_block,
+        'cards': cards,
+        'intensify': pygame.Rect(btn_x, btn_y, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT),
+        'continue': pygame.Rect(
+            btn_x + constants.BUTTON_WIDTH + btn_gap, btn_y,
+            constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT),
+    }
+
+
+def _blinds_blit(game, font, text, color, x, y, center_x=None):
+    if not font:
+        return 0
+    surf = font.render(str(text), True, color)
+    if center_x is not None:
+        x = center_x - surf.get_width() // 2
+    game.screen.blit(surf, (x, y))
+    return surf.get_height()
+
+
+def draw_blinds_play_hud(game, mouse_pos):
+    """Charms (play-screen left) + bag/tray (play-screen top-right)."""
+    bag_rect, tray_rects = bag_geometry(game)
+    draw_bag_visual(game)
+    tray = getattr(game, 'rune_tray', None) or [None, None]
+    for i, slot_rect in enumerate(tray_rects):
+        pygame.draw.rect(game.screen, (150, 150, 150), slot_rect, border_radius=5)
+        rune = tray[i] if i < len(tray) else None
+        if rune:
+            label = game.tiny_font.render(f"#{rune.get('id', i + 1)}", True, constants.THEME['text'])
+            game.screen.blit(label, (slot_rect.centerx - label.get_width() // 2,
+                                     slot_rect.centery - label.get_height() // 2))
+        else:
+            pygame.draw.rect(game.screen, (80, 80, 80), slot_rect, width=2)
+
+    game.equipped_charm_rects = []
+    charm_hover = None
+    for i, charm in enumerate(getattr(game, 'equipped_charms', []) or []):
+        x = 50 + i * (constants.CHARM_SIZE + 10)
+        y = PLAY_CHARM_Y
+        rect = pygame.Rect(x, y, constants.CHARM_SIZE, constants.CHARM_SIZE)
+        game.equipped_charm_rects.append(rect)
+        draw_charm_die(game, rect, charm, index=i)
+        if rect.collidepoint(mouse_pos):
+            charm_hover = (x, y + constants.CHARM_SIZE + 4, charm_tooltip_text(game, charm, index=i))
+    return bag_rect, charm_hover
+
+
 def draw_blinds_screen(game):
-    """Draws the blinds selection screen with three boxes for all blinds, horizontally."""
-    mouse_pos = pygame.mouse.get_pos() # For hover
+    """Stake / blinds select: three tall cards, play-screen charms + bag."""
+    mouse_pos = pygame.mouse.get_pos()
     game.screen.fill(constants.THEME['background'])
-    title_text = game.font.render(f"Stake {game.current_stake}", True, (constants.THEME['text']))
-    game.screen.blit(title_text, (game.width // 2 - title_text.get_width() // 2, game.height // 10))
     if game.upcoming_boss_effect is None:
-        game.upcoming_boss_effect = random.choice(data.BOSS_EFFECTS)  # Fallback generate if not set
-    # In shop or load logic
-    game.update_advantage_flag()
-    blind_order = ['Small', 'Big', 'Boss']
-    box_width, box_height = 150, 100
-    box_spacing = 50 # Spacing between blind boxes (pixels)
-    total_blinds_width = 3 * box_width + 2 * box_spacing
-    start_x = (game.width - total_blinds_width) // 2
-    start_y = game.height // 3
-    blind_rects = []  # NEW: List to return the rects for clicks
-    for i, blind in enumerate(blind_order):
-        x = start_x + i * (box_width + box_spacing)
-        rect = pygame.Rect(x, start_y, box_width, box_height)
-        blind_rects.append(rect)  # NEW: Collect for return
-        pygame.draw.rect(game.screen, (100, 100, 100), rect)
-        # Highlight current blind
-        if blind == game.current_blind:
-            pygame.draw.rect(game.screen, (255, 255, 255), rect, 3)
-        blind_text = game.small_font.render(f"{blind} Blind", True, (constants.THEME['text']))
-        game.screen.blit(blind_text, (rect.x + (box_width - blind_text.get_width()) // 2, rect.y + 20))
-        target_text = game.small_font.render(f"Score: {int(game.get_blind_target(game.current_stake, blind))}", True, (constants.THEME['text']))
-        game.screen.blit(target_text, (rect.x + (box_width - target_text.get_width()) // 2, rect.y + 50))
-        # Preview for Boss
+        game.upcoming_boss_effect = data.pick_boss_effect(getattr(game, 'current_stake', 1))
+    if hasattr(game, 'update_advantage_flag'):
+        game.update_advantage_flag()
+
+    layout = blinds_layout(game)
+    bag_rect, charm_hover = draw_blinds_play_hud(game, mouse_pos)
+
+    theme_text = constants.THEME['text']
+    gold = constants.THEME.get('highlight', (200, 160, 0))
+    header_y = layout['header_y']
+    stake = int(getattr(game, 'current_stake', 1) or 1)
+    _blinds_blit(game, game.font, f"STAKE {stake}", theme_text, 0, header_y, center_x=game.width // 2)
+
+    # One clustered meta row under the title so a fat coin count cannot
+    # sit on the Small card. [pip] Name   $1,234   ●○○○○○○○
+    pouch = getattr(game, 'current_pouch', None) or {}
+    pouch_name = (pouch.get('name') or '').replace(' Pouch', '')
+    pouch_color = constants.COLORS.get(pouch.get('color'), gold)
+    coins = int(getattr(game, 'coins', 0) or 0)
+    try:
+        coin_label = f"${coins:,}"
+    except (TypeError, ValueError):
+        coin_label = f"${coins}"
+    name_surf = game.tiny_font.render(pouch_name, True, theme_text) if pouch_name else None
+    coin_surf = game.tiny_font.render(coin_label, True, gold)
+    dots_w = 8 * 14
+    pieces = 14 + (name_surf.get_width() + 10 if name_surf else 0) + coin_surf.get_width() + 16 + dots_w
+    meta_x = game.width // 2 - pieces // 2
+    meta_y = header_y + 38
+    pygame.draw.circle(game.screen, pouch_color, (meta_x + 7, meta_y + 8), 7)
+    pygame.draw.circle(game.screen, (0, 0, 0), (meta_x + 7, meta_y + 8), 7, 1)
+    nx = meta_x + 18
+    if name_surf:
+        game.screen.blit(name_surf, (nx, meta_y))
+        nx += name_surf.get_width() + 10
+    game.screen.blit(coin_surf, (nx, meta_y))
+    nx += coin_surf.get_width() + 16
+    for i in range(8):
+        cx = nx + 6 + i * 14
+        if i + 1 < stake:
+            pygame.draw.circle(game.screen, gold, (cx, meta_y + 8), 5)
+        elif i + 1 == stake:
+            pygame.draw.circle(game.screen, gold, (cx, meta_y + 8), 5, 2)
+            pygame.draw.circle(game.screen, gold, (cx, meta_y + 8), 2)
+        else:
+            pygame.draw.circle(game.screen, (80, 100, 80), (cx, meta_y + 8), 5, 1)
+
+    current = getattr(game, 'current_blind', 'Small') or 'Small'
+    tooltip = None
+    blind_rects = layout['cards']
+    for i, blind in enumerate(BLIND_ORDER):
+        rect = blind_rects[i]
+        style = BLIND_CARD_STYLE[blind]
+        status = blind_status(current, blind)
+        if status == 'current':
+            fill = style['fill_now']
+            border = gold
+            border_w = 3
+        elif status == 'past':
+            fill = style['fill_past']
+            border = (0, 0, 0)
+            border_w = 2
+        else:
+            fill = style['fill']
+            border = (0, 0, 0)
+            border_w = 2
+        draw_rounded_element(game.screen, rect, fill, border_color=border, border_width=border_w, radius=16)
+        accent = style['accent']
+        cx = rect.centerx
+        y = rect.y + 14
+        y += _blinds_blit(game, game.tiny_font, blind.upper(), accent, 0, y, center_x=cx) + 2
+        if status == 'past':
+            y += _blinds_blit(game, game.tiny_font, "CLEARED", (160, 200, 160), 0, y, center_x=cx) + 6
+        elif status == 'current':
+            y += _blinds_blit(game, game.tiny_font, "UP NEXT", gold, 0, y, center_x=cx) + 6
+        else:
+            y += 10
+        y += _blinds_blit(game, game.small_font, f"{blind} Blind", theme_text, 0, y, center_x=cx) + 8
+        target = int(game.get_blind_target(game.current_stake, blind))
+        y += _blinds_blit(game, game.font, str(target), theme_text, 0, y, center_x=cx) + 2
+        y += _blinds_blit(game, game.tiny_font, "to beat", (170, 180, 170), 0, y, center_x=cx) + 10
+
         if blind == 'Boss':
-            if game.current_boss_effect and game.current_boss_effect['name'] == 'DISABLED':
+            if game.current_boss_effect and game.current_boss_effect.get('name') == 'DISABLED':
                 boss_name = "DISABLED"
                 boss_desc = "Boss effect disabled by Luchador Lens!"
-                boss_color = constants.THEME['disabled'] # Gray
+                boss_color = constants.THEME.get('disabled', (140, 140, 140))
             elif game.upcoming_boss_effect:
-                boss_name = game.upcoming_boss_effect['name']
-                boss_desc = game.upcoming_boss_effect['desc']
-                boss_color = (255, 0, 0) # Red
+                boss_name = game.upcoming_boss_effect.get('name', 'Random')
+                boss_desc = game.upcoming_boss_effect.get('desc', '')
+                boss_color = accent
             else:
-                boss_name = "Random" # Fallback for no effect
+                boss_name = "Random"
                 boss_desc = "Boss effect TBD"
-                boss_color = (255, 0, 0)
-           
-            effect_str = f"{boss_name} - {boss_desc}"
-            # Your existing wrap logic...
-            lines = []
-            words = effect_str.split()
-            current_line = ""
-            for word in words:
-                if game.small_font.size(current_line + word + " ")[0] > box_width * 1.5:
-                    lines.append(current_line.strip())
-                    current_line = word + " "
-                else:
-                    current_line += word + " "
-            lines.append(current_line.strip())
-           
-            y_offset = rect.y + box_height + 10
-            shown = lines[:2]
-            if len(lines) > 2:
-                shown[-1] = shown[-1].rstrip('.') + '…'
-            for line in shown:
-                effect_text = game.tiny_font.render(line, True, boss_color)
-                game.screen.blit(effect_text, (rect.x + (box_width - effect_text.get_width()) // 2, y_offset))
-                y_offset += effect_text.get_height() + 2
+                boss_color = accent
+            y += _blinds_blit(game, game.small_font, boss_name, boss_color, 0, y, center_x=cx) + 2
+            diff = ''
+            if game.current_boss_effect and game.current_boss_effect.get('name') == 'DISABLED':
+                diff = ''
+            elif game.upcoming_boss_effect:
+                diff = (game.upcoming_boss_effect.get('difficulty') or '').upper()
+            if diff:
+                diff_col = {'EASY': (160, 210, 140), 'MEDIUM': gold, 'HARD': accent}.get(diff, gold)
+                y += _blinds_blit(game, game.tiny_font, diff, diff_col, 0, y, center_x=cx) + 4
+            inner_w = rect.width - 24
+            lines = wrap_text(game.tiny_font, boss_desc, inner_w)[:5]
+            for line in lines:
+                y += _blinds_blit(game, game.tiny_font, line, (220, 180, 180), 0, y, center_x=cx) + 1
             if rect.collidepoint(mouse_pos):
-                draw_tooltip(game, rect.x, rect.y + box_height + 8, f"{boss_name}: {boss_desc}")
-        elif blind == 'Boss': # Fallback if no effect (e.g., bug)
-            fallback_text = game.small_font.render("Effect: Random", True, (255, 0, 0))
-            game.screen.blit(fallback_text, (rect.x + (box_width - fallback_text.get_width()) // 2, rect.y + box_height + 10))
-    coins_text = game.small_font.render(f"Coins: {game.coins}", True, (constants.THEME['text']))
-    game.screen.blit(coins_text, (game.width // 2 - coins_text.get_width() // 2, game.height // 10 + 50))
-    continue_rect = None # Define all returns upfront
+                tooltip = (rect.x, rect.bottom - 8, f"{boss_name}: {boss_desc}")
+
+        if status == 'past':
+            try:
+                overlay = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 70))
+                game.screen.blit(overlay, rect.topleft)
+            except Exception:
+                pass
+
+    intensify_rect = layout['intensify']
+    continue_rect = layout['continue']
+    boon = getattr(game, 'd20_boon', None)
+    locked = bool(boon is not None and hasattr(boon, 'is_locked') and boon.is_locked())
+    gated = not data.intensify_unlocked(getattr(game, 'current_stake', 1))
+    if locked:
+        hint = game.tiny_font.render("already rolled", True, (180, 190, 160))
+        game.screen.blit(hint, (intensify_rect.centerx - hint.get_width() // 2,
+                                intensify_rect.y - hint.get_height() - 4))
+        draw_custom_button(game, intensify_rect, "Locked",
+                           fill_color=constants.THEME.get('disabled', (100, 100, 100)))
+    elif gated:
+        hint = game.tiny_font.render(f"Unlocks at Stake {data.INTENSIFY_MIN_STAKE}", True, (180, 190, 160))
+        game.screen.blit(hint, (intensify_rect.centerx - hint.get_width() // 2,
+                                intensify_rect.y - hint.get_height() - 4))
+        draw_custom_button(game, intensify_rect, "Intensify",
+                           fill_color=constants.THEME.get('disabled', (100, 100, 100)))
+    else:
+        hint = game.tiny_font.render("optional D20 boon", True, (180, 190, 160))
+        game.screen.blit(hint, (intensify_rect.centerx - hint.get_width() // 2,
+                                intensify_rect.y - hint.get_height() - 4))
+        draw_custom_button(game, intensify_rect, "Intensify",
+                           is_hover=intensify_rect.collidepoint(mouse_pos))
+    draw_custom_button(game, continue_rect, "Continue",
+                       is_hover=continue_rect.collidepoint(mouse_pos),
+                       fill_color=constants.THEME.get('yes_button', (0, 150, 0)))
+
     debug_button_rect = None
     up_rect = None
     down_rect = None
     debug_jump_rect = None
-    intensify_rect = None  # NEW: Single return for intensify button
-   
-    # Intensify + Continue side by side so the 50px buttons never overlap
-    btn_y = game.height - constants.BUTTON_HEIGHT - 28
-    gap = 24
-    total = constants.BUTTON_WIDTH * 2 + gap
-    start_x = game.width // 2 - total // 2
-    intensify_rect = pygame.Rect(start_x, btn_y, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
-    continue_rect = pygame.Rect(start_x + constants.BUTTON_WIDTH + gap, btn_y, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
-    pygame.draw.rect(game.screen, (100, 100, 100), intensify_rect)
-    pygame.draw.rect(game.screen, (100, 100, 100), continue_rect)
-    boon = getattr(game, 'd20_boon', None)
-    locked = bool(boon is not None and hasattr(boon, 'is_locked') and boon.is_locked())
-    if locked:
-        pygame.draw.rect(game.screen, constants.THEME.get('disabled', (100, 100, 100)), intensify_rect)
-        intensify_text = game.small_font.render("Locked", True, constants.THEME['text'])
-    else:
-        intensify_text = game.small_font.render("Intensify?", True, constants.THEME['text'])
-    continue_text = game.small_font.render("Continue", True, constants.THEME['text'])
-    game.screen.blit(intensify_text, (intensify_rect.centerx - intensify_text.get_width() // 2,
-                                      intensify_rect.centery - intensify_text.get_height() // 2))
-    game.screen.blit(continue_text, (continue_rect.centerx - continue_text.get_width() // 2,
-                                     continue_rect.centery - continue_text.get_height() // 2))
-    
-    if constants.DEBUG:
-        # Debug Boss Select Button
-        debug_button_text = game.small_font.render("Select Boss (Debug)", True, (0, 255, 0)) # Green for debug
-        debug_button_rect = pygame.Rect(game.width - 200, game.height - 100, 180, 40) # Bottom-right; adjust
+    debug_open = bool(constants.DEBUG and getattr(game, 'debug_play_open', False))
+    if debug_open:
+        debug_button_rect = pygame.Rect(game.width - 200, game.height - 100, 180, 40)
+        debug_jump_rect = pygame.Rect(game.width - 200, game.height - 60, 180, 40)
         pygame.draw.rect(game.screen, (50, 50, 50), debug_button_rect, border_radius=5)
-        game.screen.blit(debug_button_text, (debug_button_rect.x + 10, debug_button_rect.y + 10))
-        debug_jump_text = game.small_font.render("Jump to Boss (Debug)", True, (0, 255, 0)) # Green for debug
-        debug_jump_rect = pygame.Rect(game.width - 200, game.height - 60, 180, 40) # Above the select button; adjust y to avoid overlap
         pygame.draw.rect(game.screen, (50, 50, 50), debug_jump_rect, border_radius=5)
-        game.screen.blit(debug_jump_text, (debug_jump_rect.x + 10, debug_jump_rect.y + 10))
+        sel = game.small_font.render("Select Boss (Debug)", True, (0, 255, 0))
+        jmp = game.small_font.render("Jump to Boss (Debug)", True, (0, 255, 0))
+        game.screen.blit(sel, (debug_button_rect.x + 10, debug_button_rect.y + 10))
+        game.screen.blit(jmp, (debug_jump_rect.x + 10, debug_jump_rect.y + 10))
         if game.debug_boss_dropdown_open:
-            # Dropdown Panel: Scrollable list
-            panel_width, panel_height = 300, 300 # Size for ~10-15 visible items
-           
-            # Position: Above the button, hugging right side
-            panel_x = game.width - panel_width - 10 # Hug right with padding
-            panel_y = debug_button_rect.y - panel_height - 10 # Above button with padding
-           
-            # Adaptive: If above clips top, shift below as fallback
+            panel_width, panel_height = 300, 300
+            panel_x = game.width - panel_width - 10
+            panel_y = debug_button_rect.y - panel_height - 10
             if panel_y < 0:
                 panel_y = debug_button_rect.y + debug_button_rect.height + 10
-            pygame.draw.rect(game.screen, (20, 20, 20), (panel_x, panel_y, panel_width, panel_height)) # Dark panel
-            item_height = 25 # Each effect row
+            pygame.draw.rect(game.screen, (20, 20, 20), (panel_x, panel_y, panel_width, panel_height))
+            item_height = 25
             visible_items = panel_height // item_height
             total_items = len(data.BOSS_EFFECTS)
-           
-            # Scroll arrows (simple up/down buttons)
             up_rect = pygame.Rect(panel_x + panel_width - 30, panel_y, 30, 30)
             down_rect = pygame.Rect(panel_x + panel_width - 30, panel_y + panel_height - 30, 30, 30)
             pygame.draw.rect(game.screen, (100, 100, 100), up_rect)
             pygame.draw.rect(game.screen, (100, 100, 100), down_rect)
-            game.screen.blit(game.small_font.render("^", True, (constants.THEME['text'])), (up_rect.x + 10, up_rect.y + 5))
-            game.screen.blit(game.small_font.render("v", True, (constants.THEME['text'])), (down_rect.x + 10, down_rect.y + 5))
-            # Render visible effects
+            game.screen.blit(game.small_font.render("^", True, theme_text), (up_rect.x + 10, up_rect.y + 5))
+            game.screen.blit(game.small_font.render("v", True, theme_text), (down_rect.x + 10, down_rect.y + 5))
             for i in range(game.debug_boss_scroll_offset, min(game.debug_boss_scroll_offset + visible_items, total_items)):
                 effect = data.BOSS_EFFECTS[i]
-                item_text = game.small_font.render(f"{effect['name']}: {effect['desc'][:30]}...", True, (constants.THEME['text'])) # Truncate long desc
+                item_text = game.small_font.render(
+                    f"{effect['name']}: {effect['desc'][:30]}...", True, theme_text)
                 item_y = panel_y + (i - game.debug_boss_scroll_offset) * item_height + 5
                 game.screen.blit(item_text, (panel_x + 10, item_y))
-    # Update return to include debug rects
-    return blind_rects, continue_rect, debug_button_rect, up_rect, down_rect, debug_jump_rect, intensify_rect  # 7 values
+
+    msg = getattr(game, 'temp_message', None)
+    if msg and time.time() - getattr(game, 'temp_message_start', 0) < getattr(game, 'temp_message_duration', 2):
+        surf = game.small_font.render(msg, True, (255, 255, 0))
+        game.screen.blit(surf, (game.width // 2 - surf.get_width() // 2, layout['continue'].y - 22))
+
+    if bag_rect.collidepoint(mouse_pos) or any(
+            r.collidepoint(mouse_pos) for r in getattr(game, 'bag_die_rects', []) or []):
+        for j, brect in enumerate(getattr(game, 'bag_die_rects', []) or []):
+            if not brect.collidepoint(mouse_pos):
+                continue
+            die = bag_die_at(game, j)
+            if not die:
+                continue
+            lines = [f"{die.get('color', '?')} die"]
+            for enh in die.get('enhancements') or []:
+                lines.append(f"{enh}: {ENH_DESC.get(enh, 'enhancement')}")
+            bonus = die.get('score_bonus', 0)
+            if bonus:
+                lines.append(f"+{bonus} score bonus")
+            tooltip = (brect.x, brect.y + brect.height + 6, "\n".join(lines))
+            break
+
+    if charm_hover:
+        draw_tooltip(game, charm_hover[0], charm_hover[1], charm_hover[2])
+    elif tooltip:
+        draw_tooltip(game, tooltip[0], tooltip[1], tooltip[2])
+
+    return (layout['cards'], continue_rect, debug_button_rect, up_rect, down_rect,
+            debug_jump_rect, intensify_rect)
 
 def draw_tutorial_screen(game):
     """Draws the tutorial screen with overlays on mock states."""
@@ -1193,31 +1549,20 @@ def draw_dice(game):
                 dot_x = inner_rect.x + pos[0] * inner_rect.width
                 dot_y = inner_rect.y + pos[1] * inner_rect.height
                 pygame.draw.circle(game.screen, (0, 0, 0), (dot_x, dot_y), constants.DOT_RADIUS)
-        # Highlight if selected for discard (red border outside black)
-        if game.discard_selected[i]:
-            outer_rect = pygame.Rect(x + offset - 3, y + offset - 3, size + 6, size + 6)
-            pygame.draw.rect(game.screen, (255, 0, 0), outer_rect, 3, border_radius=constants.DIE_BORDER_RADIUS)
-        # Draw dots
         inner_content = lambda r: [
             _draw_dots(r, value),
             draw_enhancement_visuals(game, r, die)
         ]
         draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=2, radius=constants.DIE_BORDER_RADIUS, inner_content=inner_content)
 
-        # New: Green border if in selecting mode for Fate's Favor or Roll Flow
+        # Fate's Favor / Roll Flow: pick-a-die mode (not hold/discard — those use the betting spots)
         if game.selecting_fates_die or getattr(game, 'selecting_advantage_die', False):
-            pygame.draw.rect(game.screen, (0, 255, 0), rect, 2)  # Green selector on all dice
+            pygame.draw.rect(game.screen, (0, 255, 0), rect, 2)
 
         # Fusion: gold ring on fused-color dice during an intensified blind
         boon = getattr(game, 'd20_boon', None)
         if boon and boon.active and boon.fused_color and die.get('color') == boon.fused_color:
             pygame.draw.rect(game.screen, constants.COLORS.get(boon.fused_color, (255, 215, 0)), rect.inflate(6, 6), 2, border_radius=constants.DIE_BORDER_RADIUS + 2)
-
-        # Held highlight + D20 Tier 3 (Roll Harmony) locked die
-        is_locked = hasattr(game, 'intensified_locked_die_idx') and i == game.intensified_locked_die_idx
-        if game.held[i] or is_locked:
-            border_width = 4 if is_locked else 2   # thicker border so it stands out as "D20 locked"
-            pygame.draw.rect(game.screen, (0, 255, 0), rect, border_width)
 
         
 
@@ -1250,8 +1595,6 @@ def draw_dice(game):
             # Highlight if held
             if game.held_advantage:
                 pygame.draw.rect(game.screen, (0, 255, 0), adv_rect, 2)
-            if game.held[adv_index]:
-                pygame.draw.rect(game.screen, (0, 255, 0), game.hand_die_rects[adv_index], 2)  # Highlight original chosen die
 
             # Refresh the original die rect (if held state changed size)
             if adv_index < len(game.rolls):
@@ -1454,21 +1797,34 @@ def draw_bag_enhancement_visuals(game, die_rect, die):
         # Add more if new enh (e.g., 'Judgement' no visual needed)
 
 def draw_ui_panel(game):
-    """Draws the UI panel with hands, discards, rolls left."""
+    """Hands / discards / rolls as rail plaques; coins as a chip stack."""
     panel_x = 50
-    panel_y = game.height - constants.BUTTON_HEIGHT - 20 - constants.UI_PANEL_HEIGHT - 10  # Above discard button
-    panel_rect = pygame.Rect(panel_x, panel_y, constants.UI_PANEL_WIDTH, constants.UI_PANEL_HEIGHT)
-    draw_rounded_element(game.screen, panel_rect, constants.THEME['panel_bg'], border_color=constants.THEME['border'], border_width=2, radius=constants.UI_PANEL_BORDER_RADIUS, inner_content=None)
-
-    # Texts inside
-    hands_text = game.tiny_font.render(f"Hands: {game.hands_left}", True, (constants.THEME['text']))
-    game.screen.blit(hands_text, (panel_x + 10, panel_y + 10))
-    discards_text = game.tiny_font.render(f"Discards: {game.discards_left}", True, (constants.THEME['text']))
-    game.screen.blit(discards_text, (panel_x + 10, panel_y + 40))
-    rolls_text = game.tiny_font.render(f"Rolls Left: {game.rerolls_left if game.rerolls_left >= 0 else '∞'}", True, (constants.THEME['text']))
-    game.screen.blit(rolls_text, (panel_x + 10, panel_y + 70))
-    coins_text = game.tiny_font.render(f"Coins: {game.coins}", True, (constants.THEME['text']))
-    game.screen.blit(coins_text, (panel_x + 10, panel_y + 100))
+    panel_y = game.height - constants.BUTTON_HEIGHT - 20 - constants.UI_PANEL_HEIGHT - 10
+    gold = TABLE_GOLD
+    text = constants.THEME['text']
+    rolls = game.rerolls_left if getattr(game, 'rerolls_left', 0) >= 0 else '∞'
+    rows = [
+        ('HANDS', str(getattr(game, 'hands_left', 0))),
+        ('DISCARDS', str(getattr(game, 'discards_left', 0))),
+        ('ROLLS', str(rolls)),
+    ]
+    row_h = 28
+    plate_w = constants.UI_PANEL_WIDTH
+    for i, (label, value) in enumerate(rows):
+        r = pygame.Rect(panel_x, panel_y + i * (row_h + 4), plate_w, row_h)
+        pygame.draw.rect(game.screen, TABLE_PLAQUE, r, border_radius=6)
+        pygame.draw.rect(game.screen, gold, r, 1, border_radius=6)
+        lab = game.tiny_font.render(label, True, gold)
+        val = game.tiny_font.render(value, True, text)
+        game.screen.blit(lab, (r.x + 8, r.centery - lab.get_height() // 2))
+        game.screen.blit(val, (r.right - val.get_width() - 8, r.centery - val.get_height() // 2))
+    chip_y = panel_y + 3 * (row_h + 4) + 6
+    chip_x = panel_x + 10
+    for i, color in enumerate(((180, 40, 40), (40, 70, 170), (212, 176, 72))):
+        pygame.draw.ellipse(game.screen, color, pygame.Rect(chip_x, chip_y - i * 4, 22, 10))
+        pygame.draw.ellipse(game.screen, (20, 20, 20), pygame.Rect(chip_x, chip_y - i * 4, 22, 10), 1)
+    coin_surf = game.tiny_font.render(_format_coins(getattr(game, 'coins', 0)), True, gold)
+    game.screen.blit(coin_surf, (chip_x + 28, chip_y - 8))
 
 def draw_custom_button(game, rect, text, is_hover=False, fill_color=None, is_red=False):
     """Draws a custom button with optional fill color and red variant."""
@@ -1780,37 +2136,83 @@ def draw_pause_menu(game):
     return button_rects, game.mute_button_rect
 
 def draw_popup(game):
-    """Beaten-blind popup. Wide enough for D20 / echo lines; height follows wrapped text."""
-    raw_lines = (game.popup_message or "").split('\n')
-    font = game.tiny_font
-    max_w = WIN_POPUP_WIDTH - 28
-    lines = []
+    """Beaten-blind payout plaque. Same Continue click box, casino styling."""
+    raw_lines = [ln for ln in (game.popup_message or "").split('\n')]
+    gold = TABLE_GOLD
+    text_col = constants.THEME['text']
+    # Dim the table behind the plaque
+    try:
+        shade = pygame.Surface((game.width, game.height), pygame.SRCALPHA)
+        shade.fill((0, 0, 0, 140))
+        game.screen.blit(shade, (0, 0))
+    except Exception:
+        pass
+
+    title = "BLIND BEATEN"
+    score_line = ""
+    rows = []
     for raw in raw_lines:
-        wrapped = wrap_text(font, raw, max_w) if raw else ['']
-        lines.extend(wrapped if wrapped else [''])
+        s = (raw or "").strip()
+        if not s:
+            continue
+        if "Beaten" in s and "Score:" in s:
+            title = s.split("Score:")[0].replace("!", "").strip().upper()
+            score_line = s.split("Score:", 1)[1].strip()
+            continue
+        row = _payout_row(s)
+        if row:
+            rows.append(row)
+
+    font = game.small_font
+    tiny = game.tiny_font
     line_h = 22
     btn_space = 70
-    content_h = 20 + len(lines) * line_h + btn_space
-    dynamic_height = min(game.height - 40, max(220, content_h))
+    header_h = 78
+    content_h = header_h + max(1, len(rows)) * line_h + btn_space
+    dynamic_height = min(game.height - 40, max(240, content_h))
     popup_rect = pygame.Rect(
         game.width // 2 - WIN_POPUP_WIDTH // 2,
         max(20, (game.height - dynamic_height) // 2),
         WIN_POPUP_WIDTH, dynamic_height)
-    pygame.draw.rect(game.screen, (100, 100, 100), popup_rect)
-    pygame.draw.rect(game.screen, (255, 255, 255), popup_rect, 3)
-    max_text_rows = max(1, (dynamic_height - btn_space - 20) // line_h)
-    for i, line in enumerate(lines[:max_text_rows]):
-        text = font.render(line, True, constants.THEME['text'])
-        game.screen.blit(text, (popup_rect.x + (WIN_POPUP_WIDTH - text.get_width()) // 2,
-                                popup_rect.y + 16 + i * line_h))
+    draw_rounded_element(game.screen, popup_rect, TABLE_PLAQUE, border_color=gold, border_width=3, radius=14)
+    inner = popup_rect.inflate(-10, -10)
+    pygame.draw.rect(game.screen, gold, inner, 1, border_radius=10)
+
+    cx = popup_rect.centerx
+    y = popup_rect.y + 14
+    t = game.font.render(title, True, gold)
+    game.screen.blit(t, (cx - t.get_width() // 2, y))
+    y += t.get_height() + 4
+    if score_line:
+        sc = font.render(score_line, True, text_col)
+        game.screen.blit(sc, (cx - sc.get_width() // 2, y))
+        y += sc.get_height() + 10
+
+    max_text_y = popup_rect.bottom - btn_space
+    label_x = popup_rect.x + 36
+    value_x = popup_rect.right - 36
+    for label, value in rows:
+        if y + line_h > max_text_y:
+            break
+        if label.lower().startswith("coins gained"):
+            lab = font.render(label, True, gold)
+            val = font.render(value, True, gold)
+        else:
+            lab = tiny.render(label, True, (200, 200, 180)) if label else None
+            val = tiny.render(value, True, text_col)
+        if lab:
+            game.screen.blit(lab, (label_x, y))
+        if val:
+            game.screen.blit(val, (value_x - val.get_width(), y))
+        y += line_h
+
     button_y = popup_rect.y + dynamic_height - 62
     continue_rect = pygame.Rect(
         popup_rect.x + (WIN_POPUP_WIDTH - constants.BUTTON_WIDTH) // 2,
         button_y, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
-    pygame.draw.rect(game.screen, (100, 100, 100), continue_rect)
-    continue_text = font.render("Continue", True, constants.THEME['text'])
-    game.screen.blit(continue_text, (continue_rect.x + (constants.BUTTON_WIDTH - continue_text.get_width()) // 2,
-                                     continue_rect.y + 10))
+    draw_custom_button(game, continue_rect, "Continue",
+                       is_hover=continue_rect.collidepoint(pygame.mouse.get_pos()),
+                       fill_color=constants.THEME.get('yes_button', (0, 150, 0)))
     return continue_rect
 
 def draw_instruction_popup(game, message):

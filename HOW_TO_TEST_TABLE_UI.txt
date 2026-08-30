@@ -1,0 +1,29 @@
+HOW TO TEST — Play screen casino table
+======================================
+
+Drop over your ChromaRoll folder (on top of StakeUI):
+
+  screens.py
+  tests/test_table_ui.py
+  HOW_TO_TEST_TABLE_UI.txt
+  ChromaRoll_Game_Features.md
+
+Headless:
+
+  python tests/test_table_ui.py
+  python tests/test_ui_pass_c.py
+
+In game
+-------
+New Game → pouch → Continue into a blind.
+
+You should see:
+  - Wood rail around the window, gold pinstripe, slightly lighter felt inlay
+  - Gold score plaque in the empty middle: BLIND name, score / target, hand
+  - Five gold betting boxes under the dice (red if marked discard, green if held)
+  - Left rail: HANDS / DISCARDS / ROLLS plates + chip-stack coins
+  - Gray M is now a PAY TABLE plate (hover still opens the paytable)
+  - Charms still top-left, bag still top-right, buttons still bottom
+  - Dice clicks / discard / roll unchanged
+
+Tweaks welcome — this is a visual pass.

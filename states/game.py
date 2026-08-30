@@ -6,7 +6,7 @@ import random
 import constants
 import utils
 from states.base import State  # Import from base
-from screens import draw_game_screen, draw_popup, draw_buttons, draw_tooltip, draw_enhancement_visuals, draw_instruction_popup, bag_geometry, bag_cells, bag_die_at, draw_play_debug_bar
+from screens import draw_game_screen, draw_popup, draw_buttons, draw_tooltip, draw_enhancement_visuals, draw_instruction_popup, bag_geometry, bag_cells, bag_die_at, draw_play_debug_bar, PLAY_CHARM_Y
 from constants import DEBUG, NUM_DICE_IN_HAND, THEME, DIE_SIZE, HELD_DIE_SCALE, CHARM_SIZE, SMALL_DIE_SIZE, SMALL_DIE_SPACING, BAG_PADDING
 from data import ENH_DESC
 from states.shop import ShopState  # Add if not present
@@ -715,7 +715,7 @@ class GameState(State):
             # Charm drag start
             for i in range(len(self.game.equipped_charms)):
                 x = 50 + i * (CHARM_SIZE + 10)
-                y = 10
+                y = PLAY_CHARM_Y
                 rect = pygame.Rect(x, y, CHARM_SIZE, CHARM_SIZE)
                 if rect.collidepoint(mouse_pos):
                     charm = self.game.equipped_charms[i]  # Define charm inside rect check

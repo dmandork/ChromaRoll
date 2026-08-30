@@ -18,43 +18,71 @@ DICE_DESCRIPTIONS = {
     'Rainbow': 'Rainbow Die: Acts as wild for color bonuses (mono & rainbow)'}  # Descriptions for each die color
 
 BOSS_EFFECTS = [
-    {'name': 'Hold Ban', 'desc': 'You cannot hold any dice between rerolls.', 'difficulty': 'Hard'},
-    {'name': 'Reroll Ration', 'desc': 'Rerolls left reduced by 1 for the round.', 'difficulty': 'Easy'},
-    {'name': 'Discard Drought', 'desc': 'Discards left reduced by 1 for the round.', 'difficulty': 'Easy'},
-    {'name': 'Reroll Penalty', 'desc': 'Each reroll costs 1 coin (deducted immediately).', 'difficulty': 'Easy'},
-    {'name': 'Hold Limit', 'desc': 'You can only hold up to 3 dice between rerolls.', 'difficulty': 'Medium'},
-    {'name': 'Discard Cap', 'desc': 'Discard phase limited to 2 dice max per use.', 'difficulty': 'Easy'},
-    {'name': 'Score Dip', 'desc': 'Base hand scores reduced by 10% for the round.', 'difficulty': 'Easy'},
-    {'name': 'Target Bump', 'desc': 'Blind target increased by 20%.', 'difficulty': 'Medium'},
-    {'name': 'Color Fade', 'desc': 'No monochrome or rainbow bonuses applied this round.', 'difficulty': 'Medium'},
-    {'name': 'Fragile Flip', 'desc': 'Glass dice break chance increased to 50%.', 'difficulty': 'Medium'},
-    {'name': 'Charm Glitch', 'desc': 'One random equipped charm is disabled for the round.', 'difficulty': 'Medium'},
-    {'name': 'Face Shuffle', 'desc': 'Dice faces are randomized (e.g., non-standard values like duplicates or missing numbers).', 
-     'difficulty': 'Medium'},
-    {'name': 'Coin Freeze', 'desc': 'No extra coins from Gold/Silver this round.', 'difficulty': 'Medium'},
-    {'name': 'Rainbow Restriction', 'desc': 'Rainbow dice only count as one fixed color (random per round) for bonuses.', 
-     'difficulty': 'Medium'},
-    {'name': 'Glass Guard', 'desc': 'Glass dice cannot be held (auto-unheld after rolls).', 'difficulty': 'Medium'},
-    {'name': 'Charm Tax', 'desc': 'Each equipped charm reduces hands left by 0.5 (rounded down).', 'difficulty': 'Medium'},
-    {'name': 'Mono Mixup', 'desc': 'Monochrome bonuses halved if more than one color is present (even Rainbows).', 
-     'difficulty': 'Medium'},
-    {'name': 'Reroll Rebound', 'desc': 'After each reroll, one random held die is unheld.', 'difficulty': 'Medium'},
-    {'name': 'Hand Trim', 'desc': 'Hands left reduced by 1 for the round.', 'difficulty': 'Hard'},
-    {'name': 'Break Surge', 'desc': 'Glass break chance increases by 10% per reroll used.', 'difficulty': 'Hard'},
-    {'name': 'Special Silence', 'desc': 'All special die effects disabled (no Gold coins, Silver extras, Glass mult, Rainbow wild).', 
-     'difficulty': 'Hard'},
-    {'name': 'Die Drain', 'desc': 'One random die is removed from your hand after each reroll, and pulling a new one from the bag.', 'difficulty': 'Hard'},
-    {'name': 'Charm Eclipse', 'desc': 'All equipped charms are disabled for the round.', 'difficulty': 'Hard'},
-    {'name': 'Value Vault', 'desc': 'All rolled values are inverted (1=6, 2=5, etc.), messing with straights and high/low strategies.', 
-     'difficulty': 'Hard'},
-    {'name': 'Blind Boost', 'desc': 'Blind target increased by 30%, but +1 extra discard.', 'difficulty': 'Hard'},
-    {'name': 'Special Swap', 'desc': 'All special dice effects are inverted (e.g., Gold gives coins when not held, Silver when held).', 
-     'difficulty': 'Hard'},
-    {'name': 'Discard Delay', 'desc': 'Discard phase only available after first reroll.', 'difficulty': 'Hard'},
-    {'name': 'Multiplier Mute', 'desc': 'All multipliers (charms, hands, colors) capped at x1.5.', 'difficulty': 'Hard'},
-    {'name': 'Bag Bottleneck', 'desc': 'Bag refills only half full after depletion (fewer redraw options).', 'difficulty': 'Hard'},
-    {'name': 'Hold Hazard', 'desc': 'Held dice have a 20% chance to reroll anyway on next roll.', 'difficulty': 'Hard'}
+    # Easy — Stake 1+  (resource nicks, never bricks a build)
+    {'name': 'Reroll Ration', 'desc': 'Rerolls left reduced by 1 for the round.', 'difficulty': 'Easy', 'min_stake': 1},
+    {'name': 'Discard Drought', 'desc': 'Discards left reduced by 1 for the round.', 'difficulty': 'Easy', 'min_stake': 1},
+    {'name': 'Reroll Penalty', 'desc': 'Each reroll costs 1 coin (deducted immediately).', 'difficulty': 'Easy', 'min_stake': 1},
+    {'name': 'Discard Cap', 'desc': 'Discard phase limited to 2 dice max per use.', 'difficulty': 'Easy', 'min_stake': 1},
+    {'name': 'Score Dip', 'desc': 'Base hand scores reduced by 10% for the round.', 'difficulty': 'Easy', 'min_stake': 1},
+    {'name': 'Coin Freeze', 'desc': 'No extra coins from Gold/Silver this round.', 'difficulty': 'Easy', 'min_stake': 1},
+    # Medium — Stake 3+  (changes how you play; you can still adapt)
+    {'name': 'Hold Limit', 'desc': 'You can only hold up to 3 dice between rerolls.', 'difficulty': 'Medium', 'min_stake': 3},
+    {'name': 'Target Bump', 'desc': 'Blind target increased by 20%.', 'difficulty': 'Medium', 'min_stake': 3},
+    {'name': 'Color Fade', 'desc': 'No monochrome or rainbow bonuses applied this round.', 'difficulty': 'Medium', 'min_stake': 3},
+    {'name': 'Fragile Flip', 'desc': 'Glass dice break chance increased to 50%.', 'difficulty': 'Medium', 'min_stake': 3},
+    {'name': 'Charm Glitch', 'desc': 'One random equipped charm is disabled for the round.', 'difficulty': 'Medium', 'min_stake': 3},
+    {'name': 'Face Shuffle', 'desc': 'Dice faces are randomized (e.g., non-standard values like duplicates or missing numbers).', 'difficulty': 'Medium', 'min_stake': 3},
+    {'name': 'Rainbow Restriction', 'desc': 'Rainbow dice only count as one fixed color (random per round) for bonuses.', 'difficulty': 'Medium', 'min_stake': 3},
+    {'name': 'Glass Guard', 'desc': 'Glass dice cannot be held (auto-unheld after rolls).', 'difficulty': 'Medium', 'min_stake': 3},
+    {'name': 'Mono Mixup', 'desc': 'Monochrome bonuses halved if more than one color is present (even Rainbows).', 'difficulty': 'Medium', 'min_stake': 3},
+    {'name': 'Reroll Rebound', 'desc': 'After each reroll, one random held die is unheld.', 'difficulty': 'Medium', 'min_stake': 3},
+    {'name': 'Discard Delay', 'desc': 'Discard phase only available after first reroll.', 'difficulty': 'Medium', 'min_stake': 3},
+    {'name': 'Blind Boost', 'desc': 'Blind target increased by 30%, but +1 extra discard.', 'difficulty': 'Medium', 'min_stake': 3},
+    # Hard — Stake 5+  (can brick a build)
+    {'name': 'Hold Ban', 'desc': 'You cannot hold any dice between rerolls.', 'difficulty': 'Hard', 'min_stake': 5},
+    {'name': 'Hand Trim', 'desc': 'Hands left reduced by 1 for the round.', 'difficulty': 'Hard', 'min_stake': 5},
+    {'name': 'Break Surge', 'desc': 'Glass break chance increases by 10% per reroll used.', 'difficulty': 'Hard', 'min_stake': 5},
+    {'name': 'Special Silence', 'desc': 'All special die effects disabled (no Gold coins, Silver extras, Glass mult, Rainbow wild).', 'difficulty': 'Hard', 'min_stake': 5},
+    {'name': 'Die Drain', 'desc': 'One random die is removed from your hand after each reroll, and pulling a new one from the bag.', 'difficulty': 'Hard', 'min_stake': 5},
+    {'name': 'Charm Eclipse', 'desc': 'All equipped charms are disabled for the round.', 'difficulty': 'Hard', 'min_stake': 5},
+    {'name': 'Value Vault', 'desc': 'All rolled values are inverted (1=6, 2=5, etc.), messing with straights and high/low strategies.', 'difficulty': 'Hard', 'min_stake': 5},
+    {'name': 'Special Swap', 'desc': 'All special dice effects are inverted (e.g., Gold gives coins when not held, Silver when held).', 'difficulty': 'Hard', 'min_stake': 5},
+    {'name': 'Multiplier Mute', 'desc': 'All multipliers (charms, hands, colors) capped at x1.5.', 'difficulty': 'Hard', 'min_stake': 5},
+    {'name': 'Bag Bottleneck', 'desc': 'Bag refills only half full after depletion (fewer redraw options).', 'difficulty': 'Hard', 'min_stake': 5},
+    {'name': 'Hold Hazard', 'desc': 'Held dice have a 20% chance to reroll anyway on next roll.', 'difficulty': 'Hard', 'min_stake': 5},
+    {'name': 'Charm Tax', 'desc': 'Each equipped charm reduces hands left by 0.5 (rounded down).', 'difficulty': 'Hard', 'min_stake': 5},
 ]
+
+INTENSIFY_MIN_STAKE = 2
+
+
+def bosses_for_stake(stake):
+    """Boss pool for this stake. Easy 1+, Medium 3+, Hard 5+. Easy drops at 7; Endless is Hard only."""
+    try:
+        stake = int(stake or 1)
+    except (TypeError, ValueError):
+        stake = 1
+    if stake < 1:
+        stake = 1
+    pool = [b for b in BOSS_EFFECTS if int(b.get('min_stake', 1) or 1) <= stake]
+    if stake >= 9:
+        pool = [b for b in pool if b.get('difficulty') == 'Hard']
+    elif stake >= 7:
+        pool = [b for b in pool if b.get('difficulty') != 'Easy']
+    return pool or list(BOSS_EFFECTS)
+
+
+def pick_boss_effect(stake):
+    pool = bosses_for_stake(stake)
+    return random.choice(pool)
+
+
+def intensify_unlocked(stake):
+    try:
+        stake = int(stake or 1)
+    except (TypeError, ValueError):
+        stake = 1
+    return stake >= INTENSIFY_MIN_STAKE
 
 POUCHES = [
     {'name': 'Red Pouch', 'color': 'Red', 'desc': 'Aggro focus: +1 discard per round, extra 2 Red dice.', 

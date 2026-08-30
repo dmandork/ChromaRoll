@@ -129,7 +129,7 @@ def test_intensify_continue_no_overlap():
 
 def test_win_popup_is_wide():
     assert WIN_POPUP_WIDTH >= 500
-    assert PLAY_CHARM_Y < 20
+    assert PLAY_CHARM_Y >= 20
 
 
 def test_mortgage_grays_when_locked():

@@ -1,0 +1,31 @@
+HOW TO TEST — Intensify gate + boss pools
+=========================================
+
+Drop over your ChromaRoll folder:
+
+  data.py
+  ChromaRoll.py
+  screens.py
+  states/blinds.py
+  tests/test_boss_stakes.py
+  ChromaRoll_Game_Features.md
+
+Headless:  python tests/test_boss_stakes.py
+
+In game
+-------
+Stake 1 blinds screen:
+  Intensify is gray, caption "Unlocks at Stake 2". Click does nothing.
+  Boss card is an Easy effect (Reroll Ration / Discard Drought / Penalty / Cap / Score Dip / Coin Freeze).
+  Boss card shows EASY in green.
+
+DBG → jump to Stake 2:
+  Intensify is live ("optional D20 boon").
+  Boss still Easy.
+
+Jump to Stake 3–4: Medium names appear (Hold Limit, Color Fade, …). Card shows MEDIUM.
+Jump to Stake 5–6: Hard names appear (Hold Ban, Charm Eclipse, …). Card shows HARD.
+Jump to Stake 7–8: no Easy bosses.
+Endless (stake 9+ via play): Hard only.
+
+Debug "Select Boss" still lists every boss so you can force-test.

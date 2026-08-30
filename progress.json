@@ -20,7 +20,9 @@
     "beat_s5",
     "beat_s6",
     "win_run",
-    "pouch_erratic"
+    "pouch_erratic",
+    "specialist",
+    "road_work"
   ],
   "unlocked_charms": [
     "Critical Hit",
@@ -49,7 +51,9 @@
     "Final Forge",
     "Dagger Charm",
     "Ace's Aura",
-    "Life Milestone"
+    "Life Milestone",
+    "Synergy Scroll",
+    "Hiker Hex"
   ],
   "unlocked_pouches": [
     "Black Pouch",
@@ -62,22 +66,28 @@
     "runs_won": 1,
     "hands": {
       "5 of a Kind": 2,
-      "4 of a Kind": 3,
+      "4 of a Kind": 5,
       "2 Pair": 1,
-      "Full House": 3,
+      "Full House": 4,
       "3 of a Kind": 1,
       "Small Straight": 2
     },
-    "hands_scored": 12,
-    "kind_hands": 6,
+    "hands_scored": 15,
+    "kind_hands": 8,
     "glass_breaks": 0,
     "lucky_triggers": 0,
     "runes_used": 0,
     "intensify_wins": 0,
     "bosses_beaten": 3,
     "max_coins_at_blind_end": 1000045,
-    "special_scored": 2,
-    "discards_by_color": {},
+    "special_scored": 8,
+    "discards_by_color": {
+      "Blue": 2,
+      "Green": 2,
+      "Yellow": 1,
+      "Red": 2,
+      "Purple": 1
+    },
     "close_losses": 0,
     "bag_emptied": 0,
     "five_sixes": 2,
@@ -91,14 +101,11 @@
   "run": {
     "discards_by_color": {},
     "shop_sells": 0,
-    "rerolls_this_blind": 0,
+    "rerolls_this_blind": 13,
     "charms_at_blind_start": 0
   },
   "new_this_run": [
-    "beat_s5",
-    "beat_s6",
-    "win_run",
-    "pouch_erratic"
+    "road_work"
   ],
   "unlock_all": false
 }

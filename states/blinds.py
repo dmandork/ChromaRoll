@@ -6,12 +6,12 @@ import time
 import data  # FIXED: For blind_order and D20_OUTCOMES
 from constants import *  # For THEME, BUTTON_WIDTH, BASE_TARGETS, etc.
 from utils import draw_rounded_element, resource_path  # For buttons/UI elements
-from screens import draw_blinds_screen, draw_custom_button  # For main blinds drawing/buttons
+from screens import draw_blinds_screen, draw_custom_button, draw_play_debug_bar  # For main blinds drawing/buttons
 from states.base import State
 # Import extracted states if referenced (e.g., for button transitions)
 # from states.game import GameState  # If extracted; else from statemachine import GameState
 # from states.shop import ShopState  # If extracted and referenced
-from data import BOSS_EFFECTS
+from data import BOSS_EFFECTS, pick_boss_effect, intensify_unlocked
 from states.game import GameState
 
 from .shop import ShopState
@@ -29,11 +29,12 @@ class BlindsState(State):
         self.debug_jump_rect = None
         self.intensify_rect = None  # NEW: Single for current blind
         self.debug_force_win_rect = None
+        self.debug_rects = []
         # For item rects in dropdown (since dynamic, recalculate in handle_event)
         if DEBUG:
             self.stake_dropdown_open = False
             self.selected_stake = self.game.current_stake
-            self.dropdown_rect = None  # Will set in enter() to avoid SCREEN_HEIGHT issue
+            self.dropdown_rect = None
             self.font_small = pygame.font.Font(None, 20)
 
     def enter(self):
@@ -46,13 +47,11 @@ class BlindsState(State):
         self.game.debug_boss_dropdown_open = False  # If not already reset
         self.game.debug_boss_scroll_offset = 0
         if DEBUG:
-            self.stake_dropdown_open = False  # Close stake dropdown on re-enter
-            # Set rect now that screen is ready
-            screen_height = self.game.screen.get_height()
-            self.dropdown_rect = pygame.Rect(10, 10, 120, 30)  # Upper left
+            self.stake_dropdown_open = False
+            self.dropdown_rect = None
         # Conditional: Generate upcoming boss only if None
         if self.game.upcoming_boss_effect is None:
-            self.game.upcoming_boss_effect = random.choice(BOSS_EFFECTS)
+            self.game.upcoming_boss_effect = pick_boss_effect(getattr(self.game, 'current_stake', 1))
 
         # Rune Relic: Add random rune at blind start (after shop)
         print("DEBUG: Checking for Rune Relic in blinds enter")  # TEMP
@@ -98,55 +97,55 @@ class BlindsState(State):
         self.game.screen.fill(THEME['background'])  # Clear relics
         self.blind_rects, self.continue_rect, self.debug_button_rect, self.up_rect, self.down_rect, self.debug_jump_rect, self.intensify_rect = draw_blinds_screen(self.game)  # Unpack 7
         self.debug_force_win_rect = None
+        self.debug_rects = []
+        debug_open = bool(DEBUG and getattr(self.game, 'debug_play_open', False))
         if DEBUG:
-            self.debug_force_win_rect = pygame.Rect(140, 10, 140, 28)
-            draw_rounded_element(self.game.screen, self.debug_force_win_rect, (40, 55, 30), radius=5)
-            fw = self.font_small.render("Force Win", True, (220, 255, 160)) if getattr(self, 'font_small', None) else self.game.small_font.render("Force Win", True, (220, 255, 160))
-            self.game.screen.blit(fw, (self.debug_force_win_rect.centerx - fw.get_width() // 2,
-                                       self.debug_force_win_rect.centery - fw.get_height() // 2))
-        
-        if DEBUG and self.dropdown_rect:
-            # Draw stake dropdown (upper left)
-            draw_rounded_element(self.game.screen, self.dropdown_rect, (50, 50, 50), radius=5)  # Dark gray bg
+            self.debug_rects = draw_play_debug_bar(self.game)
+            # Stake jumper sits next to the DBG tab so it never covers charms.
+            tab = self.debug_rects[0][0] if self.debug_rects else pygame.Rect(8, self.game.height - 70, 40, 28)
+            self.dropdown_rect = pygame.Rect(tab.right + 8, tab.y, 120, tab.height)
+
+        if debug_open and self.dropdown_rect:
+            draw_rounded_element(self.game.screen, self.dropdown_rect, (50, 50, 50), radius=5)
             dropdown_text = f"Stake {self.selected_stake}"
             text_surf = self.font_small.render(dropdown_text, True, (255, 255, 255))
             text_rect = text_surf.get_rect(center=self.dropdown_rect.center)
             self.game.screen.blit(text_surf, text_rect)
-            
-            # Draw arrow indicator
             arrow_x = self.dropdown_rect.right - 15
             arrow_y = self.dropdown_rect.centery
             if self.stake_dropdown_open:
-                # Down arrow (open)
                 pygame.draw.polygon(self.game.screen, (255, 255, 255), [(arrow_x-5, arrow_y-3), (arrow_x+5, arrow_y-3), (arrow_x, arrow_y+3)])
             else:
-                # Up arrow (closed)
                 pygame.draw.polygon(self.game.screen, (255, 255, 255), [(arrow_x-5, arrow_y+3), (arrow_x+5, arrow_y+3), (arrow_x, arrow_y-3)])
-            
-            # Draw open options list if toggled
             if self.stake_dropdown_open:
                 mouse_pos = pygame.mouse.get_pos()
-                y_offset = self.dropdown_rect.bottom + 5
                 item_width = self.dropdown_rect.width
                 item_height = 25
-                for stake in range(1, 9):  # Stakes 1-8
+                y_offset = self.dropdown_rect.y - 5 - 8 * (item_height + 2)
+                for stake in range(1, 9):
                     opt_rect = pygame.Rect(self.dropdown_rect.x, y_offset, item_width, item_height)
-                    # Hover color
                     color = (70, 70, 70) if opt_rect.collidepoint(mouse_pos) else (40, 40, 40)
                     draw_rounded_element(self.game.screen, opt_rect, color, radius=3)
-                    # Text
                     opt_text = f"Stake {stake}"
                     text_surf = self.font_small.render(opt_text, True, (255, 255, 255))
                     text_rect = text_surf.get_rect(center=opt_rect.center)
                     self.game.screen.blit(text_surf, text_rect)
-                    y_offset += item_height + 2  # Small gap
+                    y_offset += item_height + 2
 
     def handle_event(self, event):
         from states.shop import ShopState  # Lazy import
         from states.init import InitState
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
-            if DEBUG and self.debug_force_win_rect and self.debug_force_win_rect.collidepoint(mouse_pos):
+            if DEBUG:
+                for rect, action in self.debug_rects or []:
+                    if rect.collidepoint(mouse_pos):
+                        if action == 'toggle':
+                            self.game.debug_play_open = not bool(getattr(self.game, 'debug_play_open', False))
+                        else:
+                            self.game.debug_run_play_action(action)
+                        return
+            if self.debug_force_win_rect and self.debug_force_win_rect.collidepoint(mouse_pos):
                 self.game.debug_force_win(skip_popup=True)
                 return
             if self.continue_rect and self.continue_rect.collidepoint(mouse_pos):
@@ -166,6 +165,8 @@ class BlindsState(State):
 
             # Intensify: blocked once a d20 has already landed (locked roll / leftover dump).
             if self.intensify_rect and self.intensify_rect.collidepoint(mouse_pos):
+                if not intensify_unlocked(getattr(self.game, 'current_stake', 1)):
+                    return
                 boon = getattr(self.game, 'd20_boon', None)
                 if boon is not None and boon.is_locked():
                     return
@@ -175,7 +176,7 @@ class BlindsState(State):
                 return
 
 
-            if DEBUG:
+            if DEBUG and getattr(self.game, 'debug_play_open', False):
                 # Existing boss dropdown handling
                 if self.debug_button_rect and self.debug_button_rect.collidepoint(mouse_pos):
                     self.game.debug_boss_dropdown_open = not self.game.debug_boss_dropdown_open  # Toggle panel
@@ -197,29 +198,27 @@ class BlindsState(State):
                             self.game.debug_boss_dropdown_open = False  # Close on select
                             break
 
-                # New: Stake dropdown handling (upper left)
+                # Stake jumper (next to DBG tab; options grow upward)
                 if self.dropdown_rect and self.dropdown_rect.collidepoint(mouse_pos):
                     self.stake_dropdown_open = not self.stake_dropdown_open  # Toggle
 
-                if self.stake_dropdown_open:
-                    # Click on option: Recalculate option rects dynamically (no scroll needed for 8 items)
-                    y_offset = self.dropdown_rect.bottom + 5
+                if self.stake_dropdown_open and self.dropdown_rect:
                     item_width = self.dropdown_rect.width
                     item_height = 25
+                    y_offset = self.dropdown_rect.y - 5 - 8 * (item_height + 2)
                     for stake in range(1, 9):
                         opt_rect = pygame.Rect(self.dropdown_rect.x, y_offset, item_width, item_height)
                         if opt_rect.collidepoint(mouse_pos):
                             self.game.current_stake = stake
                             self.selected_stake = stake
-                            # No explicit setup needed if draw_blinds_screen uses current_stake; redraw will refresh
-                            # If blinds need regen: self.setup_blinds_for_stake()  # Uncomment and implement if req
                             self.stake_dropdown_open = False  # Close on select
+                            self.game.upcoming_boss_effect = pick_boss_effect(stake)
                             break
                         y_offset += item_height + 2
 
                 if self.debug_jump_rect and self.debug_jump_rect.collidepoint(mouse_pos):
                     self.game.current_blind = 'Boss'
-                    self.game.current_boss_effect = self.game.upcoming_boss_effect or random.choice(BOSS_EFFECTS)  # Activate preview or random
+                    self.game.current_boss_effect = self.game.upcoming_boss_effect or pick_boss_effect(getattr(self.game, 'current_stake', 1))
                     # Quick reset states (mimic advance_blind)
                     self.game.disabled_charms = []
                     self.game.boss_reroll_count = 0
