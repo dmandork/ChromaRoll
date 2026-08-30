@@ -4,6 +4,194 @@ import random
 import time
 from data import ENH_EFFECTS, MYSTIC_RUNES
 
+# Local copies so tests can import this module without constants/pygame.
+_BASE_COLORS = ['Red', 'Blue', 'Green', 'Purple', 'Yellow']
+_SPECIAL_COLORS = ['Gold', 'Silver', 'Glass', 'Rainbow']
+_DIE_COLORS = _BASE_COLORS + _SPECIAL_COLORS
+_PACK_BOOST = 0.5
+
+
+def glass_breaks(game, chance, rng=None):
+    """True if a Glass die is destroyed after the break roll.
+
+    Saving Throw (`break_save`) gets a d6; 4–6 cancels a would-be break.
+    Sets game._last_save_roll / game._last_save_success when a save is attempted.
+    """
+    rng = rng or random
+    if game is not None:
+        game._last_save_roll = None
+        game._last_save_success = False
+    if rng.random() >= chance:
+        return False
+    has_save = False
+    if game is not None:
+        disabled = getattr(game, 'disabled_charms', []) or []
+        for idx, charm in enumerate(getattr(game, 'equipped_charms', []) or []):
+            if charm.get('type') == 'break_save' and idx not in disabled:
+                has_save = True
+                break
+    if not has_save:
+        return True
+    save_roll = rng.randint(1, 6)
+    saved = save_roll > 3
+    if game is not None:
+        game._last_save_roll = save_roll
+        game._last_save_success = saved
+    return not saved
+
+
+def rotate_castle_color(charm, rng=None):
+    """Pick a new Castle Cube color, avoiding the previous one when possible."""
+    rng = rng or random
+    prev = charm.get('active_color')
+    choices = [c for c in _BASE_COLORS if c != prev] or list(_BASE_COLORS)
+    charm['active_color'] = rng.choice(choices)
+    return charm['active_color']
+
+
+def apply_castle_discards(charm, discarded_dice):
+    """Permanent +value chips per discarded die matching the current color."""
+    color = charm.get('active_color')
+    if not color:
+        return 0
+    n = sum(1 for d in (discarded_dice or []) if d and d.get('color') == color)
+    added = n * charm.get('value', 3)
+    if added:
+        charm['permanent_bonus'] = charm.get('permanent_bonus', 0) + added
+    return added
+
+
+def try_space_sphere(game, hand_type, rng=None, boost=None):
+    """25% chance to add PACK_BOOST to the scored hand type. Returns True on hit."""
+    rng = rng or random
+    boost = _PACK_BOOST if boost is None else boost
+    if not hand_type or hand_type == 'Nothing':
+        return False
+    disabled = getattr(game, 'disabled_charms', []) or []
+    for idx, charm in enumerate(getattr(game, 'equipped_charms', []) or []):
+        if charm.get('type') != 'hand_upgrade':
+            continue
+        if idx in disabled:
+            continue
+        if rng.random() < charm.get('chance', 0.25):
+            if getattr(game, 'hand_multipliers', None) is None:
+                game.hand_multipliers = {}
+            game.hand_multipliers[hand_type] = game.hand_multipliers.get(hand_type, 1.0) + boost
+            game._space_sphere_hit = hand_type
+            return True
+        return False
+    return False
+
+
+def mortgage_sell_payout(equipped, sell_index, disabled=None, already_used=False):
+    """Return (payout, lock_charm_or_None, used_mortgage).
+
+    One doubled sell per shop while Monopoly Mortgage is equipped. Selling
+    Mortgage itself also pays 2x and needs no lock (it leaves the loadout).
+    """
+    disabled = disabled or []
+    charm = equipped[sell_index]
+    base = charm.get('sell_value', charm.get('cost', 0) // 2)
+    mortgage = None
+    mortgage_idx = None
+    for idx, c in enumerate(equipped):
+        if c.get('type') == 'sell_double_lock' and idx not in disabled and not c.get('locked'):
+            mortgage = c
+            mortgage_idx = idx
+            break
+    if mortgage is None or already_used:
+        return base, None, False
+    payout = int(base * mortgage.get('value', 2))
+    if sell_index == mortgage_idx or charm is mortgage:
+        return payout, None, True
+    return payout, mortgage, True
+
+
+def pouch_charm_slots(pouch):
+    """Absolute charm-slot count for a pouch. Assign this — never += leftover max_charms."""
+    return 5 + (pouch.get('bonus') or {}).get('charm_slots', 0)
+
+
+def pouch_hands_delta(pouch):
+    """Hands bonus from a pouch. Call this ONCE in apply_pouch."""
+    return (pouch.get('bonus') or {}).get('hands', 0)
+
+
+def pouch_extra_colors(pouch, rng=None):
+    """Colors of extra dice a pouch should add. Never emits 'random_special'."""
+    rng = rng or random
+    extras = (pouch.get('bonus') or {}).get('extra_dice') or {}
+    colors = []
+    for color, count in extras.items():
+        n = int(count or 0)
+        if color == 'random_special':
+            for _ in range(n):
+                colors.append(rng.choice(_SPECIAL_COLORS))
+        else:
+            colors.extend([color] * n)
+    return colors
+
+
+def randomize_bag_colors(bag, rng=None):
+    """Erratic pouch: recolor every die using real die colors only (never Black)."""
+    rng = rng or random
+    pool = list(_DIE_COLORS)
+    for die in bag or []:
+        if die:
+            die['color'] = rng.choice(pool)
+    return bag
+
+
+def shop_pack_weights(ghost=False):
+    """Pack row weights: 0-2 prism, 3-4 base dice, 5 special dice, 6-8 runes."""
+    weights = [1.0] * 6 + [1.0, 0.8, 0.3]
+    if ghost:
+        weights[5] = 4.0
+    return weights
+
+
+def dice_pack_choices(n, special_only=False, ghost=False, rng=None):
+    """Colors offered by a dice pack. Ghost mixes specials into standard packs."""
+    rng = rng or random
+    n = int(n or 0)
+    if n <= 0:
+        return []
+    if special_only:
+        pool = list(_SPECIAL_COLORS)
+    elif ghost:
+        pool = list(_BASE_COLORS) + list(_SPECIAL_COLORS)
+    else:
+        pool = list(_BASE_COLORS)
+    if n >= len(pool):
+        return list(pool)
+    return rng.sample(pool, n)
+
+
+def plasma_mix_chips(colors):
+    """Plasma mix identity: pay for many hues, tax a one-color hand.
+
+    Distinct non-Rainbow colors among held dice:
+      5 → +120, 4 → +80, 3 → +40, 2 → 0, 1 → −40.
+    All-Rainbow counts as a full spectrum (+120). Rainbow never breaks mono.
+    """
+    colors = [c for c in (colors or []) if c]
+    if not colors:
+        return 0
+    base = [c for c in colors if c != 'Rainbow']
+    if not base:
+        unique = 5
+    else:
+        unique = len(set(base))
+    if unique >= 5:
+        return 120
+    if unique == 4:
+        return 80
+    if unique == 3:
+        return 40
+    if unique <= 1:
+        return -40
+    return 0
+
 
 def apply_wild_4(game, held_rolls, counts, max_count, groups, modifier_desc):
     wild_face = 4
@@ -626,7 +814,11 @@ def evaluate_hand(game, is_preview=True):
             pass
 
         elif charm['type'] == 'score_per_discard_color':
-            pass
+            bonus = charm.get('permanent_bonus', 0)
+            if bonus:
+                charm_chips += bonus
+                color = charm.get('active_color', '?')
+                modifier_desc.append(f"{charm['name']} +{bonus} ({color})")
 
         elif charm['type'] == 'mult_final_discard':
             pass  # applied once via game.final_discard_mult — do not stack here
@@ -749,7 +941,16 @@ def evaluate_hand(game, is_preview=True):
     chroma_mult = 1.0  # radiance is inside boon.color_score_mult now
 
     # Final score assembly
-    final_score = int(((base_score * dimmed_mult) + charm_chips + rune_chips) * (1 + total_modifier) * retrigger_mult * chroma_mult * d20_mult)
+    chips = (base_score * dimmed_mult) + charm_chips + rune_chips
+    if getattr(game, 'plasma_pouch_active', False):
+        mix = plasma_mix_chips(colors_list)
+        chips += mix
+        if mix > 0:
+            modifier_desc.append(f"Plasma mix +{mix}")
+        elif mix < 0:
+            modifier_desc.append(f"Plasma mono {mix}")
+    mult = (1 + total_modifier) * retrigger_mult * chroma_mult * d20_mult
+    final_score = int(chips * mult)
 
     modifier_desc = ", ".join(modifier_desc) if modifier_desc else "None"
 
@@ -793,7 +994,7 @@ def apply_enhancement_retrigger(game, die, i):
                     game.sfx_channel.play(game.coin_sound)
     
     # Fragile + Glass = extra spicy break chance on retrigger
-    if 'Fragile' in enh and die['color'] == 'Glass' and random.random() < 0.25:
+    if 'Fragile' in enh and die['color'] == 'Glass' and glass_breaks(game, 0.25):
         game.sfx_channel.play(game.break_sound)
         game.full_bag = [d for d in game.full_bag if d['id'] != die['id']]
         game.bag = [d for d in game.bag if d['id'] != die['id']]

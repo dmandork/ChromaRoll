@@ -1,10 +1,10 @@
 # savegame.py
 import json
 import os
+import sys
 import copy
 import data  # For restoring pouch by name
 import constants
-# At the top of savegame.py, ensure these imports are present (add any missing ones):
 from states.splash import SplashState
 from states.prompt import PromptState
 from states.init import InitState
@@ -12,111 +12,12 @@ from states.shop import ShopState
 from states.game import GameState
 from states.blinds import BlindsState
 from states.game_over import GameOverState
-# If you have a pause state (commented in your code), add:
 from states.pause import PauseMenuState
+from states.end_prompt import EndPromptState
 
-def save_game(game):
-    """Saves the game state to JSON."""
-    print("Saving to:", os.path.abspath('save.json'))
-    current_state_name = type(game.state_machine.current_state).__name__ if hasattr(game, 'state_machine') and game.state_machine.current_state else None
-    previous_state_name = type(game.previous_state).__name__ if game.previous_state and not isinstance(game.previous_state, str) else game.previous_state
-    save_data = {
-        'turn_initialized': game.turn_initialized,
-        'version': 1,  # Add versioning for future-proofing (increment on breaking changes)
-        'coins': game.coins,
-        'extra_coins': game.extra_coins,
-        'bag': copy.deepcopy(game.bag),  # Deep copy for dicts/lists
-        'full_bag': copy.deepcopy(game.full_bag),
-        'equipped_charms': copy.deepcopy(game.equipped_charms),
-        'disabled_charms': game.disabled_charms[:],  # List copy
-        'current_stake': game.current_stake,
-        'current_blind': game.current_blind,
-        'round_score': game.round_score,
-        'pouch_type': game.current_pouch['name'] if hasattr(game, 'current_pouch') and game.current_pouch else None,
-        'green_pouch_active': game.green_pouch_active if hasattr(game, 'green_pouch_active') else False,
-        'hands_left': game.hands_left,
-        'rerolls_left': game.rerolls_left,
-        'discards_left': game.discards_left,
-        'discard_used_this_round': game.discard_used_this_round,
-        'hand': copy.deepcopy(game.hand),
-        'rolls': copy.deepcopy(game.rolls),
-        'held': game.held[:],
-        'discard_selected': game.discard_selected[:],
-        'is_discard_phase': game.is_discard_phase,
-        'has_rolled': game.has_rolled,
-        'broken_dice': game.broken_dice[:],
-        'break_effect_start': game.break_effect_start,
-        'temp_message': game.temp_message,
-        'temp_message_start': game.temp_message_start,
-        'upcoming_boss_effect': copy.deepcopy(game.upcoming_boss_effect) if game.upcoming_boss_effect else None,
-        'current_boss_effect': copy.deepcopy(game.current_boss_effect) if game.current_boss_effect else None,
-        'boss_rainbow_color': game.boss_rainbow_color,
-        'boss_shuffled_faces': copy.deepcopy(game.boss_shuffled_faces),
-        'boss_reroll_count': game.boss_reroll_count,
-        'shop_charms': copy.deepcopy(game.shop_charms),
-        'available_packs': game.available_packs[:],
-        'shop_reroll_cost': game.shop_reroll_cost,
-        'current_state': current_state_name,
-        'previous_state': previous_state_name,  # New: Save previous for pause cases
-        'mute': game.mute,  # Save mute state
-        'rune_tray': copy.deepcopy(game.rune_tray),
-        'confirmed_hands_this_round': game.confirmed_hands_this_round,
-        'hands_played_this_round': getattr(game, 'hands_played_this_round', 0),  # Keep for compatibility
-        # Dagger/Score Multipliers
-        'score_mult': getattr(game, 'score_mult', 1.0),  # Safe default if not present
-        'dagger_mult': getattr(game, 'dagger_mult', 0.0),
-        
-        # Pack/Shop Continuity
-        'pack_choices': copy.deepcopy(game.pack_choices),  # Deepcopy for list of dicts/strings
-        'confirm_sell_index': game.confirm_sell_index,
-        
-        # Turn and Popups
-        'turn': game.turn,
-        'show_popup': game.show_popup,
-        'popup_message': game.popup_message if game.popup_message else "",  # Handle None
-        
-        # If you add instance-tracked modified constants (recommended for charm bonuses)
-        'effective_interest_max': getattr(game, 'effective_interest_max', constants.INTEREST_MAX),
+# Tests may point this at a temp file. Production uses the game folder, not cwd.
+_SAVE_PATH_OVERRIDE = None
 
-        # Tutorial Progress (new)
-        'tutorial_step': game.tutorial_step,
-        'tutorial_mode': game.tutorial_mode,
-        'tutorial_completed': game.tutorial_completed,
-        
-        # Unlocks (new, deepcopy for dict)
-        'unlocks': copy.deepcopy(game.unlocks),
-        'hand_multipliers': copy.deepcopy(game.hand_multipliers),
-
-        # Advantage-specific (added here)
-        'has_advantage': game.has_advantage if hasattr(game, 'has_advantage') else False,
-        'advantage_value': game.advantage_value if hasattr(game, 'advantage_value') else None,
-        'held_advantage': game.held_advantage if hasattr(game, 'held_advantage') else False,
-        'original_center_value': game.original_center_value if hasattr(game, 'original_center_value') else None,
-
-        # for Fate's Favor
-        'used_fates_favor_this_blind': game.used_fates_favor_this_blind,
-        'fates_advantage_index': game.fates_advantage_index,
-        'fates_advantage_value': game.fates_advantage_value,
-        'held_fates_advantage': game.held_fates_advantage,
-        'selecting_fates_die': game.selecting_fates_die,
-
-        # New for Gambler's Grimoire
-        'used_rune_cast_this_shop': game.used_rune_cast_this_shop,
-        'd20_boon': game.d20_boon.to_dict() if hasattr(game, 'd20_boon') and game.d20_boon else {},
-        'fused_color': getattr(game, 'fused_color', None),
-        'has_free_prism_pack': getattr(game, 'has_free_prism_pack', False),
-        'target_mult': getattr(game, 'target_mult', 1.0),
-        'd20_advantage_index': getattr(game, 'd20_advantage_index', -1),
-        'selecting_advantage_die': getattr(game, 'selecting_advantage_die', False),
-        '_d20_prism_in_current_shop': getattr(game, '_d20_prism_in_current_shop', False),
-    }
-    try:
-        with open('save.json', 'w') as f:
-            json.dump(save_data, f, default=lambda o: o.__dict__ if hasattr(o, '__dict__') else o)
-    except IOError as e:
-        print(f"Error saving game: {e}")  # Basic logging; could set game.temp_message instead
-
-# Then, inside load_game (or just before it), add this dict:
 STATE_MAP = {
     'SplashState': SplashState,
     'PromptState': PromptState,
@@ -126,23 +27,258 @@ STATE_MAP = {
     'BlindsState': BlindsState,
     'GameOverState': GameOverState,
     'PauseMenuState': PauseMenuState,
+    'EndPromptState': EndPromptState,
 }
+
+MENU_STATES = {
+    'SplashState', 'PromptState', 'AchievementsState',
+    'GameOverState', 'InitState', None,
+}
+
+# Screens that are a run but cannot be constructed as Class(game) on Load.
+# Resume at the nearest stable parent; the rest of the run data still loads.
+OVERLAY_PARENT = {
+    'PackSelectState': 'ShopState',
+    'DiceSelectState': 'ShopState',
+    'RuneSelectState': 'ShopState',
+    'ConfirmSellState': 'ShopState',
+    'DebugMenuState': 'ShopState',
+    'DebugCharmState': 'ShopState',
+    'DebugPrismState': 'ShopState',
+    'DebugRuneSelectState': 'ShopState',
+    'DebugDiceSelectForRune': 'ShopState',
+    'D20RollState': 'BlindsState',
+    'RuneUseState': None,  # previous_state (shop or play)
+}
+
+
+def save_file_path():
+    if _SAVE_PATH_OVERRIDE:
+        return _SAVE_PATH_OVERRIDE
+    if getattr(sys, 'frozen', False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, 'save.json')
+
+
+def _copy(val, fallback=None):
+    try:
+        return copy.deepcopy(val)
+    except Exception:
+        return fallback if fallback is not None else val
+
+
+def _list(val):
+    try:
+        return list(val)
+    except Exception:
+        return []
+
+
+def _state_names(game):
+    sm = getattr(game, 'state_machine', None)
+    cur = None
+    if sm is not None and getattr(sm, 'current_state', None) is not None:
+        cur = type(sm.current_state).__name__
+    prev = getattr(game, 'previous_state', None)
+    if prev is not None and not isinstance(prev, str):
+        prev = type(prev).__name__
+    return cur, prev
+
+
+def resolve_run_state(current_state, previous_state=None):
+    """Map any screen to a STATE_MAP run screen, or None if this is not a run."""
+    st = current_state
+    prev = previous_state
+    if st == 'PauseMenuState':
+        st = prev
+    if st in OVERLAY_PARENT:
+        parent = OVERLAY_PARENT[st]
+        st = prev if parent is None else parent
+        if st == 'PauseMenuState':
+            st = prev
+    if st in MENU_STATES or not st:
+        return None
+    if st in STATE_MAP:
+        return st
+    if prev in STATE_MAP and prev not in MENU_STATES:
+        return prev
+    return None
+
+
+def is_run_save(save_data):
+    if not save_data:
+        return False
+    explicit = save_data.get('resume_state')
+    if explicit in STATE_MAP and explicit not in MENU_STATES:
+        return True
+    return resolve_run_state(
+        save_data.get('current_state'),
+        save_data.get('previous_state'),
+    ) is not None
+
+
+def save_game(game):
+    """Saves the game state to JSON. Never raises — a failed save must not crash quit."""
+    path = save_file_path()
+    print("Saving to:", os.path.abspath(path))
+    current_state_name, previous_state_name = _state_names(game)
+    resume_state = resolve_run_state(current_state_name, previous_state_name)
+    pouch = getattr(game, 'current_pouch', None)
+    pouch_name = pouch.get('name') if isinstance(pouch, dict) else None
+    d20 = getattr(game, 'd20_boon', None)
+    try:
+        d20_data = d20.to_dict() if d20 is not None and hasattr(d20, 'to_dict') else {}
+    except Exception:
+        d20_data = {}
+
+    def g(name, default=None):
+        return getattr(game, name, default)
+
+    save_data = {
+        'turn_initialized': g('turn_initialized', False),
+        'version': 1,
+        'coins': g('coins', 0),
+        'extra_coins': g('extra_coins', 0),
+        'bag': _copy(g('bag', []), []),
+        'full_bag': _copy(g('full_bag', []), []),
+        'equipped_charms': _copy(g('equipped_charms', []), []),
+        'disabled_charms': _list(g('disabled_charms', [])),
+        'current_stake': g('current_stake', 1),
+        'current_blind': g('current_blind', 'Small'),
+        'round_score': g('round_score', 0),
+        'pouch_type': pouch_name,
+        'green_pouch_active': g('green_pouch_active', False),
+        'ghost_pouch_active': g('ghost_pouch_active', False),
+        'plasma_pouch_active': g('plasma_pouch_active', False),
+        'pouch_blind_mult': g('pouch_blind_mult', 1.0),
+        'hands_left': g('hands_left', constants.MAX_HANDS),
+        'rerolls_left': g('rerolls_left', constants.MAX_REROLLS),
+        'discards_left': g('discards_left', constants.MAX_DISCARDS),
+        'discard_used_this_round': g('discard_used_this_round', False),
+        'hand': _copy(g('hand', []), []),
+        'rolls': _copy(g('rolls', []), []),
+        'held': _list(g('held', [])),
+        'discard_selected': _list(g('discard_selected', [])),
+        'is_discard_phase': g('is_discard_phase', False),
+        'has_rolled': g('has_rolled', False),
+        'broken_dice': _list(g('broken_dice', [])),
+        'break_effect_start': g('break_effect_start', 0),
+        'temp_message': g('temp_message', None),
+        'temp_message_start': g('temp_message_start', 0),
+        'upcoming_boss_effect': _copy(g('upcoming_boss_effect', None)),
+        'current_boss_effect': _copy(g('current_boss_effect', None)),
+        'boss_rainbow_color': g('boss_rainbow_color', None),
+        'boss_shuffled_faces': _copy(g('boss_shuffled_faces', {}), {}),
+        'boss_reroll_count': g('boss_reroll_count', 0),
+        'shop_charms': _copy(g('shop_charms', []), []),
+        'available_packs': _list(g('available_packs', [])),
+        'shop_reroll_cost': g('shop_reroll_cost', 5),
+        'current_state': current_state_name,
+        'previous_state': previous_state_name,
+        'resume_state': resume_state,
+        'mute': g('mute', False),
+        'rune_tray': _copy(g('rune_tray', [None, None]), [None, None]),
+        'confirmed_hands_this_round': g('confirmed_hands_this_round', 0),
+        'hands_played_this_round': g('hands_played_this_round', 0),
+        'score_mult': g('score_mult', 1.0),
+        'dagger_mult': g('dagger_mult', 0.0),
+        'pack_choices': _copy(g('pack_choices', []), []),
+        'confirm_sell_index': g('confirm_sell_index', -1),
+        'turn': g('turn', 0),
+        'show_popup': g('show_popup', False),
+        'popup_message': g('popup_message', "") or "",
+        'effective_interest_max': g('effective_interest_max', constants.INTEREST_MAX),
+        'tutorial_step': g('tutorial_step', 0),
+        'tutorial_mode': g('tutorial_mode', False),
+        'tutorial_completed': g('tutorial_completed', False),
+        'unlocks': _copy(g('unlocks', {}), {}),
+        'hand_multipliers': _copy(g('hand_multipliers', {}), {}),
+        'has_advantage': g('has_advantage', False),
+        'advantage_value': g('advantage_value', None),
+        'held_advantage': g('held_advantage', False),
+        'original_center_value': g('original_center_value', None),
+        'used_fates_favor_this_blind': g('used_fates_favor_this_blind', False),
+        'fates_advantage_index': g('fates_advantage_index', -1),
+        'fates_advantage_value': g('fates_advantage_value', None),
+        'held_fates_advantage': g('held_fates_advantage', False),
+        'selecting_fates_die': g('selecting_fates_die', False),
+        'used_rune_cast_this_shop': g('used_rune_cast_this_shop', False),
+        'd20_boon': d20_data,
+        'fused_color': g('fused_color', None),
+        'has_free_prism_pack': g('has_free_prism_pack', False),
+        'target_mult': g('target_mult', 1.0),
+        'd20_advantage_index': g('d20_advantage_index', -1),
+        'selecting_advantage_die': g('selecting_advantage_die', False),
+        '_d20_prism_in_current_shop': g('_d20_prism_in_current_shop', False),
+        'grimoire_rune': _copy(g('grimoire_rune', None)),
+        'd20_roll_phase': None,
+        'd20_selected_fusion': None,
+        'd20_roll_result': None,
+        'd20_blind_type': None,
+        'd20_pre_intensify': _copy(g('_d20_pre_intensify', None)),
+    }
+    # Prefer live D20 overlay fields so Window-X during the roll reconstructs this screen.
+    cur_obj = None
+    sm = getattr(game, 'state_machine', None)
+    if sm is not None:
+        cur_obj = getattr(sm, 'current_state', None)
+    if cur_obj is not None and type(cur_obj).__name__ == 'D20RollState':
+        save_data['d20_roll_phase'] = getattr(cur_obj, 'phase', None)
+        save_data['d20_selected_fusion'] = getattr(cur_obj, 'selected_fusion', None)
+        save_data['d20_roll_result'] = getattr(cur_obj, 'roll_result', None)
+        save_data['d20_blind_type'] = getattr(cur_obj, 'blind_type', None)
+    else:
+        save_data['d20_roll_phase'] = g('d20_roll_phase', None)
+        save_data['d20_selected_fusion'] = g('d20_selected_fusion', None)
+        save_data['d20_roll_result'] = g('d20_roll_result', None)
+        save_data['d20_blind_type'] = g('d20_blind_type', None)
+    try:
+        folder = os.path.dirname(path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        tmp = path + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(save_data, f, default=lambda o: o.__dict__ if hasattr(o, '__dict__') else str(o))
+        os.replace(tmp, path)
+        return True
+    except Exception as e:
+        print(f"Error saving game: {e}")
+        try:
+            if os.path.exists(path + '.tmp'):
+                os.remove(path + '.tmp')
+        except OSError:
+            pass
+        return False
+
+
+def save_on_exit(game):
+    """Window X / Quit. Writes a run save; never overwrites a run with a menu screen."""
+    cur, prev = _state_names(game)
+    if resolve_run_state(cur, prev) is None:
+        print("Exit from menu — keeping existing run save")
+        return False
+    return save_game(game)
+
 
 def load_game(game):
     """Loads the game state from JSON."""
+    path = save_file_path()
     try:
-        with open('save.json', 'r') as f:
+        with open(path, 'r') as f:
             save_data = json.load(f)
-        
-        # Check version (for future migrations)
-        version = save_data.get('version', 0)  # Default 0 for old saves
+
+        version = save_data.get('version', 0)
         if version > 1:
-            print("Warning: Save from newer version—may not load fully.")  # Or raise/return None
-            # Future: Add migration logic here (e.g., if version==2, add new fields)
+            print("Warning: Save from newer version—may not load fully.")
         elif version < 1:
             print("Old save detected—attempting load with defaults.")
-        
-        # All setters moved here (from the old if block)
+
+        if not is_run_save(save_data):
+            print("Save is a menu screen, not a run — ignoring")
+            return None
+
         game.turn_initialized = save_data.get('turn_initialized', False)
         game.coins = save_data.get('coins', 0)
         game.extra_coins = save_data.get('extra_coins', 0)
@@ -154,15 +290,31 @@ def load_game(game):
         game.current_blind = save_data.get('current_blind', 'Small')
         game.round_score = save_data.get('round_score', 0)
         pouch_name = save_data.get('pouch_type')
+        game.current_pouch = None
+        game.ghost_pouch_active = False
+        game.plasma_pouch_active = False
+        game.pouch_blind_mult = 1.0
         if pouch_name:
             game.current_pouch = next((p for p in data.POUCHES if p['name'] == pouch_name), None)
             if game.current_pouch:
-                game.max_charms = 5 + game.current_pouch.get('bonus', {}).get('charm_slots', 0)
+                bonus = game.current_pouch.get('bonus') or {}
+                game.max_charms = 5 + bonus.get('charm_slots', 0)
                 game.green_pouch_active = 'Green' in game.current_pouch['name']
-                # Add other static pouch effects here (e.g., if any flags beyond green)
+                game.ghost_pouch_active = bool(bonus.get('shop_special_boost')) or 'Ghost' in game.current_pouch['name']
+                game.plasma_pouch_active = bool(bonus.get('mix_bonus') or bonus.get('balance_score'))
+                game.pouch_blind_mult = float(bonus.get('blind_mult') or 1.0)
             else:
                 print(f"Warning: Pouch '{pouch_name}' not found in data.POUCHES—using defaults.")
-        game.green_pouch_active = save_data.get('green_pouch_active', False)
+        game.green_pouch_active = save_data.get('green_pouch_active', getattr(game, 'green_pouch_active', False))
+        if 'ghost_pouch_active' in save_data:
+            game.ghost_pouch_active = bool(save_data.get('ghost_pouch_active'))
+        if 'plasma_pouch_active' in save_data:
+            game.plasma_pouch_active = bool(save_data.get('plasma_pouch_active'))
+        if 'pouch_blind_mult' in save_data:
+            try:
+                game.pouch_blind_mult = float(save_data.get('pouch_blind_mult') or 1.0)
+            except (TypeError, ValueError):
+                game.pouch_blind_mult = 1.0
         game.hands_left = save_data.get('hands_left', constants.MAX_HANDS)
         game.rerolls_left = save_data.get('rerolls_left', constants.MAX_REROLLS)
         game.discards_left = save_data.get('discards_left', constants.MAX_DISCARDS)
@@ -186,56 +338,49 @@ def load_game(game):
         game.available_packs = save_data.get('available_packs', [])
         game.shop_reroll_cost = save_data.get('shop_reroll_cost', 5)
         game.mute = save_data.get('mute', False)
-        game.toggle_mute()  # Applies volumes immediately (ensures SFX are set correctly on load)
+        if hasattr(game, 'apply_mute'):
+            game.apply_mute()
         game.hand_multipliers = copy.deepcopy(save_data.get('hand_multipliers', {}))
         game.confirmed_hands_this_round = save_data.get('confirmed_hands_this_round', 0)
-        game.hands_played_this_round = save_data.get('hands_played_this_round', 0)  # Keep for compatibility
+        game.hands_played_this_round = save_data.get('hands_played_this_round', 0)
         game.rune_tray = copy.deepcopy(save_data.get('rune_tray', [None, None]))
         for ht in data.HAND_TYPES:
             if ht not in game.hand_multipliers:
                 game.hand_multipliers[ht] = 1.0
-        # Dagger/Score Multipliers
         game.score_mult = save_data.get('score_mult', 1.0)
-        game.dagger_mult = save_data.get('dagger_mult', 0.0)  # Single set; removed duplicate below
+        game.dagger_mult = save_data.get('dagger_mult', 0.0)
 
-        # Pack/Shop Continuity
         game.pack_choices = copy.deepcopy(save_data.get('pack_choices', []))
         game.confirm_sell_index = save_data.get('confirm_sell_index', -1)
 
-        # Turn and Popups
         game.turn = save_data.get('turn', 0)
         game.show_popup = save_data.get('show_popup', False)
         game.popup_message = save_data.get('popup_message', "")
 
-        # If adding modified constants
         game.effective_interest_max = save_data.get('effective_interest_max', constants.INTEREST_MAX)
-        # Removed duplicate dagger_mult set here
 
-        # Tutorial Progress (new)
         game.tutorial_step = save_data.get('tutorial_step', 0)
         game.tutorial_mode = save_data.get('tutorial_mode', False)
         game.tutorial_completed = save_data.get('tutorial_completed', False)
 
-        # Unlocks (new)
-        game.unlocks = copy.deepcopy(save_data.get('unlocks', {}))
+        import achievements as ach
+        ach.attach_progress(game)
+        game.unlocks = game.progress
 
-        # Advantage-specific (added here)
         game.has_advantage = save_data.get('has_advantage', False)
         game.advantage_value = save_data.get('advantage_value', None)
         game.held_advantage = save_data.get('held_advantage', False)
         game.original_center_value = save_data.get('original_center_value', None)
 
-        # for Fate's Favor
         game.used_fates_favor_this_blind = save_data.get('used_fates_favor_this_blind', False)
         game.fates_advantage_index = save_data.get('fates_advantage_index', -1)
         game.fates_advantage_value = save_data.get('fates_advantage_value', None)
         game.held_fates_advantage = save_data.get('held_fates_advantage', False)
         game.selecting_fates_die = save_data.get('selecting_fates_die', False)
 
-        # New for Gambler's Grimoire
         game.equipped_charms = copy.deepcopy(save_data.get('equipped_charms', []))
         game.disabled_charms = save_data.get('disabled_charms', [])
-        print(f"Debug: Loaded equipped_charms = {[c['name'] for c in game.equipped_charms]}, disabled = {game.disabled_charms}")  # ADD: Check load
+        print(f"Debug: Loaded equipped_charms = {[c.get('name') for c in game.equipped_charms]}, disabled = {game.disabled_charms}")
 
         from d20_boon import D20BoonSystem
         if not hasattr(game, 'd20_boon') or game.d20_boon is None:
@@ -247,37 +392,78 @@ def load_game(game):
         game.d20_advantage_index = save_data.get('d20_advantage_index', -1)
         game.selecting_advantage_die = save_data.get('selecting_advantage_die', False)
         game._d20_prism_in_current_shop = save_data.get('_d20_prism_in_current_shop', False)
+        game.grimoire_rune = copy.deepcopy(save_data.get('grimoire_rune', None))
+        game.used_rune_cast_this_shop = save_data.get('used_rune_cast_this_shop', False)
+        game.d20_roll_phase = save_data.get('d20_roll_phase')
+        game.d20_selected_fusion = save_data.get('d20_selected_fusion')
+        game.d20_roll_result = save_data.get('d20_roll_result')
+        game.d20_blind_type = save_data.get('d20_blind_type')
+        game._d20_pre_intensify = copy.deepcopy(save_data.get('d20_pre_intensify'))
         game.d20_boon.sync_legacy_flags(game)
 
-        # In load_game, remove/replace the existing if-block with:
-        game.apply_boss_face_shuffle()
+        if hasattr(game, 'apply_boss_face_shuffle'):
+            game.apply_boss_face_shuffle()
 
-        # Recompute hand/modifier texts based on loaded state
-        game.update_hand_text()
+        if hasattr(game, 'update_hand_text'):
+            try:
+                game.update_hand_text()
+            except Exception as e:
+                print(f"update_hand_text on load skipped: {e}")
 
-        # Restore state (use previous if paused)
         saved_state = save_data.get('current_state')
         saved_previous = save_data.get('previous_state')
-        resume_state = saved_previous if saved_state == 'PauseMenuState' else saved_state
-        state_class = STATE_MAP.get(resume_state, BlindsState)  # Fallback to BlindsState
+        resume_state = save_data.get('resume_state') or resolve_run_state(saved_state, saved_previous)
+        if resume_state not in STATE_MAP or resume_state in MENU_STATES:
+            resume_state = 'BlindsState'
+        state_class = STATE_MAP[resume_state]
 
-        # Set is_resuming if loading into GameState
-        if resume_state == 'GameState':
-            game.is_resuming = True
+        # Prefer restoring the exact overlay when it only needs Class(game).
+        overlay_class = None
+        overlay_state = None
+        try:
+            if saved_state == 'PackSelectState':
+                from states.pack_select import PackSelectState
+                overlay_class = PackSelectState
+            elif saved_state == 'DiceSelectState':
+                from states.dice_select import DiceSelectState
+                overlay_class = DiceSelectState
+            elif saved_state == 'ConfirmSellState':
+                from states.confirm_sell import ConfirmSellState
+                overlay_class = ConfirmSellState
+            elif saved_state == 'RuneSelectState':
+                from states.rune import RuneSelectState
+                overlay_class = RuneSelectState
+            elif saved_state == 'D20RollState':
+                from states.d20_roll import D20RollState
+                blind = save_data.get('d20_blind_type') or getattr(game, 'current_blind', 'Small')
+                st = D20RollState(game, blind)
+                st.restore_progress(save_data)
+                overlay_state = st
+        except Exception as e:
+            print(f"Overlay restore skipped: {e}")
+            overlay_class = None
+            overlay_state = None
 
-        game.state_machine.change_state(state_class(game))
-        return save_data  # Return the dict for PromptState
+        game.is_resuming = True
+        if overlay_state is not None:
+            game.state_machine.change_state(overlay_state)
+        elif overlay_class is not None:
+            game.state_machine.change_state(overlay_class(game))
+        else:
+            game.state_machine.change_state(state_class(game))
+        return save_data
     except FileNotFoundError:
-        return None  # No save
+        return None
     except json.JSONDecodeError as e:
-        print(f"Corrupt save file: {e}. Deleting and starting fresh.")  # Or set game.temp_message = "Corrupt save—starting new."
-        delete_save()
-        return None  # Invalid file
-    except Exception as e:  # Catch-all for unexpected (e.g., key errors in data)
+        print(f"Corrupt save file (kept on disk): {e}")
+        return None
+    except Exception as e:
         print(f"Unexpected load error: {e}")
         return None
 
+
 def delete_save():
     """Deletes the save file."""
-    if os.path.exists('save.json'):
-        os.remove('save.json')
+    path = save_file_path()
+    if os.path.exists(path):
+        os.remove(path)

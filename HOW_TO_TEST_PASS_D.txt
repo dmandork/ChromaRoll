@@ -1,0 +1,75 @@
+ChromaRoll Pass D — drop-in files
+=================================
+
+Replace these files in your repo with the copies in this zip
+(keep the same folder layout: tests/ and states/ stay nested).
+
+  scoring.py
+  ChromaRoll.py
+  screens.py
+  states/game.py
+  states/confirm_sell.py
+  tests/test_charm_pass_d.py
+
+Headless check (no pygame window needed — the test stubs pygame):
+
+  python tests/test_charm_pass_d.py
+  python tests/test_charm_pass_ab.py
+  python tests/test_ui_pass_c.py
+  python tests/test_d20_boon.py
+
+What this pass adds
+-------------------
+Four charms that were in the shop with text and icons, but never fired:
+
+1. Castle Cube
+   Pick a base color each blind (shown on the tooltip). Every discarded
+   die of that color permanently adds +3 chips to Castle. Color changes
+   on the next blind.
+
+2. Saving Throw
+   When a held Glass die would break, roll a d6. 4–6 = the die lives.
+   Tooltip shows the last save roll. Works on Mime retriggers too.
+
+3. Space Sphere
+   After you score a real hand (not "Nothing"), 25% chance to add +0.5x
+   to that hand type — same boost a Prism pack gives. A temp message
+   shows when it hits.
+
+4. Monopoly Mortgage
+   While equipped, the next sell this shop pays 2× sell value. Mortgage
+   then locks until the next shop. Selling Mortgage itself also pays 2×
+   and leaves (no lock needed).
+
+Two pouch-init bugs (same files):
+
+- Blue Pouch hands were applied twice (+2 instead of +1). Black Pouch
+  the same way (−2 instead of −1). Now once.
+- Black Pouch extra_dice used the literal color "random_special" AND
+  then added a real special die. Now it adds exactly one Gold / Silver /
+  Glass / Rainbow.
+
+In-game checks
+--------------
+Castle Cube (debug-add it):
+  Tooltip shows "This round: Red" (or another base color) and
+  "Permanent: +0". Discard 1–2 reds, score. Chips line should include
+  Castle Cube +3 / +6. Beat the blind; next blind the color changes.
+
+Saving Throw (debug-add it + Glass dice):
+  Score a held Glass. Sometimes it breaks, sometimes "Saving Throw: N —
+  glass saved!". Hover the charm after a save to see "Last save: N".
+
+Space Sphere (debug-add it):
+  Score several Pairs. About 1 in 4 should flash "Space Sphere: Pair
+  now 1.5x" (then 2.0x, …). Hand-type panel on the right should match.
+
+Monopoly Mortgage (debug-add it + a cheap charm):
+  Shop → sell the cheap charm → coins jump by 2× its sell value, message
+  "Mortgage: sold … (2x). Locked until next shop." Sell a second charm
+  this shop: normal (half-cost) price. Next shop Mortgage is usable again.
+
+Pouches (new run):
+  Blue Pouch: 5 hands (4 base +1), not 6.
+  Black Pouch: 3 hands (4 base −1), not 2. Bag is 26 dice, none of them
+  colored "random_special".

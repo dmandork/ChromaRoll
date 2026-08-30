@@ -150,7 +150,7 @@ MULTIPLIERS_PANEL_WIDTH = 175
 MULTIPLIERS_PANEL_HEIGHT = len(HAND_TYPES) * 25 + 20  # Now self-contained
 PACK_BOX_SIZE = 60
 SMALL_ICON_DIE_SIZE = 15
-COLOR_CYCLE = list(COLORS.keys())
+COLOR_CYCLE = BASE_COLORS + SPECIAL_COLORS
 CYCLE_SPEED = 0.5  # Seconds per color change
 # Inner icon sizing for fitting inside die frame
 INNER_ICON_SCALE = 0.8  # 80% of die size (e.g., 80x80 for 100x100 die)

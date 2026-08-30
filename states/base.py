@@ -1,6 +1,20 @@
 # states/base.py
 import pygame
 
+# Menu screens must not overwrite a run save. That's why Load looked like a no-op
+# (Splash/Init/GameOver auto-saved over the shop/blinds/play file).
+_SKIP_AUTOSAVE = {
+    'SplashState', 'PromptState', 'AchievementsState',
+    'GameOverState', 'InitState',
+}
+
+# Only persist screens Load can actually resume. Overlay states (packs, runes)
+# keep the previous shop/play save instead of writing an un-resumable name.
+_RUN_AUTOSAVE = {
+    'ShopState', 'GameState', 'BlindsState', 'PauseMenuState', 'EndPromptState',
+    'D20RollState',
+}
+
 class State:
     def __init__(self, game):
         self.game = game
@@ -8,7 +22,8 @@ class State:
 
     def enter(self):
         import savegame  # Lazy import to avoid cycles
-        savegame.save_game(self.game)  # Auto-save on every state entry
+        if type(self).__name__ not in _SKIP_AUTOSAVE:
+            savegame.save_game(self.game)
 
     def exit(self):
         pass
@@ -32,6 +47,11 @@ class StateMachine:
         self.current_state.exit()
         self.current_state = new_state
         self.current_state.enter()
+        # Persist run screens even when a subclass overrides enter() without super().
+        name = type(self.current_state).__name__
+        if name in _RUN_AUTOSAVE:
+            import savegame
+            savegame.save_game(self.game)
 
     def update(self, dt):
         self.current_state.update(dt)

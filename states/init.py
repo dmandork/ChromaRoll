@@ -35,9 +35,15 @@ class InitState(State):
             for idx, rect in enumerate(self.pouch_rects or []):
                 if rect.collidepoint(mouse_pos):
                     pouch = data.POUCHES[self.game.pouch_offset + idx]
-                    if pouch.get('unlocked', False):
+                    from achievements import is_pouch_unlocked, pouch_unlock_hint
+                    if is_pouch_unlocked(self.game, pouch):
                         self.game.apply_pouch(pouch)
                         self.game.state_machine.change_state(BlindsState(self.game))  # To 'blinds'
+                    else:
+                        self.game.temp_message = "Locked — " + pouch_unlock_hint(self.game, pouch)
+                        self.game.temp_message_start = time.time()
+                        self.game.temp_message_duration = max(
+                            getattr(self.game, 'temp_message_duration', 3.0), 3.5)
                     break
             if self.tutorial_rect and self.tutorial_rect.collidepoint(mouse_pos):
                 self.game.tutorial_mode = True

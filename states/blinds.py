@@ -28,6 +28,7 @@ class BlindsState(State):
         self.down_rect = None
         self.debug_jump_rect = None
         self.intensify_rect = None  # NEW: Single for current blind
+        self.debug_force_win_rect = None
         # For item rects in dropdown (since dynamic, recalculate in handle_event)
         if DEBUG:
             self.stake_dropdown_open = False
@@ -96,6 +97,13 @@ class BlindsState(State):
     def draw(self):
         self.game.screen.fill(THEME['background'])  # Clear relics
         self.blind_rects, self.continue_rect, self.debug_button_rect, self.up_rect, self.down_rect, self.debug_jump_rect, self.intensify_rect = draw_blinds_screen(self.game)  # Unpack 7
+        self.debug_force_win_rect = None
+        if DEBUG:
+            self.debug_force_win_rect = pygame.Rect(140, 10, 140, 28)
+            draw_rounded_element(self.game.screen, self.debug_force_win_rect, (40, 55, 30), radius=5)
+            fw = self.font_small.render("Force Win", True, (220, 255, 160)) if getattr(self, 'font_small', None) else self.game.small_font.render("Force Win", True, (220, 255, 160))
+            self.game.screen.blit(fw, (self.debug_force_win_rect.centerx - fw.get_width() // 2,
+                                       self.debug_force_win_rect.centery - fw.get_height() // 2))
         
         if DEBUG and self.dropdown_rect:
             # Draw stake dropdown (upper left)
@@ -138,6 +146,9 @@ class BlindsState(State):
         from states.init import InitState
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
+            if DEBUG and self.debug_force_win_rect and self.debug_force_win_rect.collidepoint(mouse_pos):
+                self.game.debug_force_win(skip_popup=True)
+                return
             if self.continue_rect and self.continue_rect.collidepoint(mouse_pos):
                 # Clear old turn state for new blind
                 self.game.hand = []
@@ -153,8 +164,11 @@ class BlindsState(State):
                 self.game.state_machine.change_state(GameState(self.game))
                 return
 
-            # NEW: Single intensify button for current blind
+            # Intensify: blocked once a d20 has already landed (locked roll / leftover dump).
             if self.intensify_rect and self.intensify_rect.collidepoint(mouse_pos):
+                boon = getattr(self.game, 'd20_boon', None)
+                if boon is not None and boon.is_locked():
+                    return
                 from .d20_roll import D20RollState
                 self.game.entering_fresh_blind = True
                 self.game.state_machine.change_state(D20RollState(self.game, self.game.current_blind))

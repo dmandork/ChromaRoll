@@ -229,6 +229,61 @@ def test_harmony_lock_prefers_fusion():
         assert idx == 1  # only Red die
 
 
+def test_begin_next_blind_noop_while_active():
+    """The dump-to-blinds exploit: Continue must not pay this roll's win rewards."""
+    b = D20BoonSystem()
+    b.start_boon(None)
+    b.apply_roll(2)
+    blocked = b.disabled_hand_type
+    assert b.pending_hand_type_mult == {blocked: 2.0}
+    g = FakeGame()
+    b.begin_next_blind(g)
+    assert b.active is True
+    assert b.pending_hand_type_mult == {blocked: 2.0}
+    assert b.next_blind_type_mult == {}
+    assert b.extra_score_mult(blocked) == 1.0  # win reward is still pending
+
+
+def test_cancel_restore_keeps_pending():
+    """Cancel Intensify before the d20 lands puts leftover queues back."""
+    b = D20BoonSystem()
+    b.start_boon(None)
+    b.apply_roll(2)
+    g = FakeGame()
+    b.on_blind_won(g)
+    b.end_this_blind(g)
+    assert b.pending_hand_type_mult
+    snap = b.to_dict()
+    b.begin_next_blind(g)
+    assert b.next_blind_type_mult
+    assert not b.pending_hand_type_mult
+    assert b.cancel_unstarted(snap, g) is True
+    assert b.pending_hand_type_mult
+    assert not b.next_blind_type_mult
+    assert b.active is False
+
+
+def test_cancel_refuses_once_locked():
+    b = D20BoonSystem()
+    snap = b.to_dict()
+    b.start_boon('Blue')
+    b.apply_roll(3)
+    assert b.is_locked() is True
+    assert b.cancel_unstarted(snap) is False
+    assert b.active is True
+    assert b.roll == 3
+    assert b.fused_color == 'Blue'
+
+
+def test_is_locked_only_after_roll():
+    b = D20BoonSystem()
+    assert b.is_locked() is False
+    b.start_boon(None)
+    assert b.is_locked() is False  # fusion screen, not rolled yet
+    b.apply_roll(10)
+    assert b.is_locked() is True
+
+
 if __name__ == '__main__':
     tests = [v for k, v in list(globals().items()) if k.startswith('test_')]
     failed = 0
@@ -241,3 +296,4 @@ if __name__ == '__main__':
             print('FAIL', fn.__name__, e)
     print(f'{len(tests) - failed}/{len(tests)} passed')
     sys.exit(1 if failed else 0)
+

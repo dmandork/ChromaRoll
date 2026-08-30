@@ -1,0 +1,51 @@
+ChromaRoll — menu / load / shop-drag drop-in
+===========================================
+
+Replace these files (keep states/ and tests/ nested):
+
+  savegame.py
+  screens.py
+  ChromaRoll.py
+  states/base.py
+  states/splash.py
+  states/game_over.py
+  states/pause.py
+  states/end_prompt.py
+  states/shop.py
+  tests/test_shop_drag_and_menu.py
+  HOW_TO_TEST_MENU_AND_DRAG.txt
+
+Headless (no pygame window):
+
+  python tests/test_shop_drag_and_menu.py
+
+In-game checks
+--------------
+Save / Load (the important ones)
+  From the SHOP, click the window X. Restart. Load Game → back in that shop
+  with the same charms for sale and the same equipped row.
+  From PLAY or BLINDS, click X. Restart. Load Game → that screen.
+  Open a pack (leave the shop onto the pick screen), click X. Restart. Load
+  Game → shop (pack UI is restored when it can be; otherwise the shop).
+  Pause → Main Menu → window X on the title. Restart. Load Game still has
+  the run (title must not overwrite the save).
+  Title Quit button also keeps the run.
+
+Splash
+  New Game always goes to pouch select. It never opens "Resume previous run?".
+  Load Game restores a mid-run (shop, blinds, play, pack pick, pause).
+  Load Game with no real run shows "No run to load" / "No save found".
+
+Game Over / victory
+  Game Over button is "Main Menu" and returns to the title splash, not bag select.
+  Victory "Main Menu" also returns to the title splash.
+
+Pause
+  Main Menu keeps the run. Load Game from splash should resume it.
+
+Shop charms
+  Drag an equipped charm onto another charm → they swap.
+  Drag onto a dashed empty slot → the charm parks in that empty slot (end of the row).
+  The 5th charm picks up and drops like the others (does not stick to the cursor).
+  ESC or right-click while holding a charm throws it into the first empty slot
+  (or just unsticks if the row is already full).

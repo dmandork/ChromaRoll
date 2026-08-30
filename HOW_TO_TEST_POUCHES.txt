@@ -1,0 +1,93 @@
+ChromaRoll — pouch unlocks + Ghost / Plasma wiring
+==================================================
+
+Drop these over your ChromaRoll folder (on top of Pass E + Debug Panel):
+
+  achievements.py
+  data.py
+  scoring.py
+  ChromaRoll.py
+  screens.py
+  savegame.py
+  states/shop.py
+  states/dice_select.py
+  states/init.py
+  tests/test_achievements.py
+  tests/test_pouches.py
+  HOW_TO_TEST_ACHIEVEMENTS.txt
+  ChromaRoll_Game_Features.md
+
+Headless (no pygame window):
+
+  python tests/test_pouches.py
+  python tests/test_achievements.py
+
+------------------------------------------------
+The four gated pouches
+------------------------------------------------
+Red / Blue / Yellow / Green still start unlocked.
+
+  Ghost Pouch   EASY     Add 10 dice from shop packs (lifetime).
+  Black Pouch   MEDIUM   Beat the Stake 2 boss (must play 6 blinds).
+  Plasma Pouch  HARD     Beat the Stake 4 boss.
+  Erratic Pouch HARD     Win a run (Stake 8 boss).
+
+Locked tiles on the pouch carousel are muted with a LOCKED badge.
+Hover shows the quest (Ghost also shows 3/10 style progress).
+Clicking a locked pouch toasts the quest — it does not start a run.
+
+DEBUG Achievements → Unlock All still grants every pouch.
+Reset clears them again.
+
+If you already beat Stake 2 / 4 / won a run before this drop, the matching
+pouch(es) unlock on the next shop / score / win event (catch-up). Ghost
+starts at 0 pack-dice because that stat is new.
+
+------------------------------------------------
+Ghost identity
+------------------------------------------------
++1 starting Glass die (already worked).
+
+Now also:
+  - Special dice packs (the Gold/Silver/Glass/Rainbow pack) are 4× more
+    likely to show in the shop row.
+  - Standard color-dice packs mix specials into the offer.
+
+Add a die from any dice pack → counts toward Haunting (10).
+
+------------------------------------------------
+Plasma identity
+------------------------------------------------
+Mix bonus, not average-and-square. Held colors (Rainbow ignored for the count):
+
+  5 colors  +120 chips
+  4 colors  +80
+  3 colors  +40
+  2 colors  0
+  1 color   −40 (mono tax)
+  All Rainbow  +120 (full spectrum)
+
+No ×1.5 blinds. Modifier line: "Plasma mix +80" or "Plasma mono -40".
+
+------------------------------------------------
+Fast checks (DEBUG on)
+------------------------------------------------
+1. New Game. First row: Red Blue Yellow Green. Arrow: Black Ghost
+   Erratic Plasma all LOCKED. Click Black → toast "Beat the Stake 2 boss."
+2. Achievements → Unlock All. Back. New Game. All eight pouches clickable.
+3. Pick Ghost. Shop: special dice pack should show up more often. Buy a
+   standard dice pack — Gold/Silver/Glass/Rainbow can appear in the offer.
+4. Reset achievements. Buy 10 dice packs across runs (or one long run).
+   Toast "Haunting — Ghost Pouch". New Game → Ghost is open.
+5. Challenges → Stake 2 → Jump to Boss → Force Win. Black unlocks.
+   Stake 4 Force Win → Plasma. Stake 8 Force Win → Erratic + Life Milestone.
+6. Unlock All, New Game, pick Plasma. Blind targets match a Red pouch.
+   Hold 5 different colors → "Plasma mix +120" and a bigger total.
+   Hold five of one color → "Plasma mono -40" and a smaller total.
+7. Mid-run save/load on Ghost or Plasma: shop weighting / mix bonus
+   still apply.
+
+------------------------------------------------
+Not in this drop
+------------------------------------------------
+House-rule bag heat / wagers, Endless, Stake-8 finale, tutorial, Steam.

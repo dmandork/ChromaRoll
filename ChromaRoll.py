@@ -11,8 +11,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # Ensure root di
 import data
 import screens
 import savegame
-from scoring import evaluate_hand, get_stencil_mult, apply_enhancement_retrigger
+from scoring import evaluate_hand, get_stencil_mult, apply_enhancement_retrigger, glass_breaks, rotate_castle_color, apply_castle_discards, try_space_sphere, pouch_extra_colors, pouch_hands_delta, shop_pack_weights, randomize_bag_colors
+try:
+    from scoring import pouch_charm_slots
+except ImportError:
+    def pouch_charm_slots(pouch):
+        return 5 + ((pouch or {}).get('bonus') or {}).get('charm_slots', 0)
+
+
 from d20_boon import D20BoonSystem
+from achievements import attach_progress, reset_run_stats, notify, filter_shop_pool, score_payload, bag_has_steel, max_prism
 from constants import *
 from utils import draw_rounded_element, resource_path, create_dice_bag, wrap_text, get_easing
 
@@ -338,6 +346,8 @@ class ChromaRollGame:
         self.swap_source_index = -1
         self.selecting_bag_die = False
         self.destroyed_dice = []  # NEW: Track removed dice for Needle revival (preserves color/enh)
+        self.mortgage_used_this_round = False
+
         
         # New for Gambler's Grimoire
         self.used_rune_cast_this_shop = False
@@ -364,6 +374,16 @@ class ChromaRollGame:
         """Old wrapper — returns just the final score number."""
         _, _, _, final_score, _, _ = evaluate_hand(self, is_preview=False)
         return final_score
+
+    def _glass_destroyed(self, chance):
+        """True if glass breaks. Saving Throw can cancel a would-be break."""
+        if not glass_breaks(self, chance):
+            if getattr(self, '_last_save_success', False):
+                self.temp_message = f"Saving Throw: {self._last_save_roll} — glass saved!"
+                self.temp_message_start = time.time()
+            return False
+        notify(self, 'glass_break')
+        return True
 
     def _init_defaults(self):
         self.bag = create_dice_bag()  # Create dice bag (mutable list for removal)
@@ -452,7 +472,9 @@ class ChromaRollGame:
         self.selected_pouch = None  # Track chosen pouch for bonuses
         self.green_pouch_active = False  # Flag for Green Pouch effect
         self.pouch_offset = 0  # For carousel scrolling
-        self.unlocks = {}  # Future: Track unlocks, e.g., self.unlocks['Black Pouch'] = False; for now, use pouch['unlocked']
+        self.unlocks = {}  # overwritten by attach_progress — kept for older save keys
+        attach_progress(self)
+        reset_run_stats(self)
         self.current_boss_effect = None  # Current active boss effect dict, or None
         self.disabled_charms = []  # For effects like Charm Glitch/Eclipse: list of indices or names
         self.boss_reroll_count = 0  # Track rerolls used for effects like Break Surge
@@ -484,7 +506,11 @@ class ChromaRollGame:
             self.current_hand_text = "Current Hand: Nothing (0 base) = 0 total"
             self.current_modifier_text = "Modifiers: None"
         else:
-            held_rolls = [(die, value) for i, (die, value) in enumerate(self.rolls) if self.held[i]]
+            held_rolls = []
+            for i, pair in enumerate(self.rolls or []):
+                if i < len(self.held) and self.held[i]:
+                    if isinstance(pair, (list, tuple)) and len(pair) >= 2 and pair[0]:
+                        held_rolls.append((pair[0], pair[1]))
             if not held_rolls:
                 self.current_hand_text = "Current Hand: Nothing (0 base) = 0 total"
                 self.current_modifier_text = "Modifiers: None"
@@ -553,12 +579,18 @@ class ChromaRollGame:
 
     def toggle_mute(self):
         self.mute = not self.mute
-        # Apply to SFX (scale your original volumes)
-        self.roll_sound.set_volume(0.5 * self.sfx_volume if not self.mute else 0.0)
-        self.break_sound.set_volume(0.7 * self.sfx_volume if not self.mute else 0.0)
-        self.coin_sound.set_volume(0.4 * self.sfx_volume if not self.mute else 0.0)
-        # If adding BGM: pygame.mixer.music.set_volume(0.5 if not self.mute else 0.0)
-        # If using channel for play: self.sfx_channel.set_volume(0.0 if self.mute else self.sfx_volume)
+        self.apply_mute()
+
+    def apply_mute(self):
+        """Set SFX volumes from self.mute. Load must call this, not toggle_mute()."""
+        muted = bool(getattr(self, 'mute', False))
+        sfx = getattr(self, 'sfx_volume', 1.0)
+        try:
+            self.roll_sound.set_volume(0.0 if muted else 0.5 * sfx)
+            self.break_sound.set_volume(0.0 if muted else 0.7 * sfx)
+            self.coin_sound.set_volume(0.0 if muted else 0.4 * sfx)
+        except Exception:
+            pass
 
     def get_bag_color(self):
         """Returns the bag color based on selected pouch, fallback to default brown."""
@@ -645,6 +677,9 @@ class ChromaRollGame:
             target *= boon.target_mult
         elif hasattr(self, 'target_mult') and self.target_mult != 1.0:
             target *= self.target_mult
+        pouch_mult = float(getattr(self, 'pouch_blind_mult', 1.0) or 1.0)
+        if pouch_mult != 1.0:
+            target *= pouch_mult
         
         return int(math.ceil(target))
 
@@ -673,6 +708,12 @@ class ChromaRollGame:
         # NEW: Reset Acrobat Amulet flag per blind
         self.final_discard_mult = 0
         self.discards_used_this_round = 0
+
+        # Castle Cube: new discard color each blind
+        for idx, charm in enumerate(self.equipped_charms):
+            if charm.get('type') == 'score_per_discard_color' and idx not in self.disabled_charms:
+                rotate_castle_color(charm)
+
 
         # NEW: Reset Spellbook Scribe flag per blind
         if hasattr(self, '_scribe_used_this_blind'):
@@ -997,6 +1038,7 @@ class ChromaRollGame:
 
             if not DEBUG_UNLIMITED_REROLLS:  # FIXED: Custom flag
                 self.rerolls_left -= 1
+            notify(self, 'reroll')
             self.update_hand_text()  # Update after reroll
             self.boss_reroll_count += 1  # Track for Break Surge
         else:
@@ -1040,7 +1082,7 @@ class ChromaRollGame:
 
             # Handle Glass break chance (only for held Glass)
             for i, (die, _) in enumerate(self.rolls):
-                if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
+                if die['color'] == 'Glass' and self.held[i] and self._glass_destroyed(glass_break_chance):
                     # Break: Remove from full_bag and bag
                     self.break_sound = pygame.mixer.Sound(resource_path('assets/audio/break.wav'))
                     self.break_sound.set_volume(0.7)  # Louder for impact
@@ -1064,7 +1106,7 @@ class ChromaRollGame:
 
                 # Retrigger Glass break for held
                 for i, (die, _) in enumerate(self.rolls):
-                    if die['color'] == 'Glass' and self.held[i] and random.random() < glass_break_chance:
+                    if die['color'] == 'Glass' and self.held[i] and self._glass_destroyed(glass_break_chance):
                         # Break again
                         self.break_sound = pygame.mixer.Sound(resource_path('assets/audio/break.wav'))
                         self.break_sound.set_volume(0.7)  # Louder for impact
@@ -1149,6 +1191,9 @@ class ChromaRollGame:
                     return
                 else:
                     # Game over - transition to state
+                    target = self.get_blind_target()
+                    notify(self, 'lose', score=self.round_score, target=target,
+                           close=(target and self.round_score >= 0.8 * target))
                     self.state_machine.change_state(GameOverState(self))
 
 
@@ -1193,6 +1238,9 @@ class ChromaRollGame:
             self.discards_left -= 1
             self.discard_used_this_round = True
             self.discards_used_this_round = getattr(self, 'discards_used_this_round', 0) + 1
+            notify(self, 'discard',
+                   colors=[d.get('color') for d in discarded_dice if d],
+                   bag_empty=len(self.bag) == 0)
             # Acrobat Amulet: +value mult on the next score after the last discard of the round
             acrobat_val = 0
             for idx, charm in enumerate(self.equipped_charms):
@@ -1204,6 +1252,19 @@ class ChromaRollGame:
                 self.temp_message = f"Acrobat Amulet: +{acrobat_val} mult on next score (final discard)!"
                 self.temp_message_start = time.time()
             self.update_hand_text()
+            # Castle Cube: matching discarded colors add permanent chips
+            for idx, charm in enumerate(self.equipped_charms):
+                if charm.get('type') == 'score_per_discard_color' and idx not in self.disabled_charms:
+                    if not charm.get('active_color'):
+                        rotate_castle_color(charm)
+                    added = apply_castle_discards(charm, discarded_dice)
+                    if added:
+                        self.temp_message = (
+                            f"Castle Cube: +{added} ({charm.get('active_color')}, "
+                            f"total {charm.get('permanent_bonus', 0)})"
+                        )
+                        self.temp_message_start = time.time()
+                    break
             # Trading Token: Destroy the discarded die (not the replacement) for coins on first 1-die discard
             if self.first_discard_this_turn and selected_count == 1:
                 self.first_discard_this_turn = False
@@ -1278,6 +1339,324 @@ class ChromaRollGame:
                 self.temp_message = "Roll Flow: click a die to give it advantage"
                 self.temp_message_start = time.time()
 
+    def _complete_blind_win(self):
+        """Pay out coins, fire blind_win (and run_win on stake 8 boss), show the popup."""
+        # Compute dynamic interest max from charms
+        dynamic_interest_max = INTEREST_MAX
+        for charm in self.equipped_charms:
+            if charm['type'] == 'interest_max_bonus':
+                dynamic_interest_max += charm['value']
+            
+        # Compute base interest
+        base_interest = min(self.coins, dynamic_interest_max) // INTEREST_RATE
+
+        # Compute interest bonus from charms (e.g., Interest Idol adds +value per 10 coins)
+        interest_bonus = 0
+        capped_coins = min(self.coins, dynamic_interest_max)  # Reuse the cap
+        for charm in self.equipped_charms:
+            if charm['type'] == 'interest_bonus':
+                interest_bonus += charm['value'] * (capped_coins // INTEREST_RATE)  # Now capped!
+            
+        # Total interest including bonus
+        interest = base_interest + interest_bonus
+
+        # NEW: Unified rune gains collection (after interest, before remains_coins)
+        rune_gains_lines = []  # Collect per-rune strings
+        total_rune_coins = 0
+
+        # Loop for coin-granting runes
+        for idx, charm in enumerate(self.equipped_charms):
+            if idx in self.disabled_charms:
+                continue
+            rune_gain = 0
+            gain_desc = ""
+                
+            if charm['type'] == 'coin_per_face':  # Cloud Cube
+                bag_size = len(self.full_bag)
+                rune_gain = (bag_size // 6) * charm['value']  # E.g., 25//6=4 *1=4
+                gain_desc = f"{bag_size} dice"
+                
+            elif charm['type'] == 'coin_scaling':  # Rocket Rune
+                defeated = charm.get('boss_defeated', 0)
+                rune_gain = charm['base'] + (defeated * charm['boss'])  # E.g., 1 + 2*1=3
+                gain_desc = f"base + {defeated} bosses"
+                
+            # Add future ones here, e.g.:
+            # elif charm['type'] == 'coin_per_color':
+            #     green_count = sum(1 for die, _ in held_rolls if die['color'] == 'Green')
+            #     rune_gain = green_count * charm['value']
+            #     gain_desc = f"{green_count} greens"
+                
+            if rune_gain > 0:
+                total_rune_coins += rune_gain
+                rune_gains_lines.append(f"{charm['name']}: ${rune_gain} ({gain_desc})")
+                # print(f"{charm['name']}: +{rune_gain} coins ({gain_desc})")  # Debug
+
+        # NEW: Boss defeat increment for Rocket (after gain calc, for next time)
+        if self.current_blind == 'Boss':
+            for charm in self.equipped_charms:
+                if charm['type'] == 'coin_scaling':
+                    charm['boss_defeated'] = charm.get('boss_defeated', 0) + 1
+                    # print(f"Rocket Rune: Boss #{charm['boss_defeated']} defeated—next gain +{charm['boss']}")
+                    break
+
+        if self.green_pouch_active:
+            remains_coins = (self.hands_left * 2) + (self.discards_left * 1)
+            hands_dollars = '$$' * self.hands_left
+            discards_dollars = '$' * self.discards_left
+            interest_dollars = ''
+        else:
+            remains_coins = self.hands_left + self.discards_left
+            hands_dollars = '$' * self.hands_left
+            discards_dollars = '$' * self.discards_left
+            interest_dollars = '$' * interest if interest >= 0 else str(interest)
+            
+        # Accumulate Luck's Locket coins for this hand but don't add to self.coins yet
+        luck_locket_coins_this_hand = 0
+        for charm in self.equipped_charms:
+            if charm['name'] == "Luck's Locket" and self.lucky_triggers > 0:
+                luck_locket_coins_this_hand += charm['value'] * self.lucky_triggers
+        self.round_locket_coins += luck_locket_coins_this_hand
+
+        # Accumulate base lucky coins for this hand but don't add to self.coins yet
+        base_lucky_coins_this_hand = self.lucky_triggers * 1
+        self.round_base_lucky_coins += base_lucky_coins_this_hand
+
+        # Visual representations (standardized to '$' * coins) - moved before total_coins for dollars only
+        luck_locket_dollars = '$' * self.round_locket_coins if self.round_locket_coins > 0 else ''
+        luck_locket_line = f"Luck Bonus: {luck_locket_dollars}\n" if self.round_locket_coins > 0 else ""
+            
+        base_lucky_dollars = '$' * self.round_base_lucky_coins if self.round_base_lucky_coins > 0 else ''
+        base_lucky_line = f"Lucky Coins: {base_lucky_dollars}\n" if self.round_base_lucky_coins > 0 else ""
+            
+        extras_dollars = '$' * self.extra_coins if self.extra_coins > 0 else ''
+        extras_line = f"Extras: {extras_dollars}\n" if self.extra_coins > 0 else ""
+
+        # NEW: Rune block for popup
+        rune_block = ""
+        if rune_gains_lines:
+            rune_block = "Rune Gains:\n" + "\n".join(rune_gains_lines) + "\n"
+
+            
+        # NEW: Echo Ember coins (unused discards at end)
+        echo_ember_bonus = 0
+        for idx, charm in enumerate(self.equipped_charms):
+            if charm['type'] == 'coin_per_discard' and idx not in self.disabled_charms:
+                echo_ember_bonus += charm['value'] * self.discards_left  # Unused discards
+        echo_ember_line = f"Echo Coins: ${echo_ember_bonus}\n" if echo_ember_bonus > 0 else ""
+
+        # NEW: Gift Glyph sell bonus (after rune gains, before popup)
+        gift_bonus = 0
+        for idx, charm in enumerate(self.equipped_charms):
+            if charm['type'] == 'sell_bonus' and idx not in self.disabled_charms:
+                for eq_charm in self.equipped_charms:  # Loop all equipped (including self)
+                    eq_charm['sell_value'] = eq_charm.get('sell_value', eq_charm['cost']) + charm['value']
+                    gift_bonus += charm['value']  # Track for popup if wanted
+                # print(f"Gift Glyph: +{charm['value']} sell to {len(self.equipped_charms)} charms")  # Debug, remove later
+                break
+
+        coin_gen_bonus = 0
+        for idx, charm in enumerate(self.equipped_charms):
+            if charm['type'] == 'coin_gen' and idx not in self.disabled_charms:
+                unused_hands = self.hands_left # Unused at round end
+                coin_gen_bonus += charm['value'] * unused_hands
+
+        # For popup (add to dollar line):
+        coin_gen_dollars = '$' * coin_gen_bonus if coin_gen_bonus > 0 else ''
+        coin_gen_line = f"Unused Hands: {coin_gen_dollars}\n" if coin_gen_bonus > 0 else ""
+
+        # Total coins including accumulated Luck's Locket, base lucky, and runes
+        total_coins = remains_coins + interest + self.extra_coins + self.round_locket_coins + self.round_base_lucky_coins + total_rune_coins + coin_gen_bonus + echo_ember_bonus
+
+        total_dollars = '$' * abs(total_coins) if total_coins >= 0 else str(total_coins)
+
+        # ADD: Clear Fate's Favor after scoring (advantage goes away for next hand)
+        if self.fates_advantage_index != -1:
+            self.fates_advantage_index = -1
+            self.fates_advantage_value = None
+            self.held_fates_advantage = False
+            self.selecting_fates_die = False  # Safety
+            # print("Debug: Cleared Fate's Favor after scoring")
+            
+        # NEW: Set flag for final boss win and award coins/clear accumulators
+        final_boss_win = (self.current_blind == 'Boss' and self.current_stake == 8)
+        self.coins += total_coins  # Add all coins at the end
+        self.coins = max(0, self.coins)  # Clamp to prevent negative coins from penalties
+        self.extra_coins = 0
+        self.round_locket_coins = 0
+        self.round_base_lucky_coins = 0
+        self.lucky_triggers = 0
+        self.blind_won = True  # Set win flag if not already
+
+        # NEW: Increment Turtle rounds_passed on round win (early, to avoid exits; for next enter)
+        # print("DEBUG: Win block reached—checking Turtle increment")
+        turtle_incremented = False
+        for charm in self.equipped_charms:
+            if charm['type'] == 'hands_decay':
+                old_passed = charm.get('rounds_passed', 0)
+                charm['rounds_passed'] = old_passed + 1
+                # print(f"Turtle Token WIN: Incremented from {old_passed} to {charm['rounds_passed']} for next round")
+                turtle_incremented = True
+                break
+        # if not turtle_incremented:
+            # print("DEBUG: No Turtle Token found for increment (not equipped?)")
+            
+        # **INSERT: Clear Luchador flag after blind completion**
+        if self.current_blind == 'Boss':
+            self.luchador_disable_active = False
+            # print("DEBUG: Luchador flag cleared after boss")
+
+        if final_boss_win:
+            notify(self, 'blind_win', **{
+                'is_boss': True, 'stake': self.current_stake,
+                'hard_boss': (self.current_boss_effect or {}).get('name') in ('Hold Ban', 'Charm Eclipse'),
+                'intensified': bool(getattr(self, 'd20_boon', None) and self.d20_boon.active),
+                'last_hand': self.hands_left <= 0,
+                'no_reroll': (self.progress.get('run') or {}).get('rerolls_this_blind', 0) == 0,
+                'charm_count': len(self.equipped_charms),
+                'coins': self.coins,
+                'max_prism': max_prism(self),
+            })
+            notify(self, 'run_win', stake=self.current_stake,
+                   pouch=(self.current_pouch or {}).get('name') if isinstance(self.current_pouch, dict) else None)
+            # Skip popup, direct to prompt
+            from states.end_prompt import EndPromptState  # type: ignore
+            end_prompt = EndPromptState(self)
+            self.state_machine.change_state(end_prompt)
+            return  # Exit early
+
+        d20_line = ""
+        if getattr(self, 'd20_boon', None) and self.d20_boon.active:
+            bits = []
+            if self.d20_boon.pending_coins:
+                bits.append(f"+${self.d20_boon.pending_coins} D20")
+            if self.d20_boon.pending_free_prism:
+                bits.append("Free Prism Pack in shop")
+            if self.d20_boon.pending_hand_type_mult:
+                ht = next(iter(self.d20_boon.pending_hand_type_mult))
+                bits.append(f"+2x {ht} next blind")
+            if self.d20_boon.pending_hand_mult_next > 1.0:
+                bits.append(f"x{self.d20_boon.pending_hand_mult_next} next hand")
+            if self.d20_boon.pending_hand_mult_blinds > 0:
+                bits.append(f"x{self.d20_boon.pending_hand_mult_blinds_value} next {self.d20_boon.pending_hand_mult_blinds} blinds")
+            if bits:
+                d20_line = "D20 reward: " + ", ".join(bits) + "\n"
+
+        # Normal win: Show popup
+        self.popup_message = (f"{self.current_blind} Blind Beaten! Score: {self.round_score}/{int(self.get_blind_target())}\n"
+                            f"Hands left: {hands_dollars}\n"
+                            f"Discards Left: {discards_dollars}\n"
+                            f"Interest: {interest_dollars}\n"
+                            f"{extras_line}"
+                            f"{luck_locket_line}"  # Luck's Locket accumulated
+                            f"{base_lucky_line}"  # Base 'Lucky' accumulated
+                            f"{rune_block}"  # NEW: Rune gains block
+                            f"{coin_gen_line}"  # Coin Generation charms
+                            f"{echo_ember_line}"  # NEW: Echo Ember from unused discards
+                            f"{d20_line}"
+                            f"Coins gained: {total_dollars}")
+
+        self.show_popup = True
+        notify(self, 'blind_win', **{
+            'is_boss': self.current_blind == 'Boss',
+            'stake': self.current_stake,
+            'hard_boss': self.current_blind == 'Boss' and (self.current_boss_effect or {}).get('name') in ('Hold Ban', 'Charm Eclipse'),
+            'intensified': bool(getattr(self, 'd20_boon', None) and self.d20_boon.active),
+            'last_hand': self.hands_left <= 0,
+            'no_reroll': (self.progress.get('run') or {}).get('rerolls_this_blind', 0) == 0,
+            'charm_count': len(self.equipped_charms),
+            'coins': self.coins,
+            'max_prism': max_prism(self),
+        })
+
+    def debug_force_win(self, skip_popup=False):
+        """DEBUG: beat this blind through the real win path so achievements fire."""
+        if getattr(self, 'show_popup', False):
+            return
+        target = int(self.get_blind_target() or 0)
+        self.round_score = max(int(self.round_score or 0), target)
+        self._complete_blind_win()
+        if skip_popup and getattr(self, 'show_popup', False):
+            self.show_popup = False
+            from states.shop import ShopState
+            self.advance_blind()
+            self.generate_shop()
+            self.state_machine.change_state(ShopState(self))
+
+    def debug_force_lose(self, close=False):
+        """DEBUG: lose this blind. close=True is So Close (>=80% of target). Skips Cloak."""
+        if getattr(self, 'show_popup', False):
+            return
+        target = self.get_blind_target()
+        if close and target:
+            from debug_cheats import close_lose_score
+            self.round_score = close_lose_score(target)
+        close_flag = bool(close or (target and self.round_score >= 0.8 * target))
+        notify(self, 'lose', score=self.round_score, target=target, close=close_flag)
+        from states.game_over import GameOverState
+        self.state_machine.change_state(GameOverState(self))
+
+    def debug_set_last_hand(self):
+        self.hands_left = 1
+        self.temp_message = "DEBUG: last hand (1 remaining)"
+        self.temp_message_start = time.time()
+
+    def debug_add_coins(self, n=40):
+        self.coins = getattr(self, 'coins', 0) + n
+        self.temp_message = f"DEBUG: +${n} (now {self.coins})"
+        self.temp_message_start = time.time()
+
+    def debug_empty_bag(self):
+        self.bag = []
+        notify(self, 'discard', colors=[], bag_empty=True)
+        self.temp_message = "DEBUG: bag emptied"
+        self.temp_message_start = time.time()
+
+    def debug_paint_hand(self, kind):
+        from debug_cheats import apply_paint
+        if not getattr(self, 'rolls', None):
+            self.temp_message = "DEBUG: Start Roll first, then paint"
+            self.temp_message_start = time.time()
+            return
+        self.rolls, self.held = apply_paint(self.rolls, getattr(self, 'hand', []), self.held, kind)
+        if hasattr(self, 'update_hand_text'):
+            try:
+                self.update_hand_text()
+            except Exception:
+                pass
+        labels = {'sixes': 'five 6s', 'red': 'all Red', 'glass': 'two Glass'}
+        self.temp_message = f"DEBUG painted {labels.get(kind, kind)} — End Turn to score"
+        self.temp_message_start = time.time()
+
+    def debug_add_steel(self):
+        from debug_cheats import add_steel
+        die = add_steel(getattr(self, 'bag', None) or [], getattr(self, 'full_bag', None) or [])
+        if die is None:
+            self.temp_message = "DEBUG: no die to stamp Steel"
+        else:
+            notify(self, 'check', steel=True)
+            self.temp_message = f"DEBUG: Steel on {die.get('color', '?')} die"
+        self.temp_message_start = time.time()
+
+    def debug_run_play_action(self, action):
+        """Dispatch a play-screen DEBUG bar click."""
+        if action == 'win':
+            self.debug_force_win()
+        elif action == 'lose':
+            self.debug_force_lose(close=False)
+        elif action == 'close':
+            self.debug_force_lose(close=True)
+        elif action == 'last':
+            self.debug_set_last_hand()
+        elif action == 'coins':
+            self.debug_add_coins(40)
+        elif action == 'empty':
+            self.debug_empty_bag()
+        elif action in ('sixes', 'red', 'glass'):
+            self.debug_paint_hand(action)
+        elif action == 'steel':
+            self.debug_add_steel()
+
     def score_and_new_turn(self):
         """Manually scores and starts a new turn."""
         hand_type, base_score, modifier_desc, final_score, charm_chips, charm_mono_add = self.get_hand_type_and_score(is_preview=False)
@@ -1288,6 +1667,7 @@ class ChromaRollGame:
         
         # Apply Hiker Hex per-die bonus if equipped and not disabled
         held_rolls = [(die, value) for i, (die, value) in enumerate(self.rolls) if self.held[i]]
+        notify(self, 'score', **score_payload(self, hand_type, held_rolls))
         for idx, charm in enumerate(self.equipped_charms):
             if charm['type'] == 'die_bonus_perm' and idx not in self.disabled_charms:
                 # print("Hiker Hex: Applying +4 to", len(held_rolls), "dice")
@@ -1332,6 +1712,12 @@ class ChromaRollGame:
                 if len(held_rolls) == charm.get('dice', 4):
                     charm['permanent_bonus'] = charm.get('permanent_bonus', 0) + charm['value']
                 break
+
+        # Space Sphere: 25% chance to upgrade the hand type just scored
+        if try_space_sphere(self, hand_type):
+            new_mult = self.hand_multipliers.get(hand_type, 1.0)
+            self.temp_message = f"Space Sphere: {hand_type} now {new_mult:.1f}x"
+            self.temp_message_start = time.time()
 
         # Apply Lucky Labyrinth permanent bonus on charm if equipped and triggers >0
         for idx, charm in enumerate(self.equipped_charms):
@@ -1390,8 +1776,8 @@ class ChromaRollGame:
                 has_break_buffer = any(c['type'] == 'break_reduce' and idx not in self.disabled_charms for idx, c in enumerate(self.equipped_charms))
                 effective_chance = glass_break_chance if not has_break_buffer else (0.33 if value <= 3 else 0.0)
                 
-                if random.random() < effective_chance:
-                    print(f"DEBUG: Breaking die '{die['color']}' ID '{die['id']}' held {self.held[i]} RNG {random.random()}, full_bag now {len(self.full_bag)}")  # Keep for debug
+                if self._glass_destroyed(effective_chance):
+                    print(f"DEBUG: Breaking die '{die['color']}' ID '{die['id']}' held {self.held[i]}, full_bag now {len(self.full_bag)}")  # Keep for debug
                     self.sfx_channel.play(self.break_sound)
                     # FIXED: Temp - bag only
                     self.bag = [d for d in self.bag if d['id'] != die['id']]
@@ -1420,7 +1806,7 @@ class ChromaRollGame:
                     has_break_buffer = any(c['type'] == 'break_reduce' and idx not in self.disabled_charms for idx, c in enumerate(self.equipped_charms))
                     effective_chance = glass_break_chance if not has_break_buffer else (0.33 if value <= 3 else 0.0)
                     
-                    if random.random() < effective_chance:
+                    if self._glass_destroyed(effective_chance):
                         print(f"DEBUG: Mime Breaking die '{die['color']}' ID '{die['id']}'...")  # Debug
                         self.sfx_channel.play(self.break_sound)
                         self.bag = [d for d in self.bag if d['id'] != die['id']]
@@ -1452,210 +1838,7 @@ class ChromaRollGame:
         # Note: Turtle decay applied in GameState.enter (blind start hook) for net adjustment
     
         if self.round_score >= self.get_blind_target():
-            # Compute dynamic interest max from charms
-            dynamic_interest_max = INTEREST_MAX
-            for charm in self.equipped_charms:
-                if charm['type'] == 'interest_max_bonus':
-                    dynamic_interest_max += charm['value']
-            
-            # Compute base interest
-            base_interest = min(self.coins, dynamic_interest_max) // INTEREST_RATE
-
-            # Compute interest bonus from charms (e.g., Interest Idol adds +value per 10 coins)
-            interest_bonus = 0
-            capped_coins = min(self.coins, dynamic_interest_max)  # Reuse the cap
-            for charm in self.equipped_charms:
-                if charm['type'] == 'interest_bonus':
-                    interest_bonus += charm['value'] * (capped_coins // INTEREST_RATE)  # Now capped!
-            
-            # Total interest including bonus
-            interest = base_interest + interest_bonus
-
-            # NEW: Unified rune gains collection (after interest, before remains_coins)
-            rune_gains_lines = []  # Collect per-rune strings
-            total_rune_coins = 0
-
-            # Loop for coin-granting runes
-            for idx, charm in enumerate(self.equipped_charms):
-                if idx in self.disabled_charms:
-                    continue
-                rune_gain = 0
-                gain_desc = ""
-                
-                if charm['type'] == 'coin_per_face':  # Cloud Cube
-                    bag_size = len(self.full_bag)
-                    rune_gain = (bag_size // 6) * charm['value']  # E.g., 25//6=4 *1=4
-                    gain_desc = f"{bag_size} dice"
-                
-                elif charm['type'] == 'coin_scaling':  # Rocket Rune
-                    defeated = charm.get('boss_defeated', 0)
-                    rune_gain = charm['base'] + (defeated * charm['boss'])  # E.g., 1 + 2*1=3
-                    gain_desc = f"base + {defeated} bosses"
-                
-                # Add future ones here, e.g.:
-                # elif charm['type'] == 'coin_per_color':
-                #     green_count = sum(1 for die, _ in held_rolls if die['color'] == 'Green')
-                #     rune_gain = green_count * charm['value']
-                #     gain_desc = f"{green_count} greens"
-                
-                if rune_gain > 0:
-                    total_rune_coins += rune_gain
-                    rune_gains_lines.append(f"{charm['name']}: ${rune_gain} ({gain_desc})")
-                    # print(f"{charm['name']}: +{rune_gain} coins ({gain_desc})")  # Debug
-
-            # NEW: Boss defeat increment for Rocket (after gain calc, for next time)
-            if self.current_blind == 'Boss':
-                for charm in self.equipped_charms:
-                    if charm['type'] == 'coin_scaling':
-                        charm['boss_defeated'] = charm.get('boss_defeated', 0) + 1
-                        # print(f"Rocket Rune: Boss #{charm['boss_defeated']} defeated—next gain +{charm['boss']}")
-                        break
-
-            if self.green_pouch_active:
-                remains_coins = (self.hands_left * 2) + (self.discards_left * 1)
-                hands_dollars = '$$' * self.hands_left
-                discards_dollars = '$' * self.discards_left
-                interest_dollars = ''
-            else:
-                remains_coins = self.hands_left + self.discards_left
-                hands_dollars = '$' * self.hands_left
-                discards_dollars = '$' * self.discards_left
-                interest_dollars = '$' * interest if interest >= 0 else str(interest)
-            
-            # Accumulate Luck's Locket coins for this hand but don't add to self.coins yet
-            luck_locket_coins_this_hand = 0
-            for charm in self.equipped_charms:
-                if charm['name'] == "Luck's Locket" and self.lucky_triggers > 0:
-                    luck_locket_coins_this_hand += charm['value'] * self.lucky_triggers
-            self.round_locket_coins += luck_locket_coins_this_hand
-
-            # Accumulate base lucky coins for this hand but don't add to self.coins yet
-            base_lucky_coins_this_hand = self.lucky_triggers * 1
-            self.round_base_lucky_coins += base_lucky_coins_this_hand
-
-            # Visual representations (standardized to '$' * coins) - moved before total_coins for dollars only
-            luck_locket_dollars = '$' * self.round_locket_coins if self.round_locket_coins > 0 else ''
-            luck_locket_line = f"Luck Bonus: {luck_locket_dollars}\n" if self.round_locket_coins > 0 else ""
-            
-            base_lucky_dollars = '$' * self.round_base_lucky_coins if self.round_base_lucky_coins > 0 else ''
-            base_lucky_line = f"Lucky Coins: {base_lucky_dollars}\n" if self.round_base_lucky_coins > 0 else ""
-            
-            extras_dollars = '$' * self.extra_coins if self.extra_coins > 0 else ''
-            extras_line = f"Extras: {extras_dollars}\n" if self.extra_coins > 0 else ""
-
-            # NEW: Rune block for popup
-            rune_block = ""
-            if rune_gains_lines:
-                rune_block = "Rune Gains:\n" + "\n".join(rune_gains_lines) + "\n"
-
-            
-            # NEW: Echo Ember coins (unused discards at end)
-            echo_ember_bonus = 0
-            for idx, charm in enumerate(self.equipped_charms):
-                if charm['type'] == 'coin_per_discard' and idx not in self.disabled_charms:
-                    echo_ember_bonus += charm['value'] * self.discards_left  # Unused discards
-            echo_ember_line = f"Echo Coins: ${echo_ember_bonus}\n" if echo_ember_bonus > 0 else ""
-
-            # NEW: Gift Glyph sell bonus (after rune gains, before popup)
-            gift_bonus = 0
-            for idx, charm in enumerate(self.equipped_charms):
-                if charm['type'] == 'sell_bonus' and idx not in self.disabled_charms:
-                    for eq_charm in self.equipped_charms:  # Loop all equipped (including self)
-                        eq_charm['sell_value'] = eq_charm.get('sell_value', eq_charm['cost']) + charm['value']
-                        gift_bonus += charm['value']  # Track for popup if wanted
-                    # print(f"Gift Glyph: +{charm['value']} sell to {len(self.equipped_charms)} charms")  # Debug, remove later
-                    break
-
-            coin_gen_bonus = 0
-            for idx, charm in enumerate(self.equipped_charms):
-                if charm['type'] == 'coin_gen' and idx not in self.disabled_charms:
-                    unused_hands = self.hands_left # Unused at round end
-                    coin_gen_bonus += charm['value'] * unused_hands
-
-            # For popup (add to dollar line):
-            coin_gen_dollars = '$' * coin_gen_bonus if coin_gen_bonus > 0 else ''
-            coin_gen_line = f"Unused Hands: {coin_gen_dollars}\n" if coin_gen_bonus > 0 else ""
-
-            # Total coins including accumulated Luck's Locket, base lucky, and runes
-            total_coins = remains_coins + interest + self.extra_coins + self.round_locket_coins + self.round_base_lucky_coins + total_rune_coins + coin_gen_bonus + echo_ember_bonus
-
-            total_dollars = '$' * abs(total_coins) if total_coins >= 0 else str(total_coins)
-
-            # ADD: Clear Fate's Favor after scoring (advantage goes away for next hand)
-            if self.fates_advantage_index != -1:
-                self.fates_advantage_index = -1
-                self.fates_advantage_value = None
-                self.held_fates_advantage = False
-                self.selecting_fates_die = False  # Safety
-                # print("Debug: Cleared Fate's Favor after scoring")
-            
-            # NEW: Set flag for final boss win and award coins/clear accumulators
-            final_boss_win = (self.current_blind == 'Boss' and self.current_stake == 8)
-            self.coins += total_coins  # Add all coins at the end
-            self.coins = max(0, self.coins)  # Clamp to prevent negative coins from penalties
-            self.extra_coins = 0
-            self.round_locket_coins = 0
-            self.round_base_lucky_coins = 0
-            self.lucky_triggers = 0
-            self.blind_won = True  # Set win flag if not already
-
-            # NEW: Increment Turtle rounds_passed on round win (early, to avoid exits; for next enter)
-            # print("DEBUG: Win block reached—checking Turtle increment")
-            turtle_incremented = False
-            for charm in self.equipped_charms:
-                if charm['type'] == 'hands_decay':
-                    old_passed = charm.get('rounds_passed', 0)
-                    charm['rounds_passed'] = old_passed + 1
-                    # print(f"Turtle Token WIN: Incremented from {old_passed} to {charm['rounds_passed']} for next round")
-                    turtle_incremented = True
-                    break
-            # if not turtle_incremented:
-                # print("DEBUG: No Turtle Token found for increment (not equipped?)")
-            
-            # **INSERT: Clear Luchador flag after blind completion**
-            if self.current_blind == 'Boss':
-                self.luchador_disable_active = False
-                # print("DEBUG: Luchador flag cleared after boss")
-
-            if final_boss_win:
-                # Skip popup, direct to prompt
-                from states.end_prompt import EndPromptState  # type: ignore
-                end_prompt = EndPromptState(self)
-                self.state_machine.change_state(end_prompt)
-                return  # Exit early
-
-            d20_line = ""
-            if getattr(self, 'd20_boon', None) and self.d20_boon.active:
-                bits = []
-                if self.d20_boon.pending_coins:
-                    bits.append(f"+${self.d20_boon.pending_coins} D20")
-                if self.d20_boon.pending_free_prism:
-                    bits.append("Free Prism Pack in shop")
-                if self.d20_boon.pending_hand_type_mult:
-                    ht = next(iter(self.d20_boon.pending_hand_type_mult))
-                    bits.append(f"+2x {ht} next blind")
-                if self.d20_boon.pending_hand_mult_next > 1.0:
-                    bits.append(f"x{self.d20_boon.pending_hand_mult_next} next hand")
-                if self.d20_boon.pending_hand_mult_blinds > 0:
-                    bits.append(f"x{self.d20_boon.pending_hand_mult_blinds_value} next {self.d20_boon.pending_hand_mult_blinds} blinds")
-                if bits:
-                    d20_line = "D20 reward: " + ", ".join(bits) + "\n"
-
-            # Normal win: Show popup
-            self.popup_message = (f"{self.current_blind} Blind Beaten! Score: {self.round_score}/{int(self.get_blind_target())}\n"
-                                f"Hands left: {hands_dollars}\n"
-                                f"Discards Left: {discards_dollars}\n"
-                                f"Interest: {interest_dollars}\n"
-                                f"{extras_line}"
-                                f"{luck_locket_line}"  # Luck's Locket accumulated
-                                f"{base_lucky_line}"  # Base 'Lucky' accumulated
-                                f"{rune_block}"  # NEW: Rune gains block
-                                f"{coin_gen_line}"  # Coin Generation charms
-                                f"{echo_ember_line}"  # NEW: Echo Ember from unused discards
-                                f"{d20_line}"
-                                f"Coins gained: {total_dollars}")
-
-            self.show_popup = True
+            self._complete_blind_win()
         elif self.hands_left > 0:
             self.new_turn()  # Next hand in round
         else:
@@ -1685,6 +1868,9 @@ class ChromaRollGame:
                 return  # No over
             else:
                 # Game over - transition to state
+                target = self.get_blind_target()
+                notify(self, 'lose', score=self.round_score, target=target,
+                       close=(target and self.round_score >= 0.8 * target))
                 self.state_machine.change_state(GameOverState(self))
 
     def toggle_hold(self, index):
@@ -1720,12 +1906,13 @@ class ChromaRollGame:
     
     def get_pause_button_rects(self):
         """Calculates and returns button rects for pause menu (no drawing)."""
+        popup_h = 400
         popup_x = (self.width - POPUP_WIDTH) // 2
-        popup_y = (self.height - POPUP_HEIGHT) // 2
-        button_spacing = 20
-        button_y = popup_y + 80
+        popup_y = (self.height - popup_h) // 2
+        button_spacing = 12
+        button_y = popup_y + 72
         button_rects = []
-        options = ["Return to Game", "Main Menu", "Quit"]
+        options = ["Return to Game", "Achievements", "Main Menu", "Quit"]
         for opt in options:
             button_rect = pygame.Rect(popup_x + (POPUP_WIDTH - BUTTON_WIDTH) // 2, button_y, BUTTON_WIDTH, BUTTON_HEIGHT)
             button_rects.append((button_rect, opt))
@@ -1872,7 +2059,7 @@ class ChromaRollGame:
 
     def reset_game(self):
         # Existing resets (e.g., coins=0, stake=1, blind='Small', etc.)
-        self.coins = 999999 if DEBUG else 0
+        self.coins = 0 if not DEBUG else 999999
         # NEW: Reset UNO Skip flag on full restart (one per run)
         self.uno_skip_used = False
         self.turn_initialized = False  # Reset for new round/turn
@@ -1902,9 +2089,30 @@ class ChromaRollGame:
         self.boss_rainbow_color = None
         self.boss_shuffled_faces = {}
         self.boss_reroll_count = 0
-        self.hand_multipliers = {}  # Reset prism boosts
-        self.dagger_mult = 0 if hasattr(self, 'dagger_mult') else 0
+        self.hand_multipliers = {ht: 1.0 for ht in data.HAND_TYPES}
+        self.dagger_mult = 0
+        self.score_mult = 1.0
+        self.mult = 1.0
+        self.target_mult = 1.0
+        self.max_charms = 5
+        self.is_endless = False
+        self.extra_rounds = 0
+        self.is_resuming = False
+        if hasattr(self, 'd20_boon') and self.d20_boon:
+            self.d20_boon.reset_all()
+        self.fused_color = None
+        self.has_free_prism_pack = False
+        self._d20_prism_in_current_shop = False
+        self.d20_roll_phase = None
+        self.d20_selected_fusion = None
+        self.d20_roll_result = None
+        self.d20_blind_type = None
+        self._d20_pre_intensify = None
+        self.effective_interest_max = INTEREST_MAX
         self.green_pouch_active = False
+        self.ghost_pouch_active = False
+        self.plasma_pouch_active = False
+        self.pouch_blind_mult = 1.0
         self.current_pouch = None
         self.extra_coins = 0
         self.broken_dice = []
@@ -1915,65 +2123,72 @@ class ChromaRollGame:
         self.popup_message = None
         self.dragging_charm_index = -1
         self.dragging_shop = False
+        self.rune_tray = [None, None]
+        self.pack_choices = []
+        self.confirm_sell_index = -1
+        self.used_rune_cast_this_shop = False
+        self.grimoire_rune = None
+        self.luchador_disable_active = False
+        self.pending_luchador_disable = False
+        self.used_whirlwind_this_blind = False
+        self._recycler_used_this_blind = False
+        if hasattr(self, '_recycler_reuse_pending'):
+            delattr(self, '_recycler_reuse_pending')
+        self.hands_played_this_round = 0
+        self.confirmed_hands_this_round = 0
+        self.turn = 0
         # Set initial hand texts
         self.update_hand_text()
-        self.hand_multipliers = {ht: 1.0 for ht in data.HAND_TYPES}  # Reset to base 1.0 for all types
         # Add any other vars to reset (e.g., multipliers_hover=False)
-        self.tutorial_step = 0; self.tutorial_mode = False; self.tutorial_completed = False; self.unlocks = {}
-        # NEW: Reset Turtle rounds_passed on full restart
-        for charm in self.equipped_charms:
-            if charm['type'] == 'hands_decay':
-                charm['rounds_passed'] = 0
-                break
+        self.tutorial_step = 0; self.tutorial_mode = False; self.tutorial_completed = False
+        attach_progress(self)
+        reset_run_stats(self)
+        self.unlocks = getattr(self, 'progress', {}) or {}
+        self.mortgage_used_this_round = False
+        self.shop_bag_open = False
 
     def apply_pouch(self, pouch):
         """Applies the selected pouch's bonuses to the game state."""
         self.current_pouch = pouch
+        reset_run_stats(self)
         # Reset bag to base
         self.bag = create_dice_bag()
         self.full_bag = [d.copy() for d in self.bag]
-        
-        # Add extra dice
-        extras = pouch.get('bonus', {}).get('extra_dice', {})
-        for color, count in extras.items():
-            for i in range(count):
-                new_id = f"{color}{len([d for d in self.bag if d['color'] == color]) + 1}"
-                new_die = {'id': new_id, 'color': color, 'faces': DICE_FACES[:]}
-                self.bag.append(new_die)
-                self.full_bag.append(copy.deepcopy(new_die))
-        
-        # Apply action/coin bonuses
-        self.discards_left += pouch.get('bonus', {}).get('discards', 0)
-        self.hands_left += pouch.get('bonus', {}).get('hands', 0)
-        self.coins += pouch.get('bonus', {}).get('coins', 0)
-        
-        # Special flags (e.g., for Green)
-        self.green_pouch_active = 'Green' in pouch['name']  # Simple check; refine if adding more
 
-        # New bonuses
-        self.max_charms += pouch.get('bonus', {}).get('charm_slots', 0)  # e.g., Black
-        self.hands_left += pouch.get('bonus', {}).get('hands', 0)  # Negative for Black
-        if 'random_special' in pouch.get('bonus', {}).get('extra_dice', {}):
-            special_color = random.choice(SPECIAL_COLORS)
-            # Add die logic like extras
-            new_id = f"{special_color}{len([d for d in self.bag if d['color'] == special_color]) + 1}"
-            new_die = {'id': new_id, 'color': special_color, 'faces': DICE_FACES[:]}
+        self.discards_left += pouch.get('bonus', {}).get('discards', 0)
+        self.hands_left += pouch_hands_delta(pouch)
+        self.coins += pouch.get('bonus', {}).get('coins', 0)
+        self.green_pouch_active = 'Green' in pouch['name']
+        bonus = pouch.get('bonus') or {}
+        self.ghost_pouch_active = bool(bonus.get('shop_special_boost')) or 'Ghost' in pouch.get('name', '')
+        self.plasma_pouch_active = bool(bonus.get('mix_bonus') or bonus.get('balance_score'))
+        self.pouch_blind_mult = float(bonus.get('blind_mult') or 1.0)
+        self.max_charms = pouch_charm_slots(pouch)
+        for color in pouch_extra_colors(pouch):
+            new_id = f"{color}{len([d for d in self.bag if d['color'] == color]) + 1}"
+            new_die = {'id': new_id, 'color': color, 'faces': DICE_FACES[:], 'enhancements': []}
             self.bag.append(new_die)
             self.full_bag.append(copy.deepcopy(new_die))
-        if pouch.get('bonus', {}).get('randomize_bag', False):
-            for die in self.bag:
-                die['color'] = random.choice(list(COLORS.keys()))  # Random color; add face randomize if wanted
-        # For Plasma/Ghost: Add flags like self.balance_score = True, use in calculate_score/shop generation
+        if bonus.get('randomize_bag', False):
+            randomize_bag_colors(self.bag)
+            self.full_bag = [copy.deepcopy(d) for d in self.bag]
 
     def generate_shop(self):
         self.shop_reroll_cost = 5
+        self.mortgage_used_this_round = False
+        for c in getattr(self, 'equipped_charms', []) or []:
+            if c.get('type') == 'sell_double_lock':
+                c['locked'] = False
         had_free_prism = getattr(self, '_d20_prism_in_current_shop', False)
         all_packs = [0,1,2,3,4,5] + [6,7,8]  # Assume 0-5 existing, 6-8 for rune packs
-        weights = [1]*6 + [1, 0.8, 0.3]  # Lower for Super
+        weights = shop_pack_weights(ghost=bool(getattr(self, 'ghost_pouch_active', False)))
         self.available_packs = random.choices(all_packs, weights=weights, k=2 + any(tag['name'] == 'Voucher Tag' for tag in self.active_tags))  # Extra if Voucher Tag
         
-        # Filter pool to exclude owned (as before)
-        available_pool = [c for c in data.CHARMS_POOL if c['name'] not in [e['name'] for e in self.equipped_charms]]
+        # Filter pool to exclude owned, uncollected, and too-early rarities
+        owned = [e['name'] for e in self.equipped_charms]
+        available_pool = [c for c in data.CHARMS_POOL if c['name'] not in owned]
+        available_pool = filter_shop_pool(self, available_pool)
+        notify(self, 'shop_open')
         
         # ADD: Gambler's Grimoire - add free random rune if not used this shop
         active_charms = [c for idx, c in enumerate(self.equipped_charms) if idx not in self.disabled_charms]
@@ -2039,14 +2254,16 @@ class ChromaRollGame:
             for c in candidates:
                 if c['name'] not in seen_names:
                     seen_names.add(c['name'])
-                    unique_candidates.append(c)
+                    unique_candidates.append(copy.deepcopy(c))
                 if len(unique_candidates) == num_shop:
                     break
             self.shop_charms = unique_candidates[:num_shop]
             if len(self.shop_charms) < num_shop:  # Fallback if too few uniques
-                self.shop_charms += random.sample([c for c in available_pool if c['name'] not in seen_names], num_shop - len(self.shop_charms))
+                self.shop_charms += [copy.deepcopy(c) for c in random.sample(
+                    [c for c in available_pool if c['name'] not in seen_names],
+                    num_shop - len(self.shop_charms))]
         else:
-            self.shop_charms = random.sample(available_pool, num_shop) if available_pool else []
+            self.shop_charms = [copy.deepcopy(c) for c in random.sample(available_pool, num_shop)] if available_pool else []
         
         self.available_rune_packs = random.sample(data.RUNE_PACKS, min(2, len(data.RUNE_PACKS)))  # Random 1-2 rune packs
 
@@ -2072,7 +2289,11 @@ class ChromaRollGame:
     def apply_boss_face_shuffle(self):
         """Applies shuffled faces from the current boss effect to all relevant dice if active."""
         if self.current_boss_effect and self.current_boss_effect.get('name') == 'Face Shuffle' and self.boss_shuffled_faces:
-            all_dice = self.full_bag + self.bag + self.hand + [r[0] for r in self.rolls] + self.broken_dice
+            roll_dice = []
+            for r in self.rolls or []:
+                if isinstance(r, (list, tuple)) and r and r[0]:
+                    roll_dice.append(r[0])
+            all_dice = [d for d in (self.full_bag + self.bag + self.hand + roll_dice + self.broken_dice) if d]
             for die in all_dice:
                 if die['id'] in self.boss_shuffled_faces:
                     die['faces'] = copy.deepcopy(self.boss_shuffled_faces[die['id']])
@@ -2091,6 +2312,8 @@ class ChromaRollGame:
         if not (DEBUG and max_dice > 0) and len(die_list) > max_dice:
             self.temp_message = "Too many dice selected!"
             return
+
+        notify(self, 'rune', steel=bag_has_steel(self) or name == 'Mystic Steel Rune')
 
         if name == 'Mystic Fool Rune':
             if hasattr(self, 'last_rune') and self.last_rune and self.add_to_rune_tray(self.last_rune):
@@ -2219,7 +2442,7 @@ class ChromaRollGame:
                 die['enhancements'].append(color)
 
         elif name == 'Mystic Judgement Rune':
-            charm = random.choice([c for c in data.CHARMS_POOL if c['rarity'] == 'Common'])
+            charm = copy.deepcopy(random.choice([c for c in data.CHARMS_POOL if c['rarity'] == 'Common']))
             if len(self.equipped_charms) < self.max_charms:
                 self.equipped_charms.append(charm)
                 self.temp_message = f"Added {charm['name']}!"
@@ -2267,8 +2490,9 @@ class ChromaRollGame:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    savegame.save_game(self)  # Save on close
+                    savegame.save_on_exit(self)
                     running = False
+                    continue
                 self.state_machine.handle_event(event)
 
             self.state_machine.update(dt)

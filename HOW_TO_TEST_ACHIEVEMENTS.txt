@@ -1,0 +1,92 @@
+HOW TO TEST — Achievements & charm unlocks (Pass E)
+
+Drop these over your ChromaRoll folder (on top of Pass D + shop bag):
+  achievements.py
+  ChromaRoll.py
+  screens.py
+  savegame.py
+  states/achievements.py
+  states/splash.py
+  states/pause.py
+  states/game.py
+  states/shop.py
+  states/confirm_sell.py
+  states/end_prompt.py
+  tests/test_achievements.py
+
+progress.json is created next to save.json the first time you unlock something.
+It survives New Game. Delete it (or use Reset on the Achievements screen) to start collection over.
+
+Pouches are now gated too — see HOW_TO_TEST_POUCHES.txt.
+
+------------------------------------------------
+What you should see
+------------------------------------------------
+Splash: 2×2 buttons — New Game, Load Game, Achievements, Quit.
+Pause: Achievements sits between Return and Main Menu.
+
+Achievements screen
+  Quests tab: 39 quests (35 charm + 4 pouch), checkmark when done, lists the reward.
+  Charms tab: all 105. Locked ones are darkened; hover shows the quest hint.
+  DEBUG: Unlock All / Reset along the bottom.
+
+Shop
+  Stake 1: Common + Uncommon only, and only from the starter 60
+            (Castle Cube, Space Sphere, Mortgage, Steel Seal, Hiker Hex,
+             Lucky Labyrinth, Rune Recycler are locked until their quests).
+  Stake 2+: Rares that you have unlocked may appear.
+  Stake 4+: Legendaries that you have unlocked may appear.
+  Toast on unlock: "Unlocked: Boxcars — Critical Hit"
+
+------------------------------------------------
+Fast checks (DEBUG on)
+------------------------------------------------
+1. Splash → Achievements. 0/39 quests, 60/105 charms (the starter set).
+2. Unlock All. Collection fills. Pouches all unlock. Back. New run. Shop at Stake 1 still
+   has no Rares (appearance gate). Debug-jump to Stake 2, generate shop:
+   Rares can show. Stake 4: Legendaries can show.
+3. Reset. Shop at Stake 8 still cannot roll Critical Hit (not collected).
+   Locked pouches are locked again.
+4. Custom moments (starter 60, no Unlock All):
+   - Score five 6s            → Critical Hit
+   - Lose a blind at ≥80%     → Cloak of Cunning
+   - Sell two charms one shop → Monopoly Mortgage
+   - Equip 5 charms           → Wee Widget
+   - Beat Stake 1 boss        → Luchador Lens
+   - Beat Stake 2 boss        → Black Pouch (plus the Stake 2 charm batch)
+   - Add 10 shop-pack dice    → Ghost Pouch
+5. Headless: python tests/test_achievements.py
+             python tests/test_debug_cheats.py
+             python tests/test_pouches.py
+
+------------------------------------------------
+DEBUG play cheats (DBG tab, bottom-left on the blind)
+------------------------------------------------
+Closed by default — click DBG (or F8 / `) to pop the panel open. ESC closes it.
+
+Goes through the REAL win/lose path so quests still fire.
+
+  Win        beat this blind (popup, coins, shop). Stake 8 Boss → victory.
+  Lose       game over at current score
+  CloseLose  set score to 80% of target, then lose → So Close
+  LastHand   hands left = 1  (then Win → Last Call)
+  +$40       coins (then Win → Bankroll)
+  Empty      empty the bag → Empty Felt
+  Five 6s    paint the current hand, then End Turn → Boxcars
+  All Red    paint, then End Turn → Dragon Hoard
+  Glass x2   paint two Glass, then End Turn → Greenhouse
+  +Steel     stamp Steel on a bag die → Tempered
+
+Keys: F5 Win, F6 Lose, F7 CloseLose
+
+Challenges screen: Force Win next to the stake dropdown skips play
+and still fires beat_stake / win_run / intensify_wins.
+
+Fast stake 8: Challenges → Stake 8 → Jump to Boss → Force Win.
+
+Paint needs Start Roll first so there is a hand to mutate.
+
+------------------------------------------------
+Not in this pass
+------------------------------------------------
+House Rules / pouch heat, Steam achievements.

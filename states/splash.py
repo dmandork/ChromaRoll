@@ -10,12 +10,14 @@ from screens import draw_splash_screen
 from states.prompt import PromptState # For transition after splash if needed
 from states.init import InitState
 from states.base import State
+import savegame
 
 class SplashState(State):
     def __init__(self, game):
         super().__init__(game)
         self.new_game_rect = None
         self.load_game_rect = None
+        self.achievements_rect = None
         self.quit_rect = None
     def enter(self):
         self.game.splash_start_time = 0
@@ -75,7 +77,7 @@ class SplashState(State):
         self.game.screen.fill(THEME['background']) # Clear relics
         rects = draw_splash_screen(self.game)
         if rects is not None:
-            self.new_game_rect, self.load_game_rect, self.quit_rect = rects
+            self.new_game_rect, self.load_game_rect, self.achievements_rect, self.quit_rect = rects
     def handle_event(self, event):
         # Moved from old run()'s event blocks for splash
         if event.type == pygame.KEYDOWN:
@@ -86,15 +88,26 @@ class SplashState(State):
             if self.game.splash_phase == 'done':
                 # Use stored rects from draw()
                 if self.new_game_rect and self.new_game_rect.collidepoint(mouse_pos):
-                    if os.path.exists('save.json'): # Direct check instead of load_game return
-                        print("Save found, showing prompt")
-                        self.game.state_machine.change_state(PromptState(self.game))
-                    else:
-                        print("No save, starting new")
-                        self.game._init_defaults()
-                        self.game.state_machine.change_state(InitState(self.game))
-                    pass
+                    # Always a fresh run. Do not open the resume prompt.
+                    print("New Game")
+                    savegame.delete_save()
+                    self.game.reset_game()
+                    self.game.state_machine.change_state(InitState(self.game))
+                elif self.load_game_rect and self.load_game_rect.collidepoint(mouse_pos):
+                    save_data = savegame.load_game(self.game)
+                    if not save_data:
+                        path = savegame.save_file_path()
+                        if not os.path.exists(path):
+                            self.game.temp_message = "No save found"
+                        else:
+                            self.game.temp_message = "No run to load"
+                        self.game.temp_message_start = time.time()
+                elif self.achievements_rect and self.achievements_rect.collidepoint(mouse_pos):
+                    from states.achievements import AchievementsState
+                    self.game.achievements_return = 'splash'
+                    self.game.state_machine.change_state(AchievementsState(self.game))
                 elif self.quit_rect and self.quit_rect.collidepoint(mouse_pos):
+                    savegame.save_on_exit(self.game)
                     pygame.quit()
                     sys.exit()
             else:

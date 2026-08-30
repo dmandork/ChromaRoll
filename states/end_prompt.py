@@ -39,7 +39,10 @@ class EndPromptState(State):
         
         # Dynamic summary (stub total_score if not tracked; achievements as 0 for now)
         total_score = getattr(self.game, 'total_score', 0)  # Add tracking in score_and_new_turn if needed
-        ach_count = len(getattr(self.game, 'unlocked_achievements', []))
+        ach_ids = []
+        progress = getattr(self.game, 'progress', None) or {}
+        ach_ids = progress.get('new_this_run') or []
+        ach_count = len(ach_ids)
         self.summary_text = [
             f"Run Complete! Stake 8 Conquered",
             f"Total Score: {total_score:,}",
@@ -51,8 +54,7 @@ class EndPromptState(State):
         # pygame.mixer.music.pause()
         # victory_sound = pygame.mixer.Sound('assets/sfx/victory.wav')
         # victory_sound.play()
-        import savegame  # Lazy import to avoid cycles
-        savegame.save_game(self.game)  # Save before prompt
+        # Do not write EndPromptState into save.json — Load would then no-op.
         
         # Dynamic button setup using screen dims
         screen_width = self.game.screen.get_width()
@@ -92,7 +94,9 @@ class EndPromptState(State):
                 btn['color'] = (0, 255, 0) if name == 'endless' else (255, 100, 100)
         
         if event.type == pygame.QUIT:
-            self.game.quit_game()
+            import savegame
+            savegame.save_on_exit(self.game)
+            return
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self._to_menu()
@@ -143,7 +147,8 @@ class EndPromptState(State):
         self.game.state_machine.change_state(BlindsState(self.game))
 
     def _to_menu(self):
-        # Stub reset if missing - clear run state, keep unlocks
-        self.game.reset_for_new_run()  # If exists; else add to game class: self.current_stake = 1; self.current_blind = 'small'; self.round_score = 0; etc.
-        from .splash import SplashState  # type: ignore  # Lazy import to break cycle
+        import savegame
+        savegame.delete_save()
+        self.game.reset_game()
+        from .splash import SplashState
         self.game.state_machine.change_state(SplashState(self.game))

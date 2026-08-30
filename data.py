@@ -69,11 +69,11 @@ POUCHES = [
     {'name': 'Black Pouch', 'color': 'Black', 'desc': 'High-risk: +1 charm slot, -1 hand per round, extra 1 random special die.', 
      'bonus': {'charm_slots': 1, 'hands': -1, 'extra_dice': {'random_special': 1}}, 'unlocked': False},  # Example; add random logic in apply_pouch
     {'name': 'Ghost Pouch', 'color': 'Glass', 'desc': 'Risky: Higher special dice in shops, start with 1 Glass die.', 
-     'bonus': {'extra_dice': {'Glass': 1}}, 'unlocked': False},  # Shop chance via flag
+     'bonus': {'extra_dice': {'Glass': 1}, 'shop_special_boost': True}, 'unlocked': False},  # Shop chance via flag
     {'name': 'Erratic Pouch', 'color': 'Rainbow', 'desc': 'Chaotic: Randomize starting bag colors/faces.', 
      'bonus': {'randomize_bag': True}, 'unlocked': False},
-    {'name': 'Plasma Pouch', 'color': 'Purple', 'desc': 'Balanced scorer: Average base score and mult, x1.5 blind targets.', 
-     'bonus': {'balance_score': True, 'blind_mult': 1.5}, 'unlocked': False}
+    {'name': 'Plasma Pouch', 'color': 'Purple', 'desc': 'Mix scorer: +40/80/120 chips for 3/4/5 colors in the hand, -40 if every die is one color. Rainbow does not break a mono hand.', 
+     'bonus': {'mix_bonus': True}, 'unlocked': False}
 ]  # Descriptions and bonuses for each pouch; 'unlocked' indicates availability
 
 # Dot positions for each face value (1-6)

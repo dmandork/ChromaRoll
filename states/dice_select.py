@@ -31,6 +31,9 @@ class DiceSelectState(State):
                     new_die = {'id': new_id, 'color': color, 'faces': DICE_FACES[:]}
                     self.game.bag.append(new_die)
                     self.game.full_bag.append(copy.deepcopy(new_die))
+                    from achievements import notify
+                    notify(self.game, 'dice_added', n=1)
                     self.game.pack_choices = []
-                    self.game.state_machine.change_state(ShopState(self.game))  # Back to shop
+                    from states.shop import resume_shop
+                    resume_shop(self.game)  # Back to shop without rerolling stock
                     break

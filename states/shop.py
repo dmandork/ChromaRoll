@@ -5,15 +5,113 @@ import time
 import math
 import copy
 import os
-import savegame  # For saving on exit to pause
 from constants import *  # For THEME, BUTTON_WIDTH, SHOP_REROLL_COST, etc.
 from utils import draw_rounded_element, resource_path, wrap_text  # For UI/buttons
 from screens import draw_shop_screen, draw_custom_button, draw_tooltip  # For main shop drawing/buttons
 from data import CHARMS_POOL  # For charm generation/packs
 import data
+from scoring import dice_pack_choices
 
 from states.base import State
 from states.rune import RuneUseState, RuneSelectState  # FIXED: Lazy import at top of handle_event (for IDE/Pylance)
+
+def drop_shop_charm(game, mouse_pos):
+    """Drop a dragged equipped charm onto a slot (swap, or park in an empty slot)."""
+    drag = getattr(game, 'dragging_charm_index', -1)
+    if drag is None or drag < 0:
+        return
+    charms = game.equipped_charms
+    if drag >= len(charms):
+        game.dragging_charm_index = -1
+        game.dragging_shop = False
+        return
+    slots = getattr(game, 'shop_slot_rects', None) or []
+    target = -1
+    for i, rect in enumerate(slots):
+        if rect.collidepoint(mouse_pos):
+            target = i
+            break
+    n = len(charms)
+    if 0 <= target < n and target != drag:
+        charms[drag], charms[target] = charms[target], charms[drag]
+    elif target >= n:
+        charm = charms.pop(drag)
+        charms.append(charm)
+    game.dragging_charm_index = -1
+    game.dragging_shop = False
+
+
+def park_shop_charm(game):
+    """ESC / right-click: put the held charm in the first empty slot, or unstick if full."""
+    drag = getattr(game, 'dragging_charm_index', -1)
+    if drag is None or drag < 0:
+        return
+    charms = game.equipped_charms
+    max_c = getattr(game, 'max_charms', 5)
+    if 0 <= drag < len(charms) and len(charms) < max_c and drag != len(charms) - 1:
+        charm = charms.pop(drag)
+        charms.append(charm)
+    game.dragging_charm_index = -1
+    game.dragging_shop = False
+
+
+def try_buy_shop_charm(game, index):
+    """Buy shop_charms[index]. Safe if the rect list is stale or longer than stock.
+
+    Returns 'ok', 'prism', 'full', 'broke', or None if index is invalid.
+    """
+    shop = getattr(game, 'shop_charms', None)
+    if not shop or index < 0 or index >= len(shop):
+        return None
+    raw = shop[index]
+    if raw.get('is_free_prism', False):
+        shop.pop(index)
+        return 'prism'
+    charm = copy.deepcopy(shop.pop(index))
+    cost = int(charm.get('cost') or 0)
+    disabled = getattr(game, 'disabled_charms', None) or []
+    debt_active = any(
+        c.get('type') == 'negative_coins' and idx not in disabled
+        for idx, c in enumerate(getattr(game, 'equipped_charms', None) or [])
+    )
+    debt_limit = -20 if debt_active else 0
+    max_c = getattr(game, 'max_charms', 5) or 5
+    equipped = game.equipped_charms
+    if len(equipped) >= max_c:
+        shop.insert(index, charm)
+        game.temp_message = "No charm slots left!"
+        game.temp_message_start = time.time()
+        return 'full'
+    if game.coins - cost < debt_limit:
+        shop.insert(index, charm)
+        game.temp_message = "Not enough coins!"
+        game.temp_message_start = time.time()
+        return 'broke'
+    equipped.append(charm)
+    from achievements import notify
+    notify(game, 'check', charm_count=len(equipped))
+    if charm.get('name') == 'Loyalty Luck':
+        charm['local_turns'] = 1
+    elif charm.get('name') == 'Turtle Token':
+        game.hands_left += charm['start']
+        charm['rounds_passed'] = 0
+        game.temp_message = f"Turtle Token: +{charm['start']} hands (decays -1 per round)!"
+        game.temp_message_start = time.time()
+    game.coins -= cost
+    boss = getattr(game, 'current_boss_effect', None)
+    if boss and boss.get('name') == 'Charm Eclipse':
+        game.disabled_charms = list(range(len(equipped)))
+    if charm.get('name') != 'Turtle Token':
+        game.temp_message = f"Bought {charm['name']} for {charm['cost']} coins."
+        game.temp_message_start = time.time()
+    return 'ok'
+
+
+def resume_shop(game):
+    """Return to the current shop without rerolling stock / Homebrew."""
+    game.is_resuming = True
+    game.state_machine.change_state(ShopState(game))
+
 
 class ShopState(State):
     def __init__(self, game):
@@ -33,8 +131,11 @@ class ShopState(State):
         self.debug_button_rect = None  # New for debug menu button
 
     def enter(self):
-        # Generate shop if empty
-        if not self.game.shop_charms:
+        resuming = bool(getattr(self.game, 'is_resuming', False))
+        if resuming:
+            self.game.is_resuming = False
+        # Generate shop if empty — never on resume/load (that wiped a saved shop).
+        if not resuming and not self.game.shop_charms:
             self.game.generate_shop()
         self.debug_panel_open = False  # Reset panel
         self.scroll_y = 0  # Reset scroll
@@ -43,9 +144,9 @@ class ShopState(State):
             button_x = self.game.width - 150 - 50  # Above existing debug_rect (adjust if needed)
             button_y = self.game.height - 50 - 60  # Above existing
             self.debug_button_rect = pygame.Rect(button_x, button_y, 150, 50)
-        if self.game.is_resuming:  # ADD: Load if resuming into shop
-            savegame.load_game(self.game)
-            self.game.is_resuming = False
+        self.game.shop_bag_open = False
+        if resuming:
+            return
         # ADD: Reset for Gambler's Grimoire on new shop
         self.game.used_rune_cast_this_shop = False
         # print("Debug: Reset Gambler's Grimoire for new shop")
@@ -58,8 +159,8 @@ class ShopState(State):
                             if c['rarity'] in ['Common', 'Uncommon', 'Rare'] and  # Limit to non-legendary for balance
                             c['name'] not in [e['name'] for e in self.game.equipped_charms]]
             if available_pool:
-                bonus_charm = random.choice(available_pool)
-                bonus_charm['cost'] = 0  # Free
+                bonus_charm = copy.deepcopy(random.choice(available_pool))
+                bonus_charm['cost'] = 0  # Free (copy only — never the catalog)
                 self.game.shop_charms.append(bonus_charm)
                 self.game.temp_message = f"Homebrew success! Free {bonus_charm['name']} added to shop."
                 self.game.temp_message_start = time.time()
@@ -121,8 +222,11 @@ class ShopState(State):
         from states.rune import RuneUseState  # FIXED: Lazy import at top of handle_event (for IDE/Pylance)
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                if getattr(self.game, 'dragging_charm_index', -1) != -1:
+                    park_shop_charm(self.game)
+                    return
                 from states.pause import PauseMenuState  # Lazy import
-                # print("ESC in ShopState - Pausing")  # Debug
+                import savegame
                 savegame.save_game(self.game)  # Save
                 self.game.previous_state = self  # ADD: Set to current ShopState instance
                 self.game.state_machine.change_state(PauseMenuState(self.game))
@@ -159,6 +263,8 @@ class ShopState(State):
                             for charm in CHARMS_POOL:
                                 if charm['name'] not in [c['name'] for c in self.game.equipped_charms] and len(self.game.equipped_charms) < self.game.max_charms * 2:
                                     self.game.equipped_charms.append(copy.deepcopy(charm))
+                            from achievements import notify
+                            notify(self.game, 'check', charm_count=len(self.game.equipped_charms))
                             # print("DEBUG: Equipped all available charms!")
                             self.game.temp_message = "Equipped all possible charms!"
                             self.game.temp_message_start = time.time()
@@ -168,6 +274,8 @@ class ShopState(State):
                                 self.game.temp_message = f"{action['name']} already owned!"
                             else:
                                 self.game.equipped_charms.append(copy.deepcopy(action))
+                                from achievements import notify
+                                notify(self.game, 'check', charm_count=len(self.game.equipped_charms))
                                 # print(f"DEBUG: Added {action['name']} (free)")
                                 self.game.temp_message = f"Added {action['name']}!"
                             self.game.temp_message_start = time.time()
@@ -183,16 +291,29 @@ class ShopState(State):
                 self.game.state_machine.change_state(DebugMenuState(self.game))  # New state below
                 return
 
+            toggle = getattr(self.game, 'shop_bag_toggle_rect', None)
+            if toggle and toggle.collidepoint(mouse_pos):
+                self.game.shop_bag_open = not getattr(self.game, 'shop_bag_open', False)
+                return
+            if getattr(self.game, 'shop_bag_open', False):
+                panel = getattr(self.game, 'shop_bag_panel_rect', None)
+                if panel and panel.collidepoint(mouse_pos):
+                    return
+                self.game.shop_bag_open = False
+                return
+
             # Handle continue to blinds
             if self.continue_rect and self.continue_rect.collidepoint(mouse_pos):
                 self.game.shop_charms = []  # Clear shop
                 self.game._d20_prism_in_current_shop = False
                 if 10 in getattr(self.game, 'available_packs', []):
                     self.game.available_packs = [p for p in self.game.available_packs if p != 10]
-                # FIXED: Set dummy rolls for new GameState (avoids fresh pull)
-                self.game.rolls = [(None, 0) for _ in range(5)]  # Dummy empty
-                self.game.hand = [None] * 5  # Clear hand
-                self.game.has_rolled = False  # Reset for new blind
+                n = NUM_DICE_IN_HAND
+                self.game.rolls = []
+                self.game.hand = []
+                self.game.held = [False] * n
+                self.game.discard_selected = [False] * n
+                self.game.has_rolled = False
                 from states.blinds import BlindsState
                 self.game.state_machine.change_state(BlindsState(self.game))
                 return
@@ -210,51 +331,30 @@ class ShopState(State):
                     self.game.state_machine.change_state(ConfirmSellState(self.game))
                     return
 
-            # Handle buy charms
-            for i, buy_rect in enumerate(self.buy_rects or []):
-                if buy_rect.collidepoint(mouse_pos):
-
-                    # Get the charm WITHOUT popping it yet
-                    charm = self.game.shop_charms[i]
-
-                    # === SPECIAL: Free Prism Pack from Tier 1 ===
-                    if charm.get('is_free_prism', False):
-                        print("DEBUG: Free Prism Pack from Tier 1 claimed!")
-                        
-                        # Remove it from shop
-                        self.game.shop_charms.pop(i)
-                        
-                        # Trigger Prism Pack selection screen (same as normal premium packs)
-                        from states.pack_select import PackSelectState
-                        self.game.pack_choices = random.sample(data.HAND_TYPES, 5)  # Adjust 5 if your Prism pack gives different count
-                        
-                        self.game.state_machine.change_state(PackSelectState(self.game))
-                        
-                        self.game.temp_message = "Free Prism Pack opened! (Tier 1 Success Reward)"
-                        self.game.temp_message_start = time.time()
-                        return
-
-                    # === Normal charm buy logic (only runs if not free prism) ===
-                    charm = self.game.shop_charms.pop(i)   # Now safe to pop
-                    cost = charm['cost']
-                    debt_active = any(c['type'] == 'negative_coins' and idx not in self.game.disabled_charms for idx, c in enumerate(self.game.equipped_charms))
-                    debt_limit = -20 if debt_active else 0
-                    if len(self.game.equipped_charms) < self.game.max_charms and self.game.coins - cost >= debt_limit:
-                        self.game.equipped_charms.append(charm)
-                        if charm['name'] == 'Loyalty Luck':
-                            charm['local_turns'] = 1
-                        elif charm['name'] == 'Turtle Token':
-                            self.game.hands_left += charm['start']
-                            charm['rounds_passed'] = 0
-                            self.game.temp_message = f"Turtle Token: +{charm['start']} hands (decays -1 per round)!"
-                            self.game.temp_message_start = time.time()
-                        self.game.coins -= cost
-                        if self.game.current_boss_effect and self.game.current_boss_effect['name'] == 'Charm Eclipse':
-                            self.game.disabled_charms = list(range(len(self.game.equipped_charms)))
-                        self.game.temp_message = f"Bought {charm['name']} for {charm['cost']} coins."
-                    else:
-                        self.game.shop_charms.insert(i, charm)
-                        self.game.temp_message = "Not enough coins!"
+            # Handle buy charms — shop tiles (1:1 with stock), not the leftover
+            # Grimoire Buy rect that used to be appended onto buy_rects.
+            buy_index = None
+            for i, shop_rect in enumerate(self.shop_rects or []):
+                if shop_rect.collidepoint(mouse_pos):
+                    buy_index = i
+                    break
+            if buy_index is None:
+                for i, buy_rect in enumerate(self.buy_rects or []):
+                    if buy_rect.collidepoint(mouse_pos):
+                        buy_index = i
+                        break
+            if buy_index is not None:
+                result = try_buy_shop_charm(self.game, buy_index)
+                if result is None:
+                    pass  # leftover rect (Grimoire); pack handler owns it
+                elif result == 'prism':
+                    from states.pack_select import PackSelectState
+                    self.game.pack_choices = random.sample(data.HAND_TYPES, 5)
+                    self.game.temp_message = "Free Prism Pack opened! (Tier 1 Success Reward)"
+                    self.game.temp_message_start = time.time()
+                    self.game.state_machine.change_state(PackSelectState(self.game))
+                    return
+                else:
                     return
 
             # Pack buys
@@ -269,11 +369,18 @@ class ShopState(State):
                     if pack_idx == -1:
                         grimoire_rune = getattr(self.game, 'grimoire_rune', None)
                         if grimoire_rune:
-                            self.game.equipped_charms.append(grimoire_rune)
-                            self.game.grimoire_rune = None
-                            if hasattr(self.game, '_grimoire_drawn'):
-                                del self.game._grimoire_drawn
-                            return
+                            max_c = getattr(self.game, 'max_charms', 5) or 5
+                            if len(self.game.equipped_charms) < max_c:
+                                self.game.equipped_charms.append(grimoire_rune)
+                                self.game.grimoire_rune = None
+                                if hasattr(self.game, '_grimoire_drawn'):
+                                    del self.game._grimoire_drawn
+                                from achievements import notify
+                                notify(self.game, 'check', charm_count=len(self.game.equipped_charms))
+                            else:
+                                self.game.temp_message = "No charm slots left!"
+                                self.game.temp_message_start = time.time()
+                        return
 
                     # NEW: Handle Rune Recycler reused rune (index 9)
                     elif pack_idx == 9:
@@ -338,10 +445,12 @@ class ShopState(State):
                                     self.game.available_packs.remove(pack_idx)
                             elif pack_idx in [3, 4, 5]:
                                 from states.dice_select import DiceSelectState
+                                n = pack_choices_num[pack_idx]
+                                ghost = bool(getattr(self.game, 'ghost_pouch_active', False))
                                 if pack_idx == 5:
-                                    self.game.pack_choices = random.sample(SPECIAL_COLORS, pack_choices_num[pack_idx])
+                                    self.game.pack_choices = dice_pack_choices(n, special_only=True, ghost=ghost)
                                 else:
-                                    self.game.pack_choices = random.sample(BASE_COLORS, pack_choices_num[pack_idx])
+                                    self.game.pack_choices = dice_pack_choices(n, special_only=False, ghost=ghost)
                                 self.game.state_machine.change_state(DiceSelectState(self.game))
                                 if pack_idx in self.game.available_packs:
                                     self.game.available_packs.remove(pack_idx)
@@ -355,89 +464,72 @@ class ShopState(State):
                                     self.game.available_packs.remove(pack_idx)
                         return   # Exit after normal pack buy
                     
-                # Reroll
-                if self.reroll_rect and self.reroll_rect.collidepoint(mouse_pos):
-                    self.game.reroll_shop()
+            # Reroll
+            if self.reroll_rect and self.reroll_rect.collidepoint(mouse_pos):
+                self.game.reroll_shop()
+                return
+
+            # Right-click parks a stuck / dragged charm into an empty slot
+            if getattr(event, 'button', 1) == 3:
+                if getattr(self.game, 'dragging_charm_index', -1) != -1:
+                    park_shop_charm(self.game)
+                return
+
+            # Charm drag start — use the same slot rects draw_shop_screen painted
+            if getattr(event, 'button', 1) == 1:
+                slots = getattr(self.game, 'shop_slot_rects', None) or []
+                n = len(self.game.equipped_charms)
+                for i, rect in enumerate(slots):
+                    if i >= n:
+                        break
+                    if not rect.collidepoint(mouse_pos):
+                        continue
+                    if any(s.collidepoint(mouse_pos) for s in (self.sell_rects or [])):
+                        break
+                    self.game.dragging_charm_index = i
+                    self.game.dragging_shop = True
+                    self.game.drag_offset_x = mouse_pos[0] - rect.x
+                    self.game.drag_offset_y = mouse_pos[1] - rect.y
                     return
 
-                # Charm drag start
-                for i in range(len(self.game.equipped_charms)):
-                    x = 50 + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
-                    y = 150
-                    rect = pygame.Rect(x, y, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
-                    if rect.collidepoint(mouse_pos):
-                        self.game.dragging_charm_index = i
-                        self.game.dragging_shop = True
-                        self.game.drag_offset_x = mouse_pos[0] - x
-                        self.game.drag_offset_y = mouse_pos[1] - y
-                        break
+            # Tray click to use rune
+            for i, tray_rect in enumerate(self.tray_rects or []):
+                if tray_rect is not None and tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
+                    from states.rune import RuneUseState  # Lazy import
+                    rune = self.game.rune_tray[i]
+                    self.game.state_machine.change_state(RuneUseState(self.game, rune))  # Transition
+                    self.game.previous_state = self
+                    recycler_active = any(charm['type'] == 'rune_reuse' and idx not in self.game.disabled_charms for idx, charm in enumerate(self.game.equipped_charms))
+                    if recycler_active and not getattr(self.game, '_recycler_used_this_blind', False):
+                        self.game._recycler_reuse_pending = rune.copy()
+                        self.game._recycler_used_this_blind = True
+                        self.game.temp_message = f"Rune Recycler: {rune['name']} queued for reuse in next shop!"
+                        self.game.temp_message_start = time.time()
+                    if not getattr(rune, 'reused', False):
+                        self.game.rune_tray[i] = None
+                    break
 
-                # New: Tray click to use rune
-                for i, tray_rect in enumerate(self.tray_rects or []):
-                    if tray_rect is not None and tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
-                        from states.rune import RuneUseState  # Lazy import
-                        rune = self.game.rune_tray[i]
-                        self.game.state_machine.change_state(RuneUseState(self.game, rune))  # Transition
-                        self.game.previous_state = self
-                        # NEW: Rune Recycler - Queue reuse after use (for next shop) - only if not flagged
-                        recycler_active = any(charm['type'] == 'rune_reuse' and idx not in self.game.disabled_charms for idx, charm in enumerate(self.game.equipped_charms))
-                        if recycler_active and not getattr(self.game, '_recycler_used_this_blind', False):  # FIXED: Per blind flag
-                            self.game._recycler_reuse_pending = rune.copy()  # Queue for next shop
-                            self.game._recycler_used_this_blind = True  # FIXED: Blind flag (not shop)
-                            self.game.temp_message = f"Rune Recycler: {rune['name']} queued for reuse in next shop!"
-                            self.game.temp_message_start = time.time()
-                        # FIXED: Skip removal if reused rune (persist for Recycler)
-                        if not getattr(rune, 'reused', False):
-                            self.game.rune_tray[i] = None  # Remove after use
-                        break
+        if event.type == pygame.MOUSEBUTTONUP:
+            if getattr(self.game, 'dragging_charm_index', -1) == -1:
+                pass
+            elif getattr(event, 'button', 1) == 3:
+                park_shop_charm(self.game)
+            else:
+                drop_shop_charm(self.game, pygame.mouse.get_pos())
 
-            if event.type == pygame.MOUSEBUTTONUP:
-                if self.game.dragging_charm_index != -1:
-                    mouse_pos = pygame.mouse.get_pos()
-                    target_index = -1
-                    for i in range(len(self.game.equipped_charms)):
-                        x = 50 + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
-                        y = 150
-                        rect = pygame.Rect(x, y, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
-                        if rect.collidepoint(mouse_pos):
-                            target_index = i
-                            break
-                    if target_index != -1 and target_index != self.game.dragging_charm_index:
-                        self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
-                            self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
-                    self.game.dragging_charm_index = -1
-                    self.game.dragging_shop = False
+        if event.type == pygame.MOUSEWHEEL and DEBUG and self.debug_panel_open:
+            icons_per_row = 4
+            row_height = 100 + 50  # Match draw_debug_panel
+            num_rows = (len(data.CHARMS_POOL) + icons_per_row - 1) // icons_per_row
+            total_content_height = num_rows * row_height + 70
+            scroll_speed = 50
+            self.scroll_y -= event.y * scroll_speed
+            max_scroll = max(0, total_content_height - DEBUG_PANEL_HEIGHT)
+            self.scroll_y = max(0, min(self.scroll_y, max_scroll))
 
-            if event.type == pygame.MOUSEWHEEL and DEBUG and self.debug_panel_open:
-                icons_per_row = 4
-                row_height = 100 + 50  # Match draw_debug_panel
-                num_rows = (len(data.CHARMS_POOL) + icons_per_row - 1) // icons_per_row
-                total_content_height = num_rows * row_height + 70
-                scroll_speed = 50
-                self.scroll_y -= event.y * scroll_speed
-                max_scroll = max(0, total_content_height - DEBUG_PANEL_HEIGHT)
-                self.scroll_y = max(0, min(self.scroll_y, max_scroll))
-
-            if event.type == pygame.MOUSEMOTION:
-                if self.game.dragging_charm_index != -1:
-                    pass  # Dragging handled in draw_shop_screen
-
-            if event.type == pygame.MOUSEBUTTONUP:
-                if self.game.dragging_charm_index != -1:
-                    mouse_pos = pygame.mouse.get_pos()
-                    target_index = -1
-                    for i in range(len(self.game.equipped_charms)):
-                        x = 50 + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
-                        y = 150
-                        rect = pygame.Rect(x, y, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
-                        if rect.collidepoint(mouse_pos):
-                            target_index = i
-                            break
-                    if target_index != -1 and target_index != self.game.dragging_charm_index:
-                        self.game.equipped_charms[self.game.dragging_charm_index], self.game.equipped_charms[target_index] = \
-                            self.game.equipped_charms[target_index], self.game.equipped_charms[self.game.dragging_charm_index]
-                    self.game.dragging_charm_index = -1
-                    self.game.dragging_shop = False
+        if event.type == pygame.MOUSEMOTION:
+            if self.game.dragging_charm_index != -1:
+                pass  # Dragging handled in draw_shop_screen
 
     def draw_debug_panel(self):
         """Draws the debug panel with improved spacing and text readability."""

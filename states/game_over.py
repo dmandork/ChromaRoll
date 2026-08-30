@@ -2,9 +2,10 @@
 
 import pygame
 from states.base import State
-from states.init import InitState
+from states.splash import SplashState
 from screens import draw_game_over_screen
 from constants import THEME
+import savegame
 
 class GameOverState(State):
     def __init__(self, game):
@@ -12,7 +13,8 @@ class GameOverState(State):
         self.restart_rect = None
 
     def enter(self):
-        pass  # Any reset?
+        import savegame
+        savegame.delete_save()  # Dead run must not Load back into pouch-select / play
 
     def update(self, dt):
         pass
@@ -25,5 +27,6 @@ class GameOverState(State):
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
             if self.restart_rect and self.restart_rect.collidepoint(mouse_pos):
+                savegame.delete_save()
                 self.game.reset_game()
-                self.game.state_machine.change_state(InitState(self.game))  # Change to InitState for pouch select
+                self.game.state_machine.change_state(SplashState(self.game))

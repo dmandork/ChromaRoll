@@ -1,6 +1,12 @@
 # states/d20_roll.py
 # Fusion pick → roll animation → result → Accept into the intensified blind.
 # This file only presents UI. All rules live in d20_boon.D20BoonSystem.
+#
+# Lock contract
+#   Fusion (or Skip) is free: Cancel Intensify / ESC restores the pre-enter snapshot
+#   and returns to Challenges. Window-X during fusion reopens this screen (still free).
+#   Clicking Roll d20 (or Test Tier) locks the number immediately — animation is flavor.
+#   After lock there is no Back. Window-X reopens the result; Accept & Play is required.
 
 import pygame
 import time
@@ -51,40 +57,108 @@ class D20RollState(State):
         self.roll_duration = 2.0
         self.roll_result = None
         self.debug_tier_open = False
+        self._committed = False
 
         self.fusion_rects = {}
         self.skip_rect = None
         self.roll_rect = None
         self.accept_rect = None
-        self.back_rect = None
+        self.cancel_rect = None
+        self.back_rect = None  # alias of cancel_rect for older call sites
         self.debug_tier_rect = None
 
     def enter(self):
-        # Apply any queued rewards from a PREVIOUS intensified win before a new roll
-        # can overwrite pending queues.
-        if hasattr(self.game, 'd20_boon') and self.game.d20_boon:
-            self.game.d20_boon.begin_next_blind(self.game)
+        resuming = bool(getattr(self.game, 'is_resuming', False))
+        if resuming:
+            self.game.is_resuming = False
+            self._sync_save_fields()
+            return
+        # Snapshot BEFORE applying leftover so Cancel can put pending queues back.
+        boon = getattr(self.game, 'd20_boon', None)
+        if boon is not None:
+            self.game._d20_pre_intensify = boon.to_dict()
+            boon.begin_next_blind(self.game)
+        self._sync_save_fields()
+
+    def restore_progress(self, save_data):
+        """Rebuild UI after Load. Boon itself is already from_dict'd by savegame."""
+        self.phase = save_data.get('d20_roll_phase') or 'fusion'
+        self.selected_fusion = save_data.get('d20_selected_fusion')
+        self.roll_result = save_data.get('d20_roll_result')
+        if save_data.get('d20_blind_type'):
+            self.blind_type = save_data.get('d20_blind_type')
+        snap = save_data.get('d20_pre_intensify')
+        if snap is not None:
+            self.game._d20_pre_intensify = snap
+        if self.phase == 'rolling':
+            # Animation was flavor — the number is already locked (or we lock it now).
+            if self.roll_result is None:
+                self.roll_result = random.randint(1, 20)
+                self._commit_roll(self.roll_result)
+            self.phase = 'done'
+            self._committed = True
+        elif self.phase == 'done':
+            self._committed = True
+            if self.roll_result is not None and not (self.game.d20_boon and self.game.d20_boon.is_locked()):
+                self._commit_roll(self.roll_result)
+        self._sync_save_fields()
+
+    def _sync_save_fields(self):
+        self.game.d20_roll_phase = self.phase
+        self.game.d20_selected_fusion = self.selected_fusion
+        self.game.d20_roll_result = self.roll_result
+        self.game.d20_blind_type = self.blind_type
+
+    def _clear_overlay_fields(self):
+        self.game.d20_roll_phase = None
+        self.game.d20_selected_fusion = None
+        self.game.d20_roll_result = None
+        self.game.d20_blind_type = None
+        self.game._d20_pre_intensify = None
 
     def update(self, dt):
         if self.phase == 'rolling':
             elapsed = time.time() - self.roll_start_time
             if elapsed >= self.roll_duration:
-                if self.roll_result is None:
-                    self.roll_result = random.randint(1, 20)
-                self._commit_roll(self.roll_result)
                 self.phase = 'done'
+                self._sync_save_fields()
 
     def _commit_roll(self, roll):
+        if self._committed and self.game.d20_boon and self.game.d20_boon.is_locked():
+            return
         fused = self.selected_fusion if isinstance(self.selected_fusion, str) else None
         self.game.fused_color = fused
         self.game.d20_boon.start_boon(fused)
         self.game.d20_boon.apply_roll(roll)
         self.game.d20_boon.sync_legacy_flags(self.game)
+        self._committed = True
+        self._sync_save_fields()
+        try:
+            import savegame
+            savegame.save_game(self.game)
+        except Exception:
+            pass
 
     def _start_rolling(self):
         self.phase = 'rolling'
         self.roll_start_time = time.time()
-        self.roll_result = None
+        if self.roll_result is None:
+            self.roll_result = random.randint(1, 20)
+        self._commit_roll(self.roll_result)
+
+    def _cancel_intensify(self):
+        """Back out before the d20 is rolled. No-op once locked."""
+        boon = getattr(self.game, 'd20_boon', None)
+        if boon is not None and boon.is_locked():
+            return
+        snap = getattr(self.game, '_d20_pre_intensify', None)
+        if boon is not None:
+            boon.cancel_unstarted(snap, self.game)
+        self._clear_overlay_fields()
+        self.game.from_d20_intensify = False
+        from states.blinds import BlindsState
+        self.game.is_resuming = True
+        self.game.state_machine.change_state(BlindsState(self.game))
 
     def draw(self):
         self.game.screen.fill(THEME['background'])
@@ -145,7 +219,19 @@ class D20RollState(State):
             pygame.draw.rect(self.game.screen, THEME['highlight'], self.skip_rect, 2, border_radius=8)
 
         ready = self.selected_fusion is False or isinstance(self.selected_fusion, str)
-        self.roll_rect = pygame.Rect(self.game.width // 2 - 110, 390, 220, 50)
+        btn_y = 390
+        self.cancel_rect = pygame.Rect(self.game.width // 2 - 230, btn_y, 210, 50)
+        self.back_rect = self.cancel_rect
+        self.roll_rect = pygame.Rect(self.game.width // 2 + 20, btn_y, 210, 50)
+
+        cancel_bg = THEME['no_button']
+        if self.cancel_rect.collidepoint(mouse):
+            cancel_bg = (180, 30, 30)
+        draw_rounded_element(self.game.screen, self.cancel_rect, cancel_bg, radius=8)
+        cancel_txt = self.small_font.render("Cancel Intensify", True, THEME['text'])
+        self.game.screen.blit(cancel_txt, (self.cancel_rect.centerx - cancel_txt.get_width() // 2,
+                                           self.cancel_rect.centery - cancel_txt.get_height() // 2))
+
         roll_bg = THEME['yes_button'] if ready else THEME['disabled']
         draw_rounded_element(self.game.screen, self.roll_rect, roll_bg, radius=8)
         roll_label = "Roll d20" if ready else "Pick or Skip"
@@ -155,35 +241,33 @@ class D20RollState(State):
         self.game.screen.blit(roll_txt, (self.roll_rect.centerx - roll_txt.get_width() // 2,
                                          self.roll_rect.centery - roll_txt.get_height() // 2))
 
+        lock_hint = self.tiny_font.render(
+            "Not locked yet — Cancel or ESC returns to Challenges. Rolling the d20 locks the boon.",
+            True, THEME['highlight']
+        )
+        self.game.screen.blit(lock_hint, (self.game.width // 2 - lock_hint.get_width() // 2, btn_y + 58))
+
         if isinstance(self.selected_fusion, str):
-            fy = self.roll_rect.bottom + 8
-            title = self.tiny_font.render(f"{self.selected_fusion} fusion aims:", True, COLORS.get(self.selected_fusion, THEME['highlight']))
+            fy = btn_y + 82
+            title = self.tiny_font.render(
+                f"{self.selected_fusion} fusion: T1 exempt · T2 dim · T3 lock · T4 adv · T5 explode",
+                True, COLORS.get(self.selected_fusion, THEME['highlight']))
             self.game.screen.blit(title, (self.game.width // 2 - title.get_width() // 2, fy))
-            fy += 20
-            for line in FUSION_HINTS:
-                s = self.tiny_font.render(line, True, THEME['text'])
-                self.game.screen.blit(s, (self.game.width // 2 - s.get_width() // 2, fy))
-                fy += 18
 
-        self.back_rect = pygame.Rect(20, self.game.height - 60, 140, 40)
-        draw_rounded_element(self.game.screen, self.back_rect, THEME['no_button'], radius=8)
-        back_txt = self.small_font.render("Back", True, THEME['text'])
-        self.game.screen.blit(back_txt, (self.back_rect.centerx - back_txt.get_width() // 2,
-                                         self.back_rect.centery - back_txt.get_height() // 2))
-
-        if not isinstance(self.selected_fusion, str):
-            self._draw_tier_legend()
+        self._draw_tier_legend()
 
     def _draw_tier_legend(self):
-        y = 460
+        """Bottom-right outcomes; kept off Cancel, Roll, and the color row."""
+        x = self.game.width - 280
+        y = self.game.height - 228
         header = self.tiny_font.render("Outcomes", True, THEME['highlight'])
-        self.game.screen.blit(header, (40, y))
-        y += 24
+        self.game.screen.blit(header, (x, y))
+        y += 18
         for tier in D20_TIERS:
-            line = f"{tier['min']}-{tier['max']}  {tier['name']}: {tier['desc']}"
-            surf = self.tiny_font.render(line[:88], True, THEME['text'])
-            self.game.screen.blit(surf, (40, y))
-            y += 20
+            line = f"{tier['min']}-{tier['max']}  {tier['name']}"
+            surf = self.tiny_font.render(line, True, THEME['text'])
+            self.game.screen.blit(surf, (x, y))
+            y += 18
 
     def _draw_die(self):
         tint = (200, 200, 200)
@@ -192,7 +276,7 @@ class D20RollState(State):
             name = tier_for_roll(self.roll_result)['name']
             tint = TIER_TINTS.get(name, tint)
         tinted = tint_image(self.d20_image, tint)
-        self.d20_rect = tinted.get_rect(center=(self.game.width // 2, self.game.height // 2 - 30))
+        self.d20_rect = tinted.get_rect(center=(self.game.width // 2, self.game.height // 2 - 50))
         self.game.screen.blit(tinted, self.d20_rect.topleft)
 
         if self.phase == 'rolling':
@@ -203,6 +287,9 @@ class D20RollState(State):
         text_rect = text.get_rect(center=self.d20_rect.center)
         self.game.screen.blit(text, text_rect)
 
+        self.cancel_rect = None
+        self.back_rect = None
+
         if self.phase == 'done':
             boon = self.game.d20_boon
             name = boon.outcome_name or ''
@@ -210,22 +297,31 @@ class D20RollState(State):
             self.game.screen.blit(name_s, (self.game.width // 2 - name_s.get_width() // 2, self.d20_rect.bottom + 8))
 
             desc = boon.outcome_desc or ''
-            self._blit_wrapped(desc, self.d20_rect.bottom + 40, self.game.width - 80)
+            self._blit_wrapped(desc, self.d20_rect.bottom + 38, self.game.width - 120, max_lines=4)
 
+            locked = self.tiny_font.render(
+                "Locked — closing the window will bring you back here. Play this blind.",
+                True, THEME['highlight']
+            )
+            self.accept_rect = pygame.Rect(self.game.width // 2 - 120, self.game.height - 70, 240, 50)
+            self.game.screen.blit(locked, (self.game.width // 2 - locked.get_width() // 2,
+                                           self.accept_rect.y - 50))
             fused = boon.fused_color
             if fused:
                 ftxt = self.tiny_font.render(f"Fusion: {fused}", True, COLORS.get(fused, THEME['text']))
-                self.game.screen.blit(ftxt, (self.game.width // 2 - ftxt.get_width() // 2, self.game.height - 150))
-
-            self.accept_rect = pygame.Rect(self.game.width // 2 - 120, self.game.height - 90, 240, 50)
+                self.game.screen.blit(ftxt, (self.game.width // 2 - ftxt.get_width() // 2,
+                                             self.accept_rect.y - 26))
             draw_rounded_element(self.game.screen, self.accept_rect, THEME['yes_button'], radius=8)
             at = self.small_font.render("Accept & Play", True, THEME['text'])
             self.game.screen.blit(at, (self.accept_rect.centerx - at.get_width() // 2,
                                        self.accept_rect.centery - at.get_height() // 2))
         else:
+            spinning = self.tiny_font.render("Rolling — this result is already locked.", True, THEME['highlight'])
+            self.game.screen.blit(spinning, (self.game.width // 2 - spinning.get_width() // 2,
+                                             self.d20_rect.bottom + 16))
             self.accept_rect = None
 
-    def _blit_wrapped(self, text, y, max_width):
+    def _blit_wrapped(self, text, y, max_width, max_lines=4):
         words = text.split(' ')
         lines = []
         current = []
@@ -239,13 +335,18 @@ class D20RollState(State):
         if current:
             lines.append(' '.join(current))
         x0 = self.game.width // 2
-        for line in lines[:6]:
+        for line in lines[:max_lines]:
             s = self.tiny_font.render(line, True, THEME['text'])
             self.game.screen.blit(s, (x0 - s.get_width() // 2, y))
             y += 22
 
     def _draw_debug_tiers(self):
-        self.debug_tier_rect = pygame.Rect(10, 10, 130, 30)
+        # Bottom-left. Fusion only — Test Tier after lock would be a re-roll exploit.
+        if self.phase != 'fusion':
+            self.debug_tier_rect = None
+            self.debug_tier_open = False
+            return
+        self.debug_tier_rect = pygame.Rect(20, self.game.height - 60, 130, 30)
         draw_rounded_element(self.game.screen, self.debug_tier_rect, (50, 50, 50), radius=5)
         t = self.small_font.render("Test Tier", True, (255, 255, 255))
         self.game.screen.blit(t, (self.debug_tier_rect.centerx - t.get_width() // 2,
@@ -253,9 +354,10 @@ class D20RollState(State):
         if not self.debug_tier_open:
             return
         mouse = pygame.mouse.get_pos()
-        y = self.debug_tier_rect.bottom + 5
+        n = len(D20_TIERS)
+        y = self.debug_tier_rect.top - 5 - n * 28
         for i, tier in enumerate(D20_TIERS, start=1):
-            opt = pygame.Rect(10, y, 180, 26)
+            opt = pygame.Rect(20, y, 180, 26)
             color = (70, 70, 70) if opt.collidepoint(mouse) else (40, 40, 40)
             draw_rounded_element(self.game.screen, opt, color, radius=3)
             label = self.tiny_font.render(f"T{i} {tier['name']}", True, (255, 255, 255))
@@ -263,20 +365,26 @@ class D20RollState(State):
             y += 28
 
     def handle_event(self, event):
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            if self.phase == 'fusion':
+                self._cancel_intensify()
+            return
+
         if event.type != pygame.MOUSEBUTTONDOWN:
             return
         mouse_pos = event.pos
 
-        if DEBUG and self.debug_tier_rect and self.debug_tier_rect.collidepoint(mouse_pos):
+        if DEBUG and self.phase == 'fusion' and self.debug_tier_rect and self.debug_tier_rect.collidepoint(mouse_pos):
             self.debug_tier_open = not self.debug_tier_open
             return
 
-        if DEBUG and self.debug_tier_open:
-            y = self.debug_tier_rect.bottom + 5
+        if DEBUG and self.phase == 'fusion' and self.debug_tier_open:
+            n = len(D20_TIERS)
+            y = self.debug_tier_rect.top - 5 - n * 28
             for i, tier in enumerate(D20_TIERS, start=1):
-                opt = pygame.Rect(10, y, 180, 26)
+                opt = pygame.Rect(20, y, 180, 26)
                 if opt.collidepoint(mouse_pos):
-                    # Mid-range roll of that tier
+                    # Mid-range roll of that tier — this locks, same as Roll d20.
                     forced = (tier['min'] + tier['max']) // 2
                     if self.selected_fusion is None:
                         self.selected_fusion = False
@@ -284,20 +392,22 @@ class D20RollState(State):
                     self._commit_roll(forced)
                     self.phase = 'done'
                     self.debug_tier_open = False
+                    self._sync_save_fields()
                     return
                 y += 28
 
         if self.phase == 'fusion':
-            if self.back_rect and self.back_rect.collidepoint(mouse_pos):
-                from states.blinds import BlindsState
-                self.game.state_machine.change_state(BlindsState(self.game))
+            if self.cancel_rect and self.cancel_rect.collidepoint(mouse_pos):
+                self._cancel_intensify()
                 return
             for color, rect in self.fusion_rects.items():
                 if rect.collidepoint(mouse_pos):
                     self.selected_fusion = color
+                    self._sync_save_fields()
                     return
             if self.skip_rect and self.skip_rect.collidepoint(mouse_pos):
                 self.selected_fusion = False
+                self._sync_save_fields()
                 return
             if self.roll_rect and self.roll_rect.collidepoint(mouse_pos):
                 if self.selected_fusion is False or isinstance(self.selected_fusion, str):
@@ -310,5 +420,6 @@ class D20RollState(State):
             self.game.d20_boon.apply_this_blind_to_game(self.game)
             self.game.temp_message = self.game.d20_boon.outcome_desc
             self.game.temp_message_start = time.time()
+            self._clear_overlay_fields()
             from states.game import GameState
             self.game.state_machine.change_state(GameState(self.game))

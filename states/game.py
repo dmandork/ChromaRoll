@@ -6,7 +6,7 @@ import random
 import constants
 import utils
 from states.base import State  # Import from base
-from screens import draw_game_screen, draw_popup, draw_buttons, draw_tooltip, draw_enhancement_visuals, draw_instruction_popup
+from screens import draw_game_screen, draw_popup, draw_buttons, draw_tooltip, draw_enhancement_visuals, draw_instruction_popup, bag_geometry, bag_cells, bag_die_at, draw_play_debug_bar
 from constants import DEBUG, NUM_DICE_IN_HAND, THEME, DIE_SIZE, HELD_DIE_SCALE, CHARM_SIZE, SMALL_DIE_SIZE, SMALL_DIE_SPACING, BAG_PADDING
 from data import ENH_DESC
 from states.shop import ShopState  # Add if not present
@@ -29,8 +29,8 @@ class GameState(State):
         self.initial_auto_roll_done = False  # For auto-roll in rolling phase
         game.apply_boss_face_shuffle()  # Apply on resume/load into game state
         self.selecting_bag_swap = False  # For Familiar's Foresight mode
-        self.swap_use_left = 1  # Per-blind uses (reset in enter)
         self.show_instruction_popup = False
+        self.debug_rects = []
 
     # In states/game.py, GameState.enter method (add after existing resets, before new_turn call)
     def enter(self):
@@ -44,6 +44,16 @@ class GameState(State):
         )
 
         if not resuming:
+            from achievements import notify, bag_has_steel, max_prism
+            if not getattr(self.game, 'progress', None):
+                from achievements import attach_progress
+                attach_progress(self.game)
+            self.game.progress['run']['charms_at_blind_start'] = len(self.game.equipped_charms)
+            self.game.progress['run']['rerolls_this_blind'] = 0
+            notify(self.game, 'check',
+                   charm_count=len(self.game.equipped_charms),
+                   steel=bag_has_steel(self.game),
+                   max_prism=max_prism(self.game))
             # Fresh blind: apply queued D20 win-rewards UNLESS this IS the intensified
             # blind (those queues belong to the blind AFTER we beat this one).
             if hasattr(self.game, 'd20_boon') and self.game.d20_boon:
@@ -134,7 +144,17 @@ class GameState(State):
             self.game.temp_message = "Burglar Bag: +3 hands, but no discards this blind!"
             self.game.temp_message_start = time.time()
             print(f"DEBUG: Burglar Bag applied - hands={self.game.hands_left}, discards={self.game.discards_left}")  # TEMP
-        
+
+        # Castle Cube: assign a color if bought mid-run (don't rotate an existing one)
+        from scoring import rotate_castle_color
+        for idx, charm in enumerate(self.game.equipped_charms):
+            if charm.get('type') == 'score_per_discard_color' and idx not in self.game.disabled_charms:
+                if not charm.get('active_color'):
+                    rotate_castle_color(charm)
+                    self.game.temp_message = f"Castle Cube color: {charm['active_color']}"
+                    self.game.temp_message_start = time.time()
+                break
+
         # Safeguard reset for rolls
         if len(self.game.rolls) != 5:
             self.game.rolls = [(None, 0) for _ in range(5)]
@@ -200,14 +220,8 @@ class GameState(State):
         draw_game_screen(self.game)  # Call without assignment—main elements drawn inside
         # No flip here if it's in main loop; add if needed: pygame.display.flip()
 
-        # Calc tray_rects for clicks (match screens.py positions)
-        tray_width = 2 * constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING
-        tray_x = max(self.game.width - (5 * (constants.SMALL_DIE_SIZE + constants.SMALL_DIE_SPACING) - constants.SMALL_DIE_SPACING + constants.BAG_PADDING * 2) - 20 - tray_width - 10, 10)  # Left of bag
-        tray_y = 50  # Match bag_y
-        self.tray_rects = []
-        for i in range(2):
-            slot_rect = pygame.Rect(tray_x + i * (constants.TRAY_SLOT_SIZE + constants.TRAY_SLOT_SPACING), tray_y, constants.TRAY_SLOT_SIZE, constants.TRAY_SLOT_SIZE)
-            self.tray_rects.append(slot_rect)
+        # Tray clicks must match screens.bag_geometry
+        _bag_rect, self.tray_rects = bag_geometry(self.game)
         # print("DEBUG: game tray_rects set:", self.tray_rects)  # TEMP
 
         # NEW: Draw instruction popup overlay (after main screen, before animations/buttons for layering)
@@ -232,8 +246,10 @@ class GameState(State):
 
         if self.game.show_popup:
             self.continue_rect = draw_popup(self.game)  # Overlay popup
+            self.debug_rects = []
         else:
             self.reroll_rect, self.discard_rect, self.start_roll_rect, self.score_rect, self.end_turn_rect = draw_buttons(self.game)
+            self.debug_rects = draw_play_debug_bar(self.game) if DEBUG else []
 
         # Tooltip hover checks (after all draws)
         mouse_pos = pygame.mouse.get_pos()
@@ -280,16 +296,34 @@ class GameState(State):
             self.game.screen.blit(confirm_text, (text_x, text_y))
 
         for i, small_rect in enumerate(self.game.bag_die_rects or []):
-            if i < len(self.game.bag) and small_rect.collidepoint(mouse_pos):
-                die = self.game.bag[i]
-                non_color_enh = [e for e in die.get('enhancements', []) if e not in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild']]
-                if non_color_enh:  # Only show if has non-color enh
-                    enh_desc = ', '.join(ENH_DESC.get(e, e) for e in non_color_enh)  # FIXED: Complete the line
-                    draw_tooltip(self.game, small_rect.x, small_rect.y + small_rect.height + 10, enh_desc or "No enhancements")  # FIXED: Complete the tooltip call
+            die = bag_die_at(self.game, i)
+            if die is None or not small_rect.collidepoint(mouse_pos):
+                continue
+            non_color_enh = [e for e in die.get('enhancements', []) if e not in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild']]
+            if non_color_enh:
+                enh_desc = ', '.join(ENH_DESC.get(e, e) for e in non_color_enh)
+                draw_tooltip(self.game, small_rect.x, small_rect.y + small_rect.height + 10, enh_desc or "No enhancements")
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
+            if DEBUG:
+                key = event.key
+                if key == getattr(pygame, 'K_F8', None) or key == getattr(pygame, 'K_BACKQUOTE', None):
+                    self.game.debug_play_open = not bool(getattr(self.game, 'debug_play_open', False))
+                    return
+                if key == getattr(pygame, 'K_F5', None):
+                    self.game.debug_run_play_action('win')
+                    return
+                if key == getattr(pygame, 'K_F6', None):
+                    self.game.debug_run_play_action('lose')
+                    return
+                if key == getattr(pygame, 'K_F7', None):
+                    self.game.debug_run_play_action('close')
+                    return
             if event.key == pygame.K_ESCAPE:
+                if DEBUG and getattr(self.game, 'debug_play_open', False):
+                    self.game.debug_play_open = False
+                    return
                 from states.pause import PauseMenuState  # Lazy import
                 # print("Escape pressed in GameState - Pausing")  # Debug
                 savegame.save_game(self.game)  # Save
@@ -441,36 +475,29 @@ class GameState(State):
                     # print(f"Debug: Toggled Fate's advantage - held_fates_advantage = {self.game.held_fates_advantage}, held[{self.game.fates_advantage_index}] = {self.game.held[self.game.fates_advantage_index]}")
                 # No optional original here—handled in toggle_hold below
 
-            # NEW: UNO Draw 2 - Click equipped charm to gain 2 extra rerolls (once per blind)
+            # NEW: UNO Draw 2 / Luchador — clicks use the same rects as draw_game_screen
             for i, charm_rect in enumerate(self.game.equipped_charm_rects):
-                if charm_rect.collidepoint(mouse_pos):
-                    charm = self.game.equipped_charms[i]
-                    if charm['type'] == 'extra_reroll' and not self.game.used_uno_draw_this_blind and not self.game.is_discard_phase:
-                        self.game.rerolls_left += charm['value']  # +2
-                        self.game.used_uno_draw_this_blind = True
-                        self.game.temp_message = f"UNO Draw 2: +{charm['value']} extra rerolls! (Used up this blind)"
-                        self.game.temp_message_start = time.time()
-                        print(f"DEBUG: UNO Draw 2 activated - rerolls now {self.game.rerolls_left}")  # TEMP
-                    break  # One charm per click
-
-            # Luchador instant sell block (early in MOUSEBUTTONDOWN, after mouse_pos)
-            for i, charm in enumerate(self.game.equipped_charms):
-                x = 50 + i * (constants.CHARM_SIZE + 10)
-                y = 10
-                charm_rect = pygame.Rect(x, y, constants.CHARM_SIZE, constants.CHARM_SIZE)
-                if charm_rect.collidepoint(mouse_pos) and charm['name'] == 'Luchador Lens':
-                    if self.game.current_round == 8:
+                if not charm_rect.collidepoint(mouse_pos):
+                    continue
+                charm = self.game.equipped_charms[i]
+                if charm['type'] == 'extra_reroll' and not self.game.used_uno_draw_this_blind and not self.game.is_discard_phase:
+                    self.game.rerolls_left += charm['value']
+                    self.game.used_uno_draw_this_blind = True
+                    self.game.temp_message = f"UNO Draw 2: +{charm['value']} extra rerolls! (Used up this blind)"
+                    self.game.temp_message_start = time.time()
+                    break
+                if charm['name'] == 'Luchador Lens':
+                    if getattr(self.game, 'current_round', 0) == 8 and self.game.current_blind == 'Boss':
                         self.game.temp_message = "Cannot disable the final boss!"
                         self.game.temp_message_start = time.time()
                         return
-                    # Sell & set flag
                     self.game.coins += charm['cost']
                     del self.game.equipped_charms[i]
                     self.game.luchador_disable_active = True
                     self.game.temp_message = "Luchador Lens sold! Boss will be disabled next boss round."
                     self.game.temp_message_start = time.time()
-                    # print(f"DEBUG: Luchador flag set from mid-game")
-                    return   
+                    return
+                break
             
             # NEW: Familiar's Foresight swap logic (discard phase only)
             if self.game.is_discard_phase and self.game.selecting_bag_swap:
@@ -497,11 +524,13 @@ class GameState(State):
                 for j, bag_rect in enumerate(self.game.bag_die_rects):
                     if bag_rect.collidepoint(mouse_pos):
                         source_die = self.game.hand[self.game.swap_source_index]
-                        target_die = self.game.bag[j]
-                        # Swap
+                        target_die = bag_die_at(self.game, j)
+                        if target_die is None:
+                            return
+                        actual_j = next((k for k, d in enumerate(self.game.bag) if d is target_die), j)
                         self.game.hand[self.game.swap_source_index] = target_die
-                        self.game.bag[j] = source_die
-                        self.game.bag.remove(source_die)  # Re-add to bag end
+                        self.game.bag[actual_j] = source_die
+                        self.game.bag.remove(source_die)
                         self.game.bag.append(source_die)
                         old_value = self.game.rolls[self.game.swap_source_index][1]  # Keep old value
                         self.game.rolls[self.game.swap_source_index] = (target_die, old_value)  # Sync rolls tuple for draw
@@ -674,6 +703,14 @@ class GameState(State):
                 self.game.score_and_new_turn()
             if self.end_turn_rect and self.end_turn_rect.collidepoint(mouse_pos):
                 self.game.score_and_new_turn()
+            if DEBUG:
+                for rect, action in self.debug_rects or []:
+                    if rect.collidepoint(mouse_pos):
+                        if action == 'toggle':
+                            self.game.debug_play_open = not bool(getattr(self.game, 'debug_play_open', False))
+                        else:
+                            self.game.debug_run_play_action(action)
+                        return
 
             # Charm drag start
             for i in range(len(self.game.equipped_charms)):
@@ -776,10 +813,7 @@ class GameState(State):
             if self.game.dragging_charm_index != -1:
                 mouse_pos = pygame.mouse.get_pos()
                 target_index = -1
-                for i in range(len(self.game.equipped_charms)):
-                    x = 50 + i * (CHARM_SIZE + 10)
-                    y = 10
-                    rect = pygame.Rect(x, y, CHARM_SIZE, CHARM_SIZE)
+                for i, rect in enumerate(self.game.equipped_charm_rects):
                     if rect.collidepoint(mouse_pos):
                         target_index = i
                         break
@@ -836,17 +870,7 @@ class GameState(State):
             self.game.fates_advantage_die_rect = pygame.Rect(x + adv_offset, adv_y + adv_offset, adv_size, adv_size)
             # print(f"Debug: Set fates_advantage_die_rect = {self.game.fates_advantage_die_rect}")  # Confirm set
 
-        # Bag dice rects (existing)
-        self.game.bag_die_rects = []
-        columns = 5
-        rows = math.ceil(len(self.game.bag) / columns) if self.game.bag else 1
-        bag_width = columns * (SMALL_DIE_SIZE + SMALL_DIE_SPACING) - SMALL_DIE_SPACING + BAG_PADDING * 2
-        bag_x = self.game.width - bag_width - 20
-        bag_y = 50
-        for j in range(len(self.game.bag)):
-            col = j % columns
-            row = j // columns
-            small_x = bag_x + BAG_PADDING + col * (SMALL_DIE_SIZE + SMALL_DIE_SPACING)
-            small_y = bag_y + BAG_PADDING + row * (SMALL_DIE_SIZE + SMALL_DIE_SPACING)
-            rect = pygame.Rect(small_x, small_y, SMALL_DIE_SIZE, SMALL_DIE_SIZE)
-            self.game.bag_die_rects.append(rect)
+        # Bag dice rects — same helper as draw_bag_visual
+        _bag_rect, _tray, cells = bag_cells(self.game)
+        self.game.bag_die_rects = [rect for _die, rect in cells]
+        self.game.bag_visual_dice = [die for die, _rect in cells]

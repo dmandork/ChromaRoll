@@ -118,6 +118,10 @@ class D20BoonSystem:
         self.next_blind_color_mult = {}
         self.wildcard_color = None
 
+    def is_locked(self):
+        """True once the d20 has landed — cannot cancel or re-roll this intensify."""
+        return bool(self.active and self.roll is not None)
+
     # ------------------------------------------------------------------ start / roll
     def start_boon(self, fused_color=None):
         """Begin an intensified blind. Does not touch queued rewards from a prior win."""
@@ -191,6 +195,15 @@ class D20BoonSystem:
 
         self.outcome_desc = ' | '.join(parts)
         return self.outcome_name
+
+    def cancel_unstarted(self, snapshot, game=None):
+        """Undo Intensify before the d20 is rolled. Refuses if already locked."""
+        if self.is_locked():
+            return False
+        self.from_dict(snapshot or {})
+        if game is not None:
+            self.sync_legacy_flags(game)
+        return True
 
     # ------------------------------------------------------------------ push onto game
     def sync_legacy_flags(self, game):
@@ -314,7 +327,7 @@ class D20BoonSystem:
         if self.next_blind_score_mult > 1.0:
             notes.append(f"D20 leftover x{self.next_blind_score_mult}")
         if self.next_hand_mult > 1.0:
-            notes.append(f"D20 next-hand x{self.next_hand_mult}")
+            notes.append(f"D20 next hand x{self.next_hand_mult}")
         if hand_type in self.next_blind_type_mult:
             notes.append(f"D20 {hand_type} x{self.next_blind_type_mult[hand_type]}")
         if self.active and self.chroma_global > 1.0:
@@ -368,7 +381,15 @@ class D20BoonSystem:
 
     # ------------------------------------------------------------------ blind boundaries
     def begin_next_blind(self, game=None):
-        """Move queued win-rewards onto live next-blind slots. Safe to call every fresh enter."""
+        """Move queued win-rewards onto live next-blind slots. Safe to call every fresh enter.
+
+        No-op while an intensified roll is already locked — otherwise Continue after a
+        dumped d20 screen would pay out this roll's unearned win rewards on the same blind.
+        """
+        if self.active:
+            if game is not None:
+                self.sync_legacy_flags(game)
+            return
         if self.pending_hand_type_mult:
             self.next_blind_type_mult = dict(self.pending_hand_type_mult)
             self.pending_hand_type_mult = {}

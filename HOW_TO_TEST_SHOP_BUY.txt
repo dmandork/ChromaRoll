@@ -1,0 +1,27 @@
+HOW TO TEST — Shop buy crash (Black Pouch / 6th slot)
+
+Drop these over your ChromaRoll folder:
+
+  states/shop.py
+  screens.py
+  tests/test_shop_drag_and_menu.py
+  HOW_TO_TEST_SHOP_BUY.txt
+
+The crash
+  Clicking Buy used shop_charms[i] from a rect list that could be longer than
+  the stock (Gambler's Grimoire appended an extra Buy onto buy_rects; a
+  double-click before redraw did the same). IndexError on shop_charms[i].
+
+What changed
+  - Buy maps 1:1 onto shop tiles. Out-of-range clicks are ignored.
+  - Clicking the charm tile (not just the tiny Buy button) purchases it.
+  - Full row (6/6 on Black, 5/5 otherwise) says "No charm slots left!"
+    instead of the fake "Not enough coins!"
+  - Grimoire free rune is claimed by clicking the rune tile, not a leftover Buy.
+
+Fast check
+  1. Unlock All → New Game → Black Pouch.
+  2. Beat a blind, open shop, buy a charm. Should equip, no crash.
+  3. Fill all 6 slots, click another Buy → "No charm slots left!", charm stays.
+  4. Double-click a shop charm → one purchase, no crash.
+  5. Headless: python tests/test_shop_drag_and_menu.py

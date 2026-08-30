@@ -1,0 +1,67 @@
+ChromaRoll D20 Boon — drop-in files
+===================================
+
+Replace these files in your repo with the copies in this zip
+(keep the same folder layout: states/ and tests/ stay nested).
+
+  d20_boon.py
+  data.py
+  scoring.py
+  ChromaRoll.py
+  savegame.py
+  screens.py
+  states/d20_roll.py
+  states/game.py
+  states/blinds.py
+  states/base.py
+  states/shop.py
+  tests/test_d20_boon.py
+  tests/test_shop_drag_and_menu.py
+
+Headless check (no pygame window needed):
+
+  python tests/test_d20_boon.py
+
+In-game (DEBUG is on):
+
+  Challenges screen → Intensify?
+    1. Optional Color Fusion: pick a color or Skip Fusion.
+    2. Cancel Intensify (or ESC) returns to Challenges — the d20 is NOT locked yet.
+    3. Roll d20 (or top-left Test Tier) LOCKS the result immediately.
+       Closing the window / Load brings you back to this result. There is no Back.
+    4. Accept & Play. Shop is NEVER skipped — it always comes after you beat the blind.
+
+Cancel vs lock
+--------------
+Before you roll: Cancel / ESC / window-X during fusion is free. No boon, no win-rewards.
+After you roll: the boon is locked. Window-X reopens the result screen. Continue on
+Challenges is grayed to "Locked" if a leftover dump ever lands you there — play it.
+
+What each tier should do
+------------------------
+T1 Prism Fracture  target x1.5, one hand type blocked
+                   Fusion: hands using that color still score
+                   Win: +2x that type next blind + FREE Prism Pack in THIS shop
+                   (gold "FREE" pack in the pack row — not a charm slot)
+
+T2 Hue Dimming     target x1.25, one color x0.8 this blind
+                   Fusion: that color is the dimmed one
+                   Win: +2x next hand, +$20, that color +30% next blind
+
+T3 Roll Harmony    target x1.08, one die locked (green thick border), x1.5, +1 discard
+                   Fusion: lock prefers that color
+                   Rewards are THIS blind (not queued)
+
+T4 Roll Flow       target x0.88, +1 reroll/hand, x2.5, +5 discards, pick an advantage die
+                   Fusion: auto-picks a die of that color
+                   No fusion: click a die after Start Roll, then click the copy above to hold it
+
+T5 Chroma Radiance target x0.75, all colors +30%
+                   Fusion: that color +50% this blind, wildcard next hand
+                   Win: +4x next TWO blinds + $50
+
+A D20 banner under the score shows the live effect. Fusion dice get a color ring.
+
+Shop: beat the intensified blind → win popup lists D20 rewards → Continue → shop.
+If you rolled T1, the free Prism Pack is already in that shop. Shop reroll keeps it;
+leaving the shop without buying it drops it.
