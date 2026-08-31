@@ -469,7 +469,7 @@ class ShopState(State):
                             elif pack_idx in [6, 7, 8]:  # Rune packs
                                 from states.rune import RuneSelectState
                                 self.game.pack_choices = random.sample(data.MYSTIC_RUNES, pack_choices_num[pack_idx])
-                                self.game.pack_select_count = pack_choices_num[pack_idx]
+                                self.game.pack_select_count = pack_select_num[pack_idx]
                                 self.game.selected_runes = []
                                 self.game.state_machine.change_state(RuneSelectState(self.game))
                                 if pack_idx in self.game.available_packs:

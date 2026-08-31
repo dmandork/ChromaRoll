@@ -398,14 +398,13 @@ class ChromaRollGame:
         self.discard_used_this_round = False  # Track if discard was used in the current hand's discard phase
         self.first_discard_this_turn = True
         self.hands_left = MAX_HANDS  # Hands (scores) per round
-        self.coins = 0  # Chroma Coins for upgrades
-        # **INSERT: Initialize round and blind (after coins or state vars)**
-        self.current_round = 1  # Start at Stake 1; adjust if 0-based
+        self.coins = STARTING_COINS
+        self.current_round = 1
         self.current_blind = 'Small'  # Or None if unset until blinds
         self.luchador_disable_active = False  # **INSERT: Luchador flag (start false)**
         self.extra_coins = 0  # For tracking bonus coins from gold and silver dice
         if DEBUG and DEBUG_INFINITE_COINS:
-            self.coins = 999999  # Infinite coins for debug (large value to simulate infinity without breaking int ops)
+            self.coins = 999999
         self.round_score = 0  # Score for current blind/round
         self.achievement_progress = 0  # FUTURE: Track for unlocks; ignore for now
         self.confirmed_hands_this_round = 0
@@ -453,6 +452,7 @@ class ChromaRollGame:
         seen_names = set()
         self.is_resuming = False  # Flag
         self.select_count = 1  # For multi-select in packs
+        self.pack_select_count = 1  # How many runes you may take from the open pack
         self.selected_runes = []  # Temp for rune selection
         self.current_rune = None  # For 
         self.current_rune_slot = -1
@@ -505,6 +505,7 @@ class ChromaRollGame:
             # Show placeholders during discard phase
             self.current_hand_text = "Current Hand: Nothing (0 base) = 0 total"
             self.current_modifier_text = "Modifiers: None"
+            self.score_preview = None
         else:
             held_rolls = []
             for i, pair in enumerate(self.rolls or []):
@@ -514,10 +515,20 @@ class ChromaRollGame:
             if not held_rolls:
                 self.current_hand_text = "Current Hand: Nothing (0 base) = 0 total"
                 self.current_modifier_text = "Modifiers: None"
+                self.score_preview = None
             else:
                 hand_type, base_score, modifier_desc, final_score, charm_chips, charm_color_mult_add = self.get_hand_type_and_score(is_preview=True)
                 self.current_hand_text = f"Current Hand: {hand_type} ({base_score} base + {charm_chips} charms) = {final_score} total"
                 self.current_modifier_text = f"Modifiers: {modifier_desc}"
+                self.score_preview = {
+                    'hand': hand_type,
+                    'base': int(base_score or 0),
+                    'charms': int(charm_chips or 0),
+                    'color_mult': float(charm_color_mult_add or 0),
+                    'final': int(final_score or 0),
+                    'prism': float(self.hand_multipliers.get(hand_type, 1.0) or 1.0),
+                    'mod': modifier_desc or '',
+                }
 
                 # BLOCKED type warning
                 boon = getattr(self, 'd20_boon', None)
@@ -653,7 +664,7 @@ class ChromaRollGame:
         blind_type = (blind_type or getattr(self, 'current_blind', 'small')).lower()  # Normalize & default
         
         base = 200
-        growth_rate = 1.8
+        growth_rate = float(globals().get('STAKE_GROWTH', 1.6))
         
         if blind_type == 'small':
             mult = 1.0
@@ -1146,12 +1157,15 @@ class ChromaRollGame:
                     hands_dollars = '$' * self.hands_left
                     discards_dollars = '$' * self.discards_left
                     interest_dollars = '$' * interest if interest >= 0 else str(interest)
-                
+
+                clear_reward = BLIND_CLEAR_REWARD.get(self.current_blind, 3)
+                remains_coins += clear_reward
                 total_coins = remains_coins + interest + self.extra_coins
                 extras_dollars = '$' * self.extra_coins if self.extra_coins > 0 else ''
                 total_dollars = '$' * abs(total_coins) if total_coins >= 0 else str(total_coins)
                 extras_line = f"Extras: {extras_dollars}\n" if self.extra_coins > 0 else ""
                 self.popup_message = (f"{self.current_blind} Blind Beaten! Score: {self.round_score}/{int(self.get_blind_target())}\n"
+                                    f"Clear bonus: {'$' * clear_reward}\n"
                                     f"Hands left: {hands_dollars}\n"
                                     f"Discards left: {discards_dollars}\n"
                                     f"Interest: {interest_dollars}\n"
@@ -1410,6 +1424,10 @@ class ChromaRollGame:
             hands_dollars = '$' * self.hands_left
             discards_dollars = '$' * self.discards_left
             interest_dollars = '$' * interest if interest >= 0 else str(interest)
+
+        clear_reward = BLIND_CLEAR_REWARD.get(self.current_blind, 3)
+        remains_coins += clear_reward
+        clear_line = f"Clear bonus: {'$' * clear_reward}\n"
             
         # Accumulate Luck's Locket coins for this hand but don't add to self.coins yet
         luck_locket_coins_this_hand = 0
@@ -1544,6 +1562,7 @@ class ChromaRollGame:
 
         # Normal win: Show popup
         self.popup_message = (f"{self.current_blind} Blind Beaten! Score: {self.round_score}/{int(self.get_blind_target())}\n"
+                            f"{clear_line}"
                             f"Hands left: {hands_dollars}\n"
                             f"Discards Left: {discards_dollars}\n"
                             f"Interest: {interest_dollars}\n"
@@ -2059,7 +2078,9 @@ class ChromaRollGame:
 
     def reset_game(self):
         # Existing resets (e.g., coins=0, stake=1, blind='Small', etc.)
-        self.coins = 0 if not DEBUG else 999999
+        self.coins = 0 if not (DEBUG and DEBUG_INFINITE_COINS) else 999999
+        if self.coins == 0:
+            self.coins = STARTING_COINS
         # NEW: Reset UNO Skip flag on full restart (one per run)
         self.uno_skip_used = False
         self.turn_initialized = False  # Reset for new round/turn
@@ -2313,6 +2334,13 @@ class ChromaRollGame:
             self.temp_message = "Too many dice selected!"
             return
 
+        def enh(die):
+            if die is None:
+                return []
+            if not isinstance(die.get('enhancements'), list):
+                die['enhancements'] = []
+            return die['enhancements']
+
         notify(self, 'rune', steel=bag_has_steel(self) or name == 'Mystic Steel Rune')
 
         if name == 'Mystic Fool Rune':
@@ -2326,7 +2354,7 @@ class ChromaRollGame:
                 self.temp_message = "Select exactly 1 die!"
                 return
             for die in die_list:
-                die['enhancements'].append('Lucky')
+                enh(die).append('Lucky')
 
         elif name == 'Mystic Oracle Rune':
             # Assume UPGRADE_RUNES exists or stub: add 2 random hand boosts
@@ -2337,7 +2365,7 @@ class ChromaRollGame:
         elif name == 'Mystic Mult Rune':
             # Up to 2, but allow fewer
             for die in die_list:
-                die['enhancements'].append('Mult')
+                enh(die).append('Mult')
 
         elif name == 'Mystic Emperor Rune':
             for _ in range(2):
@@ -2347,7 +2375,7 @@ class ChromaRollGame:
         elif name == 'Mystic Bonus Rune':
             # Up to 2
             for die in die_list:
-                die['enhancements'].append('Bonus')
+                enh(die).append('Bonus')
 
         elif name == 'Mystic Wild Rune':
             if len(die_list) != 1:
@@ -2355,21 +2383,21 @@ class ChromaRollGame:
                 return
             for die in die_list:
                 die['color'] = 'Rainbow'
-                die['enhancements'].append('Wild')
+                enh(die).append('Wild')
 
         elif name == 'Mystic Steel Rune':
             if len(die_list) != 1:
                 self.temp_message = "Select exactly 1 die!"
                 return
             for die in die_list:
-                die['enhancements'].append('Steel')
+                enh(die).append('Steel')
 
         elif name == 'Mystic Fragile Rune':
             if len(die_list) != 1:
                 self.temp_message = "Select exactly 1 die!"
                 return
             for die in die_list:
-                die['enhancements'].append('Fragile')
+                enh(die).append('Fragile')
 
         elif name == 'Mystic Wealth Rune':
             gain = min(self.coins, 20)
@@ -2380,8 +2408,8 @@ class ChromaRollGame:
             if random.random() < 0.25 and self.bag:
                 die = random.choice(self.bag)
                 edition = random.choice(['Foil', 'Holo', 'Poly'])
-                die['enhancements'].append(edition)
-                die['enhancements'].append('Fate')
+                enh(die).append(edition)
+                enh(die).append('Fate')
 
         elif name == 'Mystic Strength Rune':
             # Up to 2
@@ -2389,7 +2417,7 @@ class ChromaRollGame:
                 faces = sorted(die['faces'])
                 die['faces'] = faces[2:] + random.choices(faces[3:], k=2)  # Mid-high dups
                 die['faces'] = die['faces'][:6]
-                die['enhancements'].append('Strength')
+                enh(die).append('Strength')
 
         elif name == 'Mystic Sacrifice Rune':
             # Up to 2
@@ -2410,9 +2438,7 @@ class ChromaRollGame:
             target, source = die_list  # First selected = target (#1), second = source (#2)
             target['color'] = source['color']
             target['faces'] = source['faces'][:]
-            if 'enhancements' not in target:
-                target['enhancements'] = []  # Initialize if missing
-            target['enhancements'].append('Transmute')
+            enh(target).append('Transmute')
 
         elif name == 'Mystic Balance Rune':
             total = sum(c.get('cost', 0) for c in self.equipped_charms)
@@ -2424,14 +2450,14 @@ class ChromaRollGame:
                 return
             for die in die_list:
                 die['color'] = 'Gold'
-                die['enhancements'].append('Gold')
+                enh(die).append('Gold')
 
         elif name == 'Mystic Stone Rune':
             if len(die_list) != 1:
                 self.temp_message = "Select exactly 1 die!"
                 return
             for die in die_list:
-                die['enhancements'].append('Stone')
+                enh(die).append('Stone')
                 die['faces'] = [random.randint(3,6)] * 6  # Fixed high-ish
 
         elif name in ['Mystic Red Rune', 'Mystic Blue Rune', 'Mystic Green Rune', 'Mystic Purple Rune', 'Mystic Yellow Rune']:
@@ -2439,7 +2465,7 @@ class ChromaRollGame:
             color = name.split()[1].capitalize()  # Red, etc.
             for die in die_list:
                 die['color'] = color
-                die['enhancements'].append(color)
+                enh(die).append(color)
 
         elif name == 'Mystic Judgement Rune':
             charm = copy.deepcopy(random.choice([c for c in data.CHARMS_POOL if c['rarity'] == 'Common']))
@@ -2455,7 +2481,7 @@ class ChromaRollGame:
                 return
             for die in die_list:
                 die['color'] = 'Silver'
-                die['enhancements'].append('Silver')
+                enh(die).append('Silver')
 
         self.last_rune = rune  # Track for Fool
         self.refresh_bag()  # Update visuals

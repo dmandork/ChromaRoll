@@ -193,54 +193,59 @@ def plasma_mix_chips(colors):
     return 0
 
 
-def apply_wild_4(game, held_rolls, counts, max_count, groups, modifier_desc):
-    wild_face = 4
-    wild_die_count = sum(1 for _, v in held_rolls if v == wild_face)
-    if wild_die_count > 0:
-        non_wild_counts = {k: v for k, v in counts.items() if k != wild_face}
-        if non_wild_counts:
-            highest_group = max(non_wild_counts, key=non_wild_counts.get)
-            counts[highest_group] += wild_die_count
-            max_count = max(counts.values())
-            wild_colors = [die['color'] for die, v in held_rolls if v == wild_face]
-            groups[highest_group] += wild_colors
-            if wild_face in groups:
-                del groups[wild_face]
-            modifier_desc.append(f"{wild_die_count} Kind Keeper Wilds → {highest_group}s")
+def apply_kind_wilds(game, held_rolls, counts, max_count, groups, modifier_desc):
+    """2s (Face Forgery), 4s (Kind Keeper), 6s (Kind King) join the best non-wild kind."""
+    disabled = set(getattr(game, 'disabled_charms', []) or [])
+    wild_faces = set()
+    labels = {}
+    for idx, charm in enumerate(getattr(game, 'equipped_charms', []) or []):
+        if idx in disabled:
+            continue
+        t = charm.get('type')
+        if t == 'face_wild' and charm.get('face') is not None:
+            wild_faces.add(int(charm['face']))
+            labels[int(charm['face'])] = charm.get('name', 'Face Forgery')
+        elif t == 'wild_4':
+            wild_faces.add(4)
+            labels[4] = charm.get('name', 'Kind Keeper')
+        elif t == 'wild_6':
+            wild_faces.add(6)
+            labels[6] = charm.get('name', 'Kind King')
+        elif t == 'kind_wild' and charm.get('face') is not None:
+            wild_faces.add(int(charm['face']))
+            labels[int(charm['face'])] = charm.get('name', 'Wild Face')
+    if not wild_faces:
+        return counts, max_count
+    wild_die_count = sum(1 for _, v in held_rolls if v in wild_faces)
+    if wild_die_count <= 0:
+        return counts, max_count
+    non_wild = {k: v for k, v in counts.items() if k not in wild_faces and v > 0}
+    if not non_wild:
+        return counts, max_count
+    target = max(non_wild, key=lambda k: (non_wild[k], k))
+    counts[target] = counts.get(target, 0) + wild_die_count
+    wild_colors = [die.get('color') for die, v in held_rolls if v in wild_faces]
+    groups.setdefault(target, []).extend(wild_colors)
+    for wf in wild_faces:
+        if wf != target:
+            counts[wf] = 0
+            groups.pop(wf, None)
+    max_count = max(counts.values()) if counts else 0
+    names = sorted({labels[f] for f in wild_faces if f in labels})
+    modifier_desc.append(f"{wild_die_count} {'/'.join(names)} wilds → {target}s")
     return counts, max_count
+
+
+def apply_wild_4(game, held_rolls, counts, max_count, groups, modifier_desc):
+    return apply_kind_wilds(game, held_rolls, counts, max_count, groups, modifier_desc)
 
 
 def apply_wild_6(game, held_rolls, counts, max_count, groups, modifier_desc):
-    wild_face = 6
-    wild_die_count = sum(1 for _, v in held_rolls if v == wild_face)
-    if wild_die_count > 0:
-        non_wild_counts = {k: v for k, v in counts.items() if k != wild_face}
-        if non_wild_counts:
-            highest_group = max(non_wild_counts, key=non_wild_counts.get)
-            counts[highest_group] += wild_die_count
-            max_count = max(counts.values())
-            wild_colors = [die['color'] for die, v in held_rolls if v == wild_face]
-            groups[highest_group] += wild_colors
-            if wild_face in groups:
-                del groups[wild_face]
-            modifier_desc.append(f"{wild_die_count} Kind King Wilds → {highest_group}s")
-    return counts, max_count
+    return apply_kind_wilds(game, held_rolls, counts, max_count, groups, modifier_desc)
 
 
 def apply_face_wild(game, held_rolls, counts, max_count, groups, modifier_desc, wild_face):
-    wild_die_count = sum(1 for _, v in held_rolls if v == wild_face)
-    if wild_die_count > 0:
-        non_wild_counts = {k: v for k, v in counts.items() if k != wild_face}
-        if non_wild_counts:
-            highest_group = max(non_wild_counts, key=non_wild_counts.get)
-            counts[highest_group] += wild_die_count
-            max_count = max(counts.values())
-            wild_colors = [die['color'] for die, v in held_rolls if v == wild_face]
-            groups[highest_group] += wild_colors
-            if wild_face in groups:
-                del groups[wild_face]
-            modifier_desc.append(f"{wild_die_count} Face Forgery Wilds → {highest_group}s")
-    return counts, max_count
+    return apply_kind_wilds(game, held_rolls, counts, max_count, groups, modifier_desc)
 
 
 def get_stencil_mult(game):
@@ -306,6 +311,9 @@ def evaluate_hand(game, is_preview=True):
     groups = {}
     for die, val in held_rolls:
         groups.setdefault(val, []).append(die['color'])
+
+    counts, max_count = apply_kind_wilds(game, held_rolls, counts, max_count, groups, modifier_desc)
+    pair_count = list(v for v in counts.values() if v > 0).count(2)
 
     # Boss: Value Vault inverts values
     if game.current_blind == 'Boss' and game.current_boss_effect and game.current_boss_effect['name'] == 'Value Vault':

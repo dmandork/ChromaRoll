@@ -1,0 +1,26 @@
+HOW TO TEST — leftover screens + rune pack fix
+==============================================
+
+Drop over your ChromaRoll folder.
+
+Rune pack bug
+-------------
+Buy a Basic / Mega Rune Pack (pick 1 of 3 or 1 of 5).
+Take one rune (Apply or Hold). After the preview Continue you should
+be back in the shop — not staring at the leftover runes.
+
+Super Rune Pack is still Pick 2 of 5. After the first, the title
+says "1 left". After the second, shop.
+
+Themed screens
+--------------
+Title (after splash): felt footer under New Game / Load / Achievements / Quit
+Pouch select: wood rail, gold pouch cards
+D20 Intensify: felt table, gold selected fusion
+Die / Prism packs: felt + gold cards
+Rune pack: felt + "Pick N" title
+Shop BAG: bigger panel, shrinks the grid for huge bags, no overlapping title
+Victory: gold plaque + Endless / Main Menu
+Also: Pause, Game Over, Confirm Sell, Achievements
+
+Headless:  python tests/test_rune_pack.py

@@ -2,12 +2,12 @@ import pygame  # Required for key constants like K_SPACE
 import data
 
 # Debug flag: Set to True to force specific colors for testing (overrides random draw) and enable unlimited rerolls
-DEBUG = True
+DEBUG = False
 # Debug toggles (enable/disable specific features)
-DEBUG_INFINITE_COINS = True
-DEBUG_UNLIMITED_REROLLS = True
+DEBUG_INFINITE_COINS = False
+DEBUG_UNLIMITED_REROLLS = False
 DEBUG_FORCE_BAG_COLORS = False  # Turn off for rune tests
-DEBUG_MENU_IN_SHOP = True  # Show debug button in shop
+DEBUG_MENU_IN_SHOP = False  # Show debug button in shop
 DEBUG_COLORS = ['Red', 'Blue', 'Green', 'Purple', 'Yellow']  # Example: All different colors for rainbow testing
 # DEBUG_COLORS = ['Glass', 'Glass', 'Glass', 'Glass', 'Glass']  # Example: All Glass colors for break testing
 # DEBUG_COLORS = ['Gold', 'Gold', 'Gold', 'Silver', 'Silver']  # Example: All Gold and Silver colors for extra coin testing
@@ -113,9 +113,11 @@ DIE_BORDER_RADIUS = 20  # Radius for rounded corners on dice
 SMALL_DIE_BORDER_RADIUS = 5  # Radius for rounded corners on small bag dice
 MAX_HANDS = 4  # Base hands (scores) per round
 MAX_DISCARDS = 3  # Base discards per round
-# DISCARD_PER_USE = 2  # Max dice to discard per use (1-2)
-# TABLE_GREEN = (0, 100, 0)  # Card table green background
-BASE_TARGETS = {'Small': 100, 'Big': 200, 'Boss': 300}  # Base blind targets (scale by stake)
+STARTING_COINS = 4  # First shop is not empty
+# Flat payout for beating a blind, on top of leftover hands/discards.
+BLIND_CLEAR_REWARD = {'Small': 3, 'Big': 4, 'Boss': 5}
+BASE_TARGETS = {'Small': 100, 'Big': 200, 'Boss': 300}  # unused; live curve is get_blind_target
+STAKE_GROWTH = 1.6  # was 1.8 — stake 4 was a brick wall on a first run
 POPUP_WIDTH, POPUP_HEIGHT = 300, 300  # Enlarged popup size for beaten blind
 POPUP_ANIMATION_DELAY = 0.5  # Delay for $ animation in popup
 CHARM_SIZE = 100  # Size for charm icons

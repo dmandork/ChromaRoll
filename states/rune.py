@@ -4,9 +4,26 @@ import time
 import math
 import random
 from states.base import State
-from screens import draw_custom_button, draw_tooltip, draw_rounded_element
+from screens import (
+    draw_custom_button, draw_tooltip, draw_rounded_element, draw_table_felt,
+    draw_gold_plaque, draw_select_die, enhancement_label, _enh_line,
+    TABLE_GOLD, TABLE_PLAQUE,
+)
 from utils import wrap_text
 from constants import *  # THEME, CHARM_BOX_WIDTH, CHARM_SPACING, BUTTON_WIDTH, BUTTON_HEIGHT, DIE_SIZE, DOT_RADIUS, COLORS
+
+
+def _pack_need(game):
+    """How many picks this pack allows. Never crash if the attr was never set."""
+    n = getattr(game, 'pack_select_count', None)
+    if n is None:
+        n = getattr(game, 'select_count', 1)
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        n = 1
+    return max(1, n)
+
 
 class RuneSelectState(State):
     def __init__(self, game):
@@ -23,14 +40,22 @@ class RuneSelectState(State):
         self.continue_rect = None  # New for post-apply
         self.applied_count = 0  # Track how many applied/held
         self.hover_rune_index = -1  # For tooltip
+        self.hover_die_index = -1
         self.preview_mode = False  # Flag for post-apply preview
         self.preview_message = ""  # For non-die feedback
         self.preview_dies = []  # New: Store enhanced dies for preview
 
     def draw(self):
-        self.game.screen.fill(THEME['background'])
+        draw_table_felt(self.game)
         mouse_pos = pygame.mouse.get_pos()  # Moved to top for both modes
+        need = _pack_need(self.game)
+        left = max(0, need - int(self.applied_count or 0))
         if not self.preview_mode:
+            pick_label = f"Pick {need} rune" + ("s" if need != 1 else "")
+            if self.applied_count:
+                pick_label += f"  ·  {left} left"
+            title = self.game.font.render(pick_label, True, TABLE_GOLD)
+            self.game.screen.blit(title, (self.game.width // 2 - title.get_width() // 2, 12))
             # Calculate start_x dynamically for centering
             num_runes = len(self.game.pack_choices)
             total_rune_width = num_runes * CHARM_BOX_WIDTH + (num_runes - 1) * CHARM_SPACING
@@ -41,7 +66,7 @@ class RuneSelectState(State):
             current_time = time.time()  # For animations
             for i, rune in enumerate(self.game.pack_choices):
                 rune_x = start_x + i * (CHARM_BOX_WIDTH + CHARM_SPACING)
-                rune_rect = pygame.Rect(rune_x, 50, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
+                rune_rect = pygame.Rect(rune_x, 58, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
                 
                 is_selected = i == self.selected_rune_index  # Assuming single select; change to list check if multi
                 is_hover = rune_rect.collidepoint(mouse_pos)
@@ -52,7 +77,8 @@ class RuneSelectState(State):
                     new_w = int(CHARM_BOX_WIDTH * pulse)
                     new_h = int(CHARM_BOX_HEIGHT * pulse)
                     new_rect = pygame.Rect(rune_x - (new_w - CHARM_BOX_WIDTH)//2, 50 - (new_h - CHARM_BOX_HEIGHT)//2, new_w, new_h)
-                    pygame.draw.rect(self.game.screen, (200,200,200), new_rect)  # Gray box on scaled rect
+                    pygame.draw.rect(self.game.screen, TABLE_PLAQUE, new_rect, border_radius=12)
+                    pygame.draw.rect(self.game.screen, TABLE_GOLD, new_rect, 2, border_radius=12)
                     
                     # Redraw wrapped text centered on new_rect
                     lines = wrap_text(self.game.small_font, rune['name'], new_w - 20)
@@ -64,7 +90,8 @@ class RuneSelectState(State):
                     
                     draw_rect = new_rect  # Use for border below
                 else:
-                    pygame.draw.rect(self.game.screen, (200,200,200), rune_rect)  # Original gray
+                    pygame.draw.rect(self.game.screen, TABLE_PLAQUE, rune_rect, border_radius=12)
+                    pygame.draw.rect(self.game.screen, TABLE_GOLD, rune_rect, 2, border_radius=12)
                     
                     # Original text
                     lines = wrap_text(self.game.small_font, rune['name'], CHARM_BOX_WIDTH - 20)
@@ -88,30 +115,26 @@ class RuneSelectState(State):
 
             
 
-            # Bottom: 8 Dice
+            # Bottom: 8 Dice — color, pips, enhancement chips + name
             num_dice = len(self.random_dice)
-            total_die_width = num_dice * DIE_SIZE + (num_dice - 1) * 10  # Assuming 10 spacing
+            total_die_width = num_dice * DIE_SIZE + (num_dice - 1) * 10
             die_start_x = (self.game.width - total_die_width) // 2
             self.die_rects = []
+            self.hover_die_index = -1
             for j, die in enumerate(self.random_dice):
                 die_x = die_start_x + j * (DIE_SIZE + 10)
-                die_rect = pygame.Rect(die_x, self.game.height//2, DIE_SIZE, DIE_SIZE)
-                draw_rounded_element(self.game.screen, die_rect, COLORS[die['color']], inner_content=lambda r: self.draw_dots_or_icon(die))  # Use self. if method
-                if j in self.selected_die_indices:  # Highlight multi
-                    pygame.draw.rect(self.game.screen, (255,255,0), die_rect, width=3)
+                die_rect = pygame.Rect(die_x, self.game.height // 2 - 10, DIE_SIZE, DIE_SIZE)
+                draw_select_die(self.game, die_rect, die, selected=(j in self.selected_die_indices))
+                if die_rect.collidepoint(mouse_pos):
+                    self.hover_die_index = j
                 self.die_rects.append(die_rect)
 
-                # Confirm button
-                self.confirm_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
-                draw_custom_button(self.game, self.confirm_rect, "Apply Rune", is_hover=self.confirm_rect.collidepoint(mouse_pos))
-
-                # Hold button (left of confirm)
-                self.hold_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 - 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
-                draw_custom_button(self.game, self.hold_rect, "Hold Rune", is_hover=self.hold_rect.collidepoint(mouse_pos))
-
-                # Skip button (right of confirm)
-                self.skip_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 + 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
-                draw_custom_button(self.game, self.skip_rect, "Skip Pack", is_hover=self.skip_rect.collidepoint(mouse_pos))
+            self.confirm_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
+            draw_custom_button(self.game, self.confirm_rect, "Apply Rune", is_hover=self.confirm_rect.collidepoint(mouse_pos))
+            self.hold_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 - 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
+            draw_custom_button(self.game, self.hold_rect, "Hold Rune", is_hover=self.hold_rect.collidepoint(mouse_pos))
+            self.skip_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 + 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
+            draw_custom_button(self.game, self.skip_rect, "Skip Pack", is_hover=self.skip_rect.collidepoint(mouse_pos), is_red=True)
 
         else:
             # Preview mode: Show updated dice (no runes, no borders, no full screen draw to avoid pull)
@@ -125,9 +148,8 @@ class RuneSelectState(State):
                 preview_start_x = (self.game.width - total_preview_width) // 2
                 for k, die in enumerate(self.preview_dies):
                     die_x = preview_start_x + k * (DIE_SIZE + 10)
-                    die_rect = pygame.Rect(die_x, self.game.height//2 - 100, DIE_SIZE, DIE_SIZE)  # Higher y for space
-                    draw_rounded_element(self.game.screen, die_rect, COLORS[die['color']], inner_content=lambda r: self.draw_dots_or_icon(die))
-                    # Call enhancement visuals if you have it (e.g., draw_enhancement_visuals(self.game, die_rect, die))
+                    die_rect = pygame.Rect(die_x, self.game.height//2 - 100, DIE_SIZE, DIE_SIZE)
+                    draw_select_die(self.game, die_rect, die, selected=False)
             else:
                 no_dice_text = self.game.small_font.render("No dice affected – rune applied!", True, THEME['text'])
                 self.game.screen.blit(no_dice_text, (self.game.width // 2 - no_dice_text.get_width() // 2, self.game.height // 2))
@@ -143,6 +165,15 @@ class RuneSelectState(State):
         # Draw tooltip if hovering (only in select mode)
         if not self.preview_mode and self.hover_rune_index != -1:
             draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20, self.game.pack_choices[self.hover_rune_index]['desc'])
+        elif not self.preview_mode and self.hover_die_index != -1:
+            die = self.random_dice[self.hover_die_index]
+            lines = [f"{die.get('color', '?')} die"]
+            tag = enhancement_label(die)
+            if tag:
+                lines.append(tag)
+            for enh in die.get('enhancements') or []:
+                lines.append(_enh_line(enh))
+            draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20, "\n".join(lines))
 
     def draw_dots_or_icon(self, die):  # Placeholder method; move to utils/screens if not defined
         # Implement your dot/icon drawing logic here, e.g., for standard dice pips
@@ -158,8 +189,9 @@ class RuneSelectState(State):
                     self.preview_message = ""
                     self.preview_dies = []
                     self.random_dice = random.sample(self.game.bag, min(8, len(self.game.bag)))  # Refresh after preview
-                    if self.applied_count >= self.game.pack_select_count:
-                        self.game.state_machine.change_state(ShopState(self.game))
+                    if self.applied_count >= _pack_need(self.game):
+                        from states.shop import resume_shop
+                        resume_shop(self.game)
             return  # Skip other events in preview
 
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -208,11 +240,12 @@ class RuneSelectState(State):
                     self.selected_rune_index = -1  # Reset
                     self.applied_count += 1  # Increment
                     self.selected_die_indices = []
-                    print(f"DEBUG: Hold applied={self.applied_count}, total select={self.game.pack_select_count}, choices left={len(self.game.pack_choices)}")  # TEMP
-                    self.game.temp_message = f"Held {rune['name']} to tray! ({self.applied_count}/{self.game.pack_select_count})"  # Progress msg
+                    need = _pack_need(self.game)
+                    print(f"DEBUG: Hold applied={self.applied_count}, total select={need}, choices left={len(self.game.pack_choices)}")  # TEMP
+                    self.game.temp_message = f"Held {rune['name']} to tray! ({self.applied_count}/{need})"  # Progress msg
                     self.game.temp_message_start = time.time()
                     # FIXED: Transition after hold (re-enter only if multi)
-                    if self.applied_count < self.game.pack_select_count:
+                    if self.applied_count < need:
                         # Re-enter with full reset (refreshes UI/choices)
                         new_state = RuneSelectState(self.game)
                         new_state.applied_count = self.applied_count  # Carry over count
@@ -220,7 +253,8 @@ class RuneSelectState(State):
                         new_state.selected_die_indices = []
                         self.game.state_machine.change_state(new_state)
                     else:
-                        self.game.state_machine.change_state(ShopState(self.game))
+                        from states.shop import resume_shop
+                        resume_shop(self.game)
                 else:
                     print("DEBUG: Hold failed - tray full")  # TEMP
                     self.game.temp_message = "Tray full - cannot hold rune!"
@@ -228,7 +262,8 @@ class RuneSelectState(State):
 
             if self.skip_rect.collidepoint(mouse_pos):
                 self.game.pack_choices = []  # Discard
-                self.game.state_machine.change_state(ShopState(self.game))  # Back
+                from states.shop import resume_shop
+                resume_shop(self.game)
 
         if event.type == pygame.MOUSEMOTION:  # Hover tooltip
             self.hover_rune_index = -1
@@ -269,25 +304,29 @@ class RuneUseState(State):
         self.game.show_instruction_popup = True
 
     def draw(self):
-        self.game.screen.fill(THEME['background'])
-        # Top: Single rune (no full screen draw to avoid pull)
-        rune_rect = pygame.Rect(self.game.width // 2 - CHARM_BOX_WIDTH // 2, 50, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
-        pygame.draw.rect(self.game.screen, (200,200,200), rune_rect)  # Gray box
-        
-        # Wrap name
+        draw_table_felt(self.game)
+        mouse_pos = pygame.mouse.get_pos()
+        title = self.game.font.render(self.rune.get('name', 'Rune'), True, TABLE_GOLD)
+        self.game.screen.blit(title, (self.game.width // 2 - title.get_width() // 2, 16))
+        hint = self.game.tiny_font.render(
+            self.temp_message or f"Select up to {self.max_dice} dice", True, THEME['text'])
+        self.game.screen.blit(hint, (self.game.width // 2 - hint.get_width() // 2, 62))
+
+        rune_rect = pygame.Rect(self.game.width // 2 - CHARM_BOX_WIDTH // 2, 88, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
+        draw_gold_plaque(self.game, rune_rect, fill=TABLE_PLAQUE, radius=12)
         lines = wrap_text(self.game.small_font, self.rune['name'], CHARM_BOX_WIDTH - 20)
         y_offset = rune_rect.centery - (len(lines) * self.game.small_font.get_height() // 2)
         for line in lines:
             text = self.game.small_font.render(line, True, THEME['text'])
-            self.game.screen.blit(text, (rune_rect.centerx - text.get_width()//2, y_offset))
+            self.game.screen.blit(text, (rune_rect.centerx - text.get_width() // 2, y_offset))
             y_offset += self.game.small_font.get_height()
 
-        # Bottom: Dice if max_dice > 0 (manual draw, no full game screen)
+        hover_die = -1
         if self.max_dice > 0:
             if len(self.random_dice) == 0:
-                # Empty/low bag message
-                msg_text = self.game.small_font.render(self.low_bag_message or "No dice available", True, (255, 0, 0))
+                msg_text = self.game.small_font.render(self.low_bag_message or "No dice available", True, (220, 80, 80))
                 self.game.screen.blit(msg_text, (self.game.width // 2 - msg_text.get_width() // 2, self.game.height // 2))
+                self.die_rects = []
             else:
                 num_dice = len(self.random_dice)
                 total_die_width = num_dice * DIE_SIZE + (num_dice - 1) * 10
@@ -295,32 +334,35 @@ class RuneUseState(State):
                 self.die_rects = []
                 for j, die in enumerate(self.random_dice):
                     die_x = die_start_x + j * (DIE_SIZE + 10)
-                    die_rect = pygame.Rect(die_x, self.game.height//2, DIE_SIZE, DIE_SIZE)
-                    draw_rounded_element(self.game.screen, die_rect, COLORS[die['color']], inner_content=lambda r: self.draw_dots_or_icon(die))
-                    if j in self.selected_die_indices:
-                        pygame.draw.rect(self.game.screen, (255,255,0), die_rect, width=3)
+                    die_rect = pygame.Rect(die_x, self.game.height // 2 + 10, DIE_SIZE, DIE_SIZE)
+                    draw_select_die(self.game, die_rect, die, selected=(j in self.selected_die_indices))
+                    if die_rect.collidepoint(mouse_pos):
+                        hover_die = j
                     self.die_rects.append(die_rect)
         else:
-            # No dice needed message
             no_dice_text = self.game.small_font.render("No dice needed – press Apply", True, THEME['text'])
             self.game.screen.blit(no_dice_text, (self.game.width // 2 - no_dice_text.get_width() // 2, self.game.height // 2))
-            self.die_rects = []  # No dice
+            self.die_rects = []
 
-        # Confirm button
         self.confirm_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
-        draw_custom_button(self.game, self.confirm_rect, "Apply Rune")
-
-        # Cancel button (left)
+        draw_custom_button(self.game, self.confirm_rect, "Apply Rune",
+                           is_hover=self.confirm_rect.collidepoint(mouse_pos))
         self.cancel_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 - 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
-        draw_custom_button(self.game, self.cancel_rect, "Cancel")
+        draw_custom_button(self.game, self.cancel_rect, "Cancel",
+                           is_hover=self.cancel_rect.collidepoint(mouse_pos), is_red=True)
 
-        # Tooltip for rune on hover
-        mouse_pos = pygame.mouse.get_pos()
         if rune_rect.collidepoint(mouse_pos):
-            tooltip_text = f"{self.rune['name']}: {self.rune['desc']}"
-            draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20, tooltip_text)
-
-        # print("DEBUG: RuneUseState draw – bag len: {len(self.game.bag)}")  # TEMP – check if pull here
+            draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20,
+                         f"{self.rune['name']}: {self.rune['desc']}")
+        elif hover_die != -1:
+            die = self.random_dice[hover_die]
+            lines = [f"{die.get('color', '?')} die"]
+            tag = enhancement_label(die)
+            if tag:
+                lines.append(tag)
+            for enh in die.get('enhancements') or []:
+                lines.append(_enh_line(enh))
+            draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20, "\n".join(lines))
 
     def draw_dots_or_icon(self, die):  # Placeholder – replace with your pip code
         pass

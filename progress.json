@@ -22,7 +22,15 @@
     "win_run",
     "pouch_erratic",
     "specialist",
-    "road_work"
+    "road_work",
+    "tempered",
+    "scribe",
+    "kindred",
+    "grimoire",
+    "so_close",
+    "packed",
+    "draw_four",
+    "last_call"
   ],
   "unlocked_charms": [
     "Critical Hit",
@@ -53,7 +61,15 @@
     "Ace's Aura",
     "Life Milestone",
     "Synergy Scroll",
-    "Hiker Hex"
+    "Hiker Hex",
+    "Steel Seal",
+    "Rune Recycler",
+    "Retrigger Rune",
+    "Gambler's Grimoire",
+    "Cloak of Cunning",
+    "Space Sphere",
+    "UNO Skip",
+    "Final Flourish"
   ],
   "unlocked_pouches": [
     "Black Pouch",
@@ -66,21 +82,23 @@
     "runs_won": 1,
     "hands": {
       "5 of a Kind": 2,
-      "4 of a Kind": 5,
-      "2 Pair": 1,
-      "Full House": 4,
-      "3 of a Kind": 1,
-      "Small Straight": 2
+      "4 of a Kind": 9,
+      "2 Pair": 9,
+      "Full House": 12,
+      "3 of a Kind": 17,
+      "Small Straight": 5,
+      "Large Straight": 4,
+      "Pair": 1
     },
-    "hands_scored": 15,
-    "kind_hands": 8,
-    "glass_breaks": 0,
+    "hands_scored": 59,
+    "kind_hands": 28,
+    "glass_breaks": 1,
     "lucky_triggers": 0,
-    "runes_used": 0,
-    "intensify_wins": 0,
-    "bosses_beaten": 3,
+    "runes_used": 20,
+    "intensify_wins": 1,
+    "bosses_beaten": 8,
     "max_coins_at_blind_end": 1000045,
-    "special_scored": 8,
+    "special_scored": 13,
     "discards_by_color": {
       "Blue": 2,
       "Green": 2,
@@ -88,24 +106,25 @@
       "Red": 2,
       "Purple": 1
     },
-    "close_losses": 0,
+    "close_losses": 1,
     "bag_emptied": 0,
     "five_sixes": 2,
     "all_red_hands": 2,
     "max_charms_held": 5,
-    "steel_seen": 0,
-    "max_prism": 1.0,
-    "sells_one_shop_max": 0,
-    "dice_added": 10
+    "steel_seen": 1,
+    "max_prism": 5.5,
+    "sells_one_shop_max": 1,
+    "dice_added": 13
   },
   "run": {
     "discards_by_color": {},
     "shop_sells": 0,
-    "rerolls_this_blind": 13,
-    "charms_at_blind_start": 0
+    "rerolls_this_blind": 2,
+    "charms_at_blind_start": 5
   },
   "new_this_run": [
-    "road_work"
+    "draw_four",
+    "last_call"
   ],
   "unlock_all": false
 }

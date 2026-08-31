@@ -15,6 +15,7 @@ import random
 from states.base import State
 from constants import *
 from utils import tint_image, resource_path, draw_rounded_element
+from screens import draw_table_felt, draw_gold_plaque, draw_custom_button, TABLE_GOLD, TABLE_PLAQUE
 from d20_boon import BASE_COLORS, D20_TIERS, tier_for_roll
 
 
@@ -161,8 +162,8 @@ class D20RollState(State):
         self.game.state_machine.change_state(BlindsState(self.game))
 
     def draw(self):
-        self.game.screen.fill(THEME['background'])
-        title = self.font.render("Intensify Blind", True, THEME['text'])
+        draw_table_felt(self.game)
+        title = self.font.render("Intensify Blind", True, TABLE_GOLD)
         self.game.screen.blit(title, (self.game.width // 2 - title.get_width() // 2, 16))
 
         sub = self.small_font.render(f"{self.game.current_blind}  ·  Stake {self.game.current_stake}", True, THEME['highlight'])
@@ -200,74 +201,64 @@ class D20RollState(State):
             rgb = COLORS.get(color, (200, 200, 200))
             draw_rounded_element(self.game.screen, rect, rgb, border_color=(0, 0, 0), border_width=2, radius=12)
             if self.selected_fusion == color:
-                pygame.draw.rect(self.game.screen, THEME['highlight'], rect.inflate(10, 10), 3, border_radius=14)
+                pygame.draw.rect(self.game.screen, TABLE_GOLD, rect.inflate(10, 10), 3, border_radius=14)
             elif rect.collidepoint(mouse):
                 pygame.draw.rect(self.game.screen, (255, 255, 255), rect.inflate(6, 6), 2, border_radius=14)
             label = self.tiny_font.render(color, True, THEME['text'])
             self.game.screen.blit(label, (rect.centerx - label.get_width() // 2, rect.bottom + 6))
 
         # Skip
-        self.skip_rect = pygame.Rect(self.game.width // 2 - 110, 330, 220, 44)
-        skip_bg = (70, 70, 70) if self.selected_fusion is False else (50, 50, 50)
-        if self.skip_rect.collidepoint(mouse):
-            skip_bg = (90, 90, 90)
-        draw_rounded_element(self.game.screen, self.skip_rect, skip_bg, radius=8)
-        skip_txt = self.small_font.render("Skip Fusion", True, THEME['text'])
-        self.game.screen.blit(skip_txt, (self.skip_rect.centerx - skip_txt.get_width() // 2,
-                                         self.skip_rect.centery - skip_txt.get_height() // 2))
+        self.skip_rect = pygame.Rect(self.game.width // 2 - 110, 318, 220, 42)
+        draw_custom_button(self.game, self.skip_rect, "Skip Fusion",
+                           is_hover=self.skip_rect.collidepoint(mouse),
+                           fill_color=(70, 70, 70) if self.selected_fusion is False else None)
         if self.selected_fusion is False:
-            pygame.draw.rect(self.game.screen, THEME['highlight'], self.skip_rect, 2, border_radius=8)
+            pygame.draw.rect(self.game.screen, TABLE_GOLD, self.skip_rect, 2, border_radius=10)
 
         ready = self.selected_fusion is False or isinstance(self.selected_fusion, str)
-        btn_y = 390
-        self.cancel_rect = pygame.Rect(self.game.width // 2 - 230, btn_y, 210, 50)
+        btn_y = 372
+        self.cancel_rect = pygame.Rect(self.game.width // 2 - 230, btn_y, 210, 48)
         self.back_rect = self.cancel_rect
-        self.roll_rect = pygame.Rect(self.game.width // 2 + 20, btn_y, 210, 50)
+        self.roll_rect = pygame.Rect(self.game.width // 2 + 20, btn_y, 210, 48)
 
-        cancel_bg = THEME['no_button']
-        if self.cancel_rect.collidepoint(mouse):
-            cancel_bg = (180, 30, 30)
-        draw_rounded_element(self.game.screen, self.cancel_rect, cancel_bg, radius=8)
-        cancel_txt = self.small_font.render("Cancel Intensify", True, THEME['text'])
-        self.game.screen.blit(cancel_txt, (self.cancel_rect.centerx - cancel_txt.get_width() // 2,
-                                           self.cancel_rect.centery - cancel_txt.get_height() // 2))
-
-        roll_bg = THEME['yes_button'] if ready else THEME['disabled']
-        draw_rounded_element(self.game.screen, self.roll_rect, roll_bg, radius=8)
+        draw_custom_button(self.game, self.cancel_rect, "Cancel Intensify",
+                           is_hover=self.cancel_rect.collidepoint(mouse), is_red=True)
         roll_label = "Roll d20" if ready else "Pick or Skip"
         if isinstance(self.selected_fusion, str):
             roll_label = f"Roll with {self.selected_fusion}"
-        roll_txt = self.small_font.render(roll_label, True, THEME['text'])
-        self.game.screen.blit(roll_txt, (self.roll_rect.centerx - roll_txt.get_width() // 2,
-                                         self.roll_rect.centery - roll_txt.get_height() // 2))
+        draw_custom_button(self.game, self.roll_rect, roll_label,
+                           is_hover=ready and self.roll_rect.collidepoint(mouse),
+                           fill_color=THEME['yes_button'] if ready else THEME.get('disabled', (80, 80, 80)))
 
         lock_hint = self.tiny_font.render(
-            "Not locked yet — Cancel or ESC returns to Challenges. Rolling the d20 locks the boon.",
+            "Cancel / ESC is free. Rolling the d20 locks this blind's boon.",
             True, THEME['highlight']
         )
-        self.game.screen.blit(lock_hint, (self.game.width // 2 - lock_hint.get_width() // 2, btn_y + 58))
+        self.game.screen.blit(lock_hint, (self.game.width // 2 - lock_hint.get_width() // 2, btn_y + 54))
 
         if isinstance(self.selected_fusion, str):
-            fy = btn_y + 82
+            fy = btn_y + 76
             title = self.tiny_font.render(
-                f"{self.selected_fusion} fusion: T1 exempt · T2 dim · T3 lock · T4 adv · T5 explode",
+                f"{self.selected_fusion}: T1 exempt · T2 dim · T3 lock · T4 adv · T5 explode",
                 True, COLORS.get(self.selected_fusion, THEME['highlight']))
             self.game.screen.blit(title, (self.game.width // 2 - title.get_width() // 2, fy))
 
         self._draw_tier_legend()
 
     def _draw_tier_legend(self):
-        """Bottom-right outcomes; kept off Cancel, Roll, and the color row."""
-        x = self.game.width - 280
-        y = self.game.height - 228
-        header = self.tiny_font.render("Outcomes", True, THEME['highlight'])
-        self.game.screen.blit(header, (x, y))
-        y += 18
+        """Left plaque — stays clear of Cancel / Roll / lock hint."""
+        from screens import draw_gold_plaque
+        x, y = 24, 292
+        plaque = pygame.Rect(x, y, 196, 132)
+        draw_gold_plaque(self.game, plaque, radius=10)
+        header = self.tiny_font.render("Outcomes", True, TABLE_GOLD)
+        self.game.screen.blit(header, (plaque.x + 12, plaque.y + 8))
+        ly = plaque.y + 28
         for tier in D20_TIERS:
             line = f"{tier['min']}-{tier['max']}  {tier['name']}"
             surf = self.tiny_font.render(line, True, THEME['text'])
-            self.game.screen.blit(surf, (x, y))
-            y += 18
+            self.game.screen.blit(surf, (plaque.x + 12, ly))
+            ly += 18
 
     def _draw_die(self):
         tint = (200, 200, 200)

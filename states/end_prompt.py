@@ -59,8 +59,10 @@ class EndPromptState(State):
         # Dynamic button setup using screen dims
         screen_width = self.game.screen.get_width()
         screen_height = self.game.screen.get_height()
-        btn_width, btn_height = 250, 60
-        y_start = screen_height // 2 + 100  # Increased spacing for buttons
+        btn_width, btn_height = 240, 44
+        gap = 12
+        y_start = screen_height - 16 - 8 - btn_height * 2 - gap
+        # Keep both buttons on the felt (above the wood rail).
         self.buttons = {
             'endless': {
                 'rect': pygame.Rect(screen_width // 2 - btn_width // 2, y_start, btn_width, btn_height),
@@ -69,7 +71,7 @@ class EndPromptState(State):
                 'hover_color': (0, 200, 0)
             },
             'menu': {
-                'rect': pygame.Rect(screen_width // 2 - btn_width // 2, y_start + 80, btn_width, btn_height),
+                'rect': pygame.Rect(screen_width // 2 - btn_width // 2, y_start + btn_height + gap, btn_width, btn_height),
                 'text': 'Main Menu',
                 'color': (255, 100, 100),
                 'hover_color': (200, 50, 50)
@@ -112,27 +114,30 @@ class EndPromptState(State):
                             self._to_menu()
 
     def draw(self):
-        surface = self.game.screen  # Use game.screen instead of param to match base.py call
-        screen_height = surface.get_height()  # Dynamic, no constants
-        surface.fill((20, 20, 40))  # Dark bg
-        
-        # Title (top, more space)
-        draw_text_centered(surface, "Victory!", self.font_large, (255, 215, 0), screen_height // 6)
-        draw_text_centered(surface, "You've beaten ChromaRoll!", self.font, (255, 255, 255), screen_height // 6 + 60)
-        
-        # Summary (middle, increased line spacing)
-        y_offset = screen_height // 3
-        for line in self.summary_text:
-            draw_text_centered(surface, line, self.font_small, (200, 200, 200), y_offset)
-            y_offset += 40  # Increased gap to avoid overlap
-        
-        # Prompt (lower middle, more space)
-        draw_text_centered(surface, "Enter Endless Mode?", self.font, (255, 255, 255), y_offset + 60)
-        draw_text_centered(surface, "(Infinite stakes await...)", self.font_small, (150, 150, 150), y_offset + 90)
+        from screens import draw_table_felt, draw_gold_plaque, TABLE_GOLD, draw_custom_button
+        surface = self.game.screen
+        draw_table_felt(self.game)
+        screen_height = surface.get_height()
+        plaque = pygame.Rect(self.game.width // 2 - 300, 36, 600, 280)
+        draw_gold_plaque(self.game, plaque, radius=16)
 
-        # Buttons (bottom, centered)
-        for btn in self.buttons.values():
-            draw_button(surface, btn['rect'], btn['text'], btn['color'], self.font_small)
+        draw_text_centered(surface, "Victory!", self.font_large, TABLE_GOLD, plaque.y + 36)
+        draw_text_centered(surface, "Stake 8 conquered", self.font, (255, 255, 255), plaque.y + 90)
+
+        y_offset = plaque.y + 140
+        for line in self.summary_text[1:]:
+            draw_text_centered(surface, line, self.font_small, (220, 210, 180), y_offset)
+            y_offset += 32
+
+        draw_text_centered(surface, "Enter Endless Mode?", self.font, (255, 255, 255), plaque.bottom + 18)
+        draw_text_centered(surface, "(Infinite stakes await...)", self.font_small, (170, 180, 160), plaque.bottom + 48)
+
+        mouse = pygame.mouse.get_pos()
+        for name, btn in self.buttons.items():
+            is_red = name == 'menu'
+            fill = None if not is_red else None
+            draw_custom_button(self.game, btn['rect'], btn['text'],
+                               is_hover=btn['rect'].collidepoint(mouse), is_red=is_red)
 
     def _to_endless(self):
         self.game.is_endless = True
