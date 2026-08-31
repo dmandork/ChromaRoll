@@ -218,6 +218,13 @@ def save_game(game):
         'd20_roll_result': None,
         'd20_blind_type': None,
         'd20_pre_intensify': _copy(g('_d20_pre_intensify', None)),
+        'run_score': g('run_score', 0),
+        'best_hand_score': g('best_hand_score', 0),
+        'best_hand_type': g('best_hand_type', None),
+        'hand_play_counts': _copy(g('hand_play_counts', {}), {}),
+        'blind_log': _copy(g('blind_log', []), []),
+        'run_started_at': g('run_started_at', None),
+        'beaten_bosses': _list(g('beaten_bosses', [])),
     }
     # Prefer live D20 overlay fields so Window-X during the roll reconstructs this screen.
     cur_obj = None
@@ -400,6 +407,15 @@ def load_game(game):
         game.d20_blind_type = save_data.get('d20_blind_type')
         game._d20_pre_intensify = copy.deepcopy(save_data.get('d20_pre_intensify'))
         game.d20_boon.sync_legacy_flags(game)
+
+        game.run_score = save_data.get('run_score', getattr(game, 'run_score', 0) or 0)
+        game.best_hand_score = save_data.get('best_hand_score', getattr(game, 'best_hand_score', 0) or 0)
+        game.best_hand_type = save_data.get('best_hand_type', getattr(game, 'best_hand_type', None))
+        game.hand_play_counts = copy.deepcopy(save_data.get('hand_play_counts') or getattr(game, 'hand_play_counts', {}) or {})
+        game.blind_log = copy.deepcopy(save_data.get('blind_log') or [])
+        game.run_started_at = save_data.get('run_started_at') or getattr(game, 'run_started_at', None)
+        game.beaten_bosses = list(save_data.get('beaten_bosses') or [])
+        game._runlog_written = False
 
         if hasattr(game, 'apply_boss_face_shuffle'):
             game.apply_boss_face_shuffle()

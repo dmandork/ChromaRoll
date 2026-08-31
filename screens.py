@@ -67,6 +67,15 @@ def draw_gold_plaque(game, rect, fill=None, radius=12):
     return inner
 
 
+def draw_dim_overlay(game, alpha=150):
+    try:
+        shade = pygame.Surface((game.width, game.height), pygame.SRCALPHA)
+        shade.fill((0, 0, 0, alpha))
+        game.screen.blit(shade, (0, 0))
+    except Exception:
+        pass
+
+
 def draw_screen_title(game, title, subtitle=None, y=None):
     y = TABLE_RAIL + 8 if y is None else y
     surf = game.font.render(str(title), True, TABLE_GOLD)
@@ -99,7 +108,7 @@ def draw_dice_spots(game):
     marked = getattr(game, 'discard_selected', []) or []
     locked_idx = getattr(game, 'intensified_locked_die_idx', None)
     for i in range(constants.NUM_DICE_IN_HAND):
-        spot = play_die_slot(game, i).inflate(12, 12)
+        spot = play_die_slot(game, i).inflate(6, 6)
         fill, border, width = (10, 48, 18), TABLE_GOLD, 2
         if i < len(marked) and marked[i]:
             fill, border, width = (70, 22, 22), (220, 60, 60), 3
@@ -142,16 +151,35 @@ def _plaque_preview(game):
     return name, preview, detail
 
 
+def _mod_items(raw):
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        return [str(x).strip() for x in raw if str(x).strip() and str(x).strip() != 'None']
+    s = str(raw).strip()
+    if s.startswith('Modifiers: '):
+        s = s[len('Modifiers: '):]
+    if not s or s == 'None':
+        return []
+    items = []
+    for chunk in s.replace(' + ', ', ').split(','):
+        bit = chunk.strip()
+        if bit and bit != 'None':
+            items.append(bit)
+    return items
+
+
 def draw_score_plaque(game):
-    """Center score plaque: blind, round/target, this-roll preview if submitted."""
+    """Center score plaque: blind, round/target, this-roll preview, all modifiers that fit."""
     gold = TABLE_GOLD
     text = constants.THEME['text']
     muted = (170, 180, 170)
-    w, h = 360, 200
     dice_top = game.height - constants.DIE_SIZE - 100
     band_top = PLAY_CHARM_Y + constants.CHARM_SIZE + 8
+    w = 420
+    h = max(180, min(280, dice_top - band_top - 28))
     x = (game.width - w) // 2
-    y = band_top + max(4, (dice_top - band_top - h) // 2)
+    y = band_top + 6
     rect = pygame.Rect(x, y, w, h)
     draw_rounded_element(game.screen, rect, TABLE_PLAQUE, border_color=gold, border_width=2, radius=12)
     inner = rect.inflate(-10, -10)
@@ -162,12 +190,13 @@ def draw_score_plaque(game):
     def line(font, msg, color, gap=1):
         nonlocal_y = line.y
         if not font or nonlocal_y >= limit:
-            return
+            return False
         surf = font.render(str(msg), True, color)
         if nonlocal_y + surf.get_height() > limit:
-            return
+            return False
         game.screen.blit(surf, (cx - surf.get_width() // 2, nonlocal_y))
         line.y = nonlocal_y + surf.get_height() + gap
+        return True
 
     line.y = inner.y + 6
     blind = getattr(game, 'current_blind', 'Small') or 'Small'
@@ -213,12 +242,23 @@ def draw_score_plaque(game):
             line(game.tiny_font, detail, muted, 1)
     else:
         line(game.tiny_font, "hold dice to preview", muted, 2)
-    mod = getattr(game, 'current_modifier_text', '') or ''
-    if mod.startswith('Modifiers: '):
-        mod = mod[len('Modifiers: '):]
-    if mod and mod != 'None':
-        for wrapped in wrap_text(game.tiny_font, mod, w - 28)[:2]:
-            line(game.tiny_font, wrapped, (210, 200, 150), 1)
+
+    items = _mod_items(pv.get('mod')) or _mod_items(getattr(game, 'current_modifier_text', ''))
+    leftover = 0
+    for i, item in enumerate(items):
+        wrapped = wrap_text(game.tiny_font, item, w - 36) or [item]
+        room = True
+        for piece in wrapped:
+            if not line(game.tiny_font, piece, (210, 200, 150), 1):
+                leftover += len(items) - i
+                room = False
+                break
+        if not room:
+            break
+    if leftover:
+        line(game.tiny_font, f"+{leftover} more  (hover plaque)", muted, 0)
+    game.score_plaque_rect = rect
+    return rect
     return rect
 
 
@@ -297,7 +337,16 @@ def charm_tooltip_text(game, charm, index=None):
     """Name + desc + live values. Never restates the desc as a 'Preview:' line."""
     if not charm:
         return ""
-    parts = [f"{charm.get('name', '?')}: {charm.get('desc', '')}"]
+    desc = charm.get('desc') or ''
+    try:
+        import data as _data
+        for c in getattr(_data, 'CHARMS_POOL', []) or []:
+            if c.get('name') == charm.get('name') and c.get('desc'):
+                desc = c['desc']
+                break
+    except Exception:
+        pass
+    parts = [f"{charm.get('name', '?')}: {desc}"]
     ctype = charm.get('type')
     name = charm.get('name')
     rolls = getattr(game, 'rolls', []) or []
@@ -351,9 +400,13 @@ def charm_tooltip_text(game, charm, index=None):
             mono = len(set(non)) <= 1 if non else False
             wild = sum(1 for die, _ in held_rolls if die.get('color') == 'Rainbow' and mono)
             parts.append(f"This hand: +{charm.get('value', 1) * wild} coins ({wild} wilds)")
-    if ctype == 'coin_per_discard':
-        n = getattr(game, 'discards_left', 0)
-        parts.append(f"If unused: +{charm.get('value', 0) * n} coins ({n} discards)")
+    if ctype == 'coin_per_discard' or ctype == 'coin_gen':
+        n = getattr(game, 'hands_left', 0)
+        parts.append(f"If unused: +{charm.get('value', 0) * n} coins ({n} hands)")
+    if ctype == 'color_mult':
+        col = charm.get('color')
+        n = sum(1 for die, _ in _held_rolls() if die.get('color') == col)
+        parts.append(f"This hand: +{float(charm.get('value', 0) or 0) * n:.1f} ({n} {col} held)")
     if ctype == 'coin_per_lucky':
         n = getattr(game, 'lucky_triggers', 0)
         if n:
@@ -774,24 +827,34 @@ def draw_game_screen(game):
     draw_table_felt(game)
     draw_dice_spots(game)
     draw_dice(game)
-    if game.broken_dice and game.break_icon:
+    if game.broken_dice and (game.break_icon or getattr(game, 'burn_icon', None)):
         current_time = time.time()
         elapsed = current_time - game.break_effect_start
         if elapsed < game.break_effect_duration:
-            alpha = int(255 * (elapsed / game.break_effect_duration))
-            overlay = game.break_icon.copy()
-            overlay.set_alpha(alpha)
+            kinds = getattr(game, 'broken_kinds', None) or {}
+            alpha = int(255 * (1.0 - elapsed / max(0.01, game.break_effect_duration)))
             for idx in game.broken_dice:
                 total_dice_width = constants.NUM_DICE_IN_HAND * (constants.DIE_SIZE + 20) - 20
                 start_x = (game.width - total_dice_width) // 2
                 x = start_x + idx * (constants.DIE_SIZE + 20)
-                size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if game.held[idx] else constants.DIE_SIZE
-                offset = (constants.DIE_SIZE - size) / 2 if game.held[idx] else 0
+                size = constants.DIE_SIZE * constants.HELD_DIE_SCALE if idx < len(game.held) and game.held[idx] else constants.DIE_SIZE
+                offset = (constants.DIE_SIZE - size) / 2 if idx < len(game.held) and game.held[idx] else 0
                 die_rect = pygame.Rect(x + offset, game.height - constants.DIE_SIZE - 100 + offset, size, size)
-                overlay_rect = overlay.get_rect(center=die_rect.center)
-                game.screen.blit(overlay, overlay_rect)
+                kind = kinds.get(idx, 'glass')
+                icon = getattr(game, 'burn_icon', None) if kind == 'burn' else game.break_icon
+                icon = icon or game.break_icon or getattr(game, 'burn_icon', None)
+                if icon:
+                    overlay = icon.copy()
+                    overlay.set_alpha(alpha)
+                    overlay_rect = overlay.get_rect(center=die_rect.center)
+                    if kind == 'burn':
+                        glow = pygame.Surface((die_rect.width + 16, die_rect.height + 16), pygame.SRCALPHA)
+                        pygame.draw.circle(glow, (255, 90, 20, min(160, alpha)), glow.get_rect().center, glow.get_width() // 2)
+                        game.screen.blit(glow, glow.get_rect(center=die_rect.center))
+                    game.screen.blit(overlay, overlay_rect)
         else:
             game.broken_dice = []
+            game.broken_kinds = {}
             game.break_effect_start = 0
 
     bag_rect, tray_rects = bag_geometry(game)
@@ -881,14 +944,16 @@ def draw_game_screen(game):
             die, _ = game.rolls[i]
             desc = ''
             if 'enhancements' in die and die['enhancements']:
-                for enh in die['enhancements']:
+                for enh in visible_enhancements(die):
                     desc += _enh_line(enh) + "\n"
             bonus = die.get('score_bonus', 0)
             if bonus > 0:
                 desc += f"+{bonus} Score Bonus\n"
             if desc:
                 die_rect = game.hand_die_rects[i]
-                draw_tooltip(game, die_rect.x, die_rect.y + die_rect.height + 10, desc.strip())
+                nlines = desc.strip().count('\n') + 1
+                tip_h = 18 + nlines * 16
+                draw_tooltip(game, die_rect.x, die_rect.y - tip_h - 8, desc.strip())
 
     if game.hovered_bag_die is not None:
         j = game.hovered_bag_die
@@ -896,7 +961,7 @@ def draw_game_screen(game):
         if die and j < len(getattr(game, 'bag_die_rects', []) or []):
             desc = ''
             if 'enhancements' in die and die['enhancements']:
-                for enh in die['enhancements']:
+                for enh in visible_enhancements(die):
                     desc += _enh_line(enh) + "\n"
             bonus = die.get('score_bonus', 0)
             if bonus > 0:
@@ -909,6 +974,14 @@ def draw_game_screen(game):
         draw_tooltip(game, charm_hover[0], charm_hover[1], charm_hover[2])
     if tray_hover:
         draw_tooltip(game, tray_hover[0], tray_hover[1], tray_hover[2])
+    plaque = getattr(game, 'score_plaque_rect', None)
+    if (plaque and plaque.collidepoint(mouse_pos) and not charm_hover
+            and getattr(game, 'hovered_hand_die', None) is None
+            and getattr(game, 'hovered_bag_die', None) is None):
+        pv = getattr(game, 'score_preview', None) or {}
+        items = _mod_items(pv.get('mod')) or _mod_items(getattr(game, 'current_modifier_text', ''))
+        if items:
+            draw_tooltip(game, plaque.x, plaque.bottom + 6, "\n".join(items[:12]))
 
 def draw_shop_screen(game, skip_tooltips=False):
     """Draws the shop screen with equipped charms (sell), equipped charms (buy), and Prism Packs."""
@@ -1281,7 +1354,7 @@ def draw_blinds_screen(game):
     mouse_pos = pygame.mouse.get_pos()
     game.screen.fill(constants.THEME['background'])
     if game.upcoming_boss_effect is None:
-        game.upcoming_boss_effect = data.pick_boss_effect(getattr(game, 'current_stake', 1))
+        game.upcoming_boss_effect = data.pick_boss_for_game(game)
     if hasattr(game, 'update_advantage_flag'):
         game.update_advantage_flag()
 
@@ -1917,7 +1990,7 @@ ENH_MARKS = {
     'Steel':     {'letter': 'S', 'rgb': (190, 195, 205), 'rim': (210, 210, 220)},
     'Fragile':   {'letter': 'F', 'rgb': (230, 70, 70),   'rim': (210, 40, 40)},
     'Strength':  {'letter': '^', 'rgb': (80, 130, 240),  'rim': (60, 100, 220)},
-    'Stone':     {'letter': 'O', 'rgb': (150, 140, 120), 'rim': (120, 110, 90)},
+    'Stone':     {'letter': '#', 'rgb': (150, 140, 120), 'rim': (120, 110, 90)},
     'Fate':      {'letter': 'E', 'rgb': (220, 90, 220),  'rim': (190, 50, 200)},
     'Foil':      {'letter': '*', 'rgb': (240, 215, 80),  'rim': (255, 220, 70)},
     'Holo':      {'letter': 'H', 'rgb': (120, 210, 255), 'rim': (80, 180, 255)},
@@ -1926,11 +1999,14 @@ ENH_MARKS = {
     'Gold':      {'letter': '$', 'rgb': (230, 185, 40),  'rim': (210, 165, 30)},
     'Silver':    {'letter': 's', 'rgb': (210, 210, 220), 'rim': (190, 190, 200)},
 }
-_ENH_SKIP = {'Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild'}
+_ENH_SKIP = {'Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild', 'Transmute'}
 
 
 def visible_enhancements(die):
-    return [e for e in (die.get('enhancements') or []) if e not in _ENH_SKIP]
+    marks = [e for e in (die.get('enhancements') or []) if e not in _ENH_SKIP]
+    if die.get('color') == 'Glass':
+        marks = [e for e in marks if e != 'Steel']
+    return marks
 
 
 def enhancement_label(die):
@@ -1947,21 +2023,24 @@ def draw_die_pips(game, rect, value):
 
 
 def draw_enhancement_visuals(game, die_rect, die):
-    """Rim + letter chips. Scales down on bag dice. Skips color-only tags."""
+    """Letter chips on big dice; color stripes on bag dice. No full-die rim."""
     marks = visible_enhancements(die)
     if not marks:
         return
-    priority = ('Fragile', 'Steel', 'Lucky', 'Stone', 'Mult', 'Strength', 'Bonus')
-    rim_enh = next((m for m in priority if m in marks), marks[0])
-    spec = ENH_MARKS.get(rim_enh, {'rim': TABLE_GOLD, 'letter': '?', 'rgb': TABLE_GOLD})
-    rim_w = 2 if die_rect.width < 36 else 3
-    inner = die_rect.inflate(-4, -4)
-    pygame.draw.rect(game.screen, spec['rim'], inner, rim_w, border_radius=max(3, die_rect.width // 8))
-    if die_rect.width < 26:
-        # Bag-size: one corner pip, no letters
-        pip = pygame.Rect(die_rect.right - 8, die_rect.y + 2, 6, 6)
-        pygame.draw.rect(game.screen, spec['rgb'], pip, border_radius=2)
-        pygame.draw.rect(game.screen, (20, 20, 20), pip, 1, border_radius=2)
+    if die_rect.width < 36:
+        n = min(4, len(marks))
+        gap = 1
+        stripe_h = 4 if die_rect.width >= 22 else 3
+        usable = die_rect.width - 4 - gap * (n - 1)
+        sw = max(3, usable // n)
+        x = die_rect.x + 2
+        y = die_rect.bottom - stripe_h - 1
+        for enh in marks[:n]:
+            rgb = ENH_MARKS.get(enh, {}).get('rgb', (230, 230, 230))
+            r = pygame.Rect(x, y, sw, stripe_h)
+            pygame.draw.rect(game.screen, rgb, r)
+            pygame.draw.rect(game.screen, (20, 16, 8), r, 1)
+            x += sw + gap
         return
     chip = max(12, min(18, die_rect.width // 5))
     font = getattr(game, 'tiny_font', None)
@@ -1977,13 +2056,16 @@ def draw_enhancement_visuals(game, die_rect, die):
             game.screen.blit(glyph, (r.centerx - glyph.get_width() // 2,
                                      r.centery - glyph.get_height() // 2))
         x += chip + 3
+        if x + chip > die_rect.right - 2:
+            x = die_rect.x + 4
+            y += chip + 3
 
 
 def draw_bag_enhancement_visuals(game, die_rect, die):
     draw_enhancement_visuals(game, die_rect, die)
 
 
-def draw_select_die(game, rect, die, selected=False, label=True):
+def draw_select_die(game, rect, die, selected=False, label=True, order=None):
     """Full die for rune pick screens: color, pips, enhancement chips, name under."""
     color = die.get('color') or 'Red'
     if color == 'Rainbow':
@@ -2006,6 +2088,12 @@ def draw_select_die(game, rect, die, selected=False, label=True):
         tag = enhancement_label(die) or color
         surf = game.tiny_font.render(tag[:18], True, TABLE_GOLD if enhs else constants.THEME['text'])
         game.screen.blit(surf, (rect.centerx - surf.get_width() // 2, rect.bottom + 4))
+    if order:
+        cx, cy = rect.right - 2, rect.top + 2
+        pygame.draw.circle(game.screen, (20, 40, 24), (cx, cy), 12)
+        pygame.draw.circle(game.screen, TABLE_GOLD, (cx, cy), 12, 2)
+        n = game.small_font.render(str(int(order)), True, TABLE_GOLD)
+        game.screen.blit(n, n.get_rect(center=(cx, cy)))
     return enhancement_label(die)
 
 
@@ -2317,10 +2405,8 @@ def draw_tooltip(game, x, y, text):
 
 
 def draw_pause_menu(game):
-    """Draws the pause popup with options: Main Menu, Quit, Return."""
-    overlay = pygame.Surface((game.width, game.height), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 150))
-    game.screen.blit(overlay, (0, 0))
+    """Pause plaque over the live table. Options: Return, Achievements, Main Menu, Quit."""
+    draw_dim_overlay(game, 150)
 
     popup_x = (game.width - constants.POPUP_WIDTH) // 2
     popup_h = 400
@@ -2337,23 +2423,20 @@ def draw_pause_menu(game):
         is_red = opt == 'Quit'
         draw_custom_button(game, rect, opt, is_hover=rect.collidepoint(mouse_pos), is_red=is_red)
 
-    # Mute button (position INSIDE the popup, e.g., bottom-right corner of popup)
-    game.mute_button_rect = pygame.Rect(popup_x + constants.POPUP_WIDTH - 60, popup_y + popup_h - 60, 40, 40)  # Adjusted: Inside popup with padding
-    icon = game.speaker_on_icon if not game.mute else game.speaker_off_icon  # Toggles based on state
+    game.mute_button_rect = pygame.Rect(popup_x + constants.POPUP_WIDTH - 60, popup_y + popup_h - 60, 40, 40)
+    icon = game.speaker_on_icon if not game.mute else game.speaker_off_icon
+    pygame.draw.rect(game.screen, TABLE_PLAQUE, game.mute_button_rect, border_radius=8)
+    pygame.draw.rect(game.screen, TABLE_GOLD, game.mute_button_rect, 2, border_radius=8)
     if icon:
         game.screen.blit(icon, game.mute_button_rect.topleft)
     else:
-        # Text fallback (single button that changes label)
-        pygame.draw.rect(game.screen, constants.THEME['button_bg'], game.mute_button_rect)
-        label = "Mute" if not game.mute else "Unmute"  # Toggles text
-        text = game.tiny_font.render(label, True, constants.THEME['text'])
-        game.screen.blit(text, (game.mute_button_rect.centerx - text.get_width() // 2, game.mute_button_rect.centery - text.get_height() // 2))
+        label = "Mute" if not game.mute else "Unmute"
+        text = game.tiny_font.render(label, True, TABLE_GOLD)
+        game.screen.blit(text, (game.mute_button_rect.centerx - text.get_width() // 2,
+                                game.mute_button_rect.centery - text.get_height() // 2))
+    if game.mute_button_rect.collidepoint(mouse_pos):
+        pygame.draw.rect(game.screen, (255, 230, 120), game.mute_button_rect, 2, border_radius=8)
 
-    # Optional: Hover effect (subtle glow)
-    if game.mute_button_rect.collidepoint(pygame.mouse.get_pos()):
-        pygame.draw.rect(game.screen, constants.THEME['button_hover'], game.mute_button_rect, border_radius=5, width=2)  # Border glow
-
-    # Return the rects for handle_event
     return button_rects, game.mute_button_rect
 
 def draw_popup(game):
@@ -2436,29 +2519,27 @@ def draw_popup(game):
                        fill_color=constants.THEME.get('yes_button', (0, 150, 0)))
     return continue_rect
 
-def draw_instruction_popup(game, message):
-        if message is None:
-            return None  # Skip drawing if no message
-        """Draws a simple instruction popup with Cancel button."""
-        popup_width = 300  # Smaller for instructions
-        popup_height = 150
-        popup_rect = pygame.Rect(game.width // 2 - popup_width // 2, game.height // 2 - popup_height // 2, popup_width, popup_height)
-        pygame.draw.rect(game.screen, (100, 100, 100), popup_rect)
-        pygame.draw.rect(game.screen, (255, 255, 255), popup_rect, 3)  # White border
-
-        # Render message (wrap if long)
-        lines = wrap_text(game.tiny_font, message, popup_width - 40)  # Use utils.wrap_text
-        for i, line in enumerate(lines):
-            text = game.tiny_font.render(line, True, (constants.THEME['text']))
-            game.screen.blit(text, (popup_rect.x + 20, popup_rect.y + 20 + i * 25))
-
-        # Cancel button
-        cancel_rect = pygame.Rect(popup_rect.x + (popup_width - constants.BUTTON_WIDTH) // 2, popup_rect.y + popup_height - 60, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
-        pygame.draw.rect(game.screen, (100, 100, 100), cancel_rect)
-        cancel_text = game.tiny_font.render("Cancel", True, (constants.THEME['text']))
-        game.screen.blit(cancel_text, (cancel_rect.x + (constants.BUTTON_WIDTH - cancel_text.get_width()) // 2, cancel_rect.y + 10))
-
-        return cancel_rect
+def draw_instruction_popup(game, message, button_label="OK"):
+    if message is None:
+        return None
+    popup_width, popup_height = 420, 180
+    popup_rect = pygame.Rect(game.width // 2 - popup_width // 2,
+                             game.height // 2 - popup_height // 2,
+                             popup_width, popup_height)
+    draw_dim_overlay(game, 120)
+    draw_gold_plaque(game, popup_rect, radius=14)
+    lines = wrap_text(game.small_font, str(message), popup_width - 48)
+    y = popup_rect.y + 22
+    for line in lines[:4]:
+        text = game.small_font.render(line, True, constants.THEME['text'])
+        game.screen.blit(text, (popup_rect.centerx - text.get_width() // 2, y))
+        y += text.get_height() + 4
+    cancel_rect = pygame.Rect(popup_rect.x + (popup_width - constants.BUTTON_WIDTH) // 2,
+                              popup_rect.bottom - 62,
+                              constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
+    draw_custom_button(game, cancel_rect, button_label or "OK",
+                       is_hover=cancel_rect.collidepoint(pygame.mouse.get_pos()), is_red=True)
+    return cancel_rect
 
 def draw_buttons(game):
     """Draws the action buttons; in debug, add Score button; add Discard in discard phase."""
@@ -2627,41 +2708,55 @@ def draw_pack_select_screen(game):
     game.screen.blit(title_text, (game.width // 2 - title_text.get_width() // 2, 50))
 
     # Display hand type choices (from data.HAND_TYPES or game.pack_choices)
-    visible_count = len(game.pack_choices)  # Assuming pack_choices is list of hand types
-    box_size = 150  # Adjust for fit
+    visible_count = max(1, len(game.pack_choices))
+    box_size = 150
     spacing = 20
     start_x = (game.width - (visible_count * box_size + (visible_count - 1) * spacing)) // 2
-    y = 150
+    y = 120
 
     choice_rects = []
+    boost = float(getattr(constants, 'PACK_BOOST', 0.5) or 0.5)
     for i, hand_type in enumerate(game.pack_choices):
         x = start_x + i * (box_size + spacing)
         rect = pygame.Rect(x, y, box_size, box_size)
-        
-        # Draw rounded box (themed)
-        fill_color = TABLE_PLAQUE
-        draw_rounded_element(game.screen, rect, fill_color, border_color=TABLE_GOLD, border_width=2, radius=16)
-        pygame.draw.rect(game.screen, TABLE_GOLD, rect.inflate(-8, -8), 1, border_radius=12)
-        
-        # Hand type name
-        name_text = game.small_font.render(hand_type, True, constants.THEME['text'])
-        game.screen.blit(name_text, (x + (box_size - name_text.get_width()) // 2, y + 10))
-        
-        # Description (stub; adjust based on your code)
-        desc = f"Boost {hand_type} by {constants.PACK_BOOST}x"
+        draw_rounded_element(game.screen, rect, TABLE_PLAQUE, border_color=TABLE_GOLD, border_width=2, radius=16)
+        name_lines = wrap_text(game.small_font, str(hand_type), box_size - 16) or [str(hand_type)]
+        line_y = y + 16
+        for line in name_lines[:2]:
+            name_text = game.small_font.render(line, True, constants.THEME['text'])
+            game.screen.blit(name_text, (x + (box_size - name_text.get_width()) // 2, line_y))
+            line_y += name_text.get_height() + 2
+        desc = f"Boost by {boost:g}x"
         desc_lines = wrap_text(game.tiny_font, desc, box_size - 20)
-        line_y = y + 40
+        line_y += 8
         for line in desc_lines:
-            desc_text = game.tiny_font.render(line, True, constants.THEME['text'])
-            game.screen.blit(desc_text, (x + 10, line_y))
+            desc_text = game.tiny_font.render(line, True, TABLE_GOLD)
+            game.screen.blit(desc_text, (x + (box_size - desc_text.get_width()) // 2, line_y))
             line_y += game.tiny_font.get_height()
+        choice_rects.append(rect)
 
-        # Tooltip on hover
-        tooltip_text = f"{hand_type}: {desc}"  # Or more detailed
-        if rect.collidepoint(mouse_pos):
-            draw_tooltip(game, rect.x, rect.y + rect.height + 5, tooltip_text)
-
-        choice_rects.append(rect)  # Return rects for click handling (associate with index or hand_type)
+    # Live paytable so you can see current hand multipliers
+    mults = getattr(game, 'hand_multipliers', None) or {}
+    hands = list(getattr(data, 'HAND_TYPES', []) or [])
+    if not hands:
+        hands = list(mults.keys())
+    row_h = 20
+    panel_w = 220
+    panel_h = 28 + row_h * max(1, len(hands)) + 10
+    panel = pygame.Rect(game.width - panel_w - 24, 100, panel_w, min(panel_h, game.height - 160))
+    draw_gold_plaque(game, panel, fill=TABLE_PLAQUE, radius=10)
+    hdr = game.tiny_font.render("PAYTABLE", True, TABLE_GOLD)
+    game.screen.blit(hdr, (panel.x + 12, panel.y + 8))
+    py = panel.y + 28
+    offered = set(game.pack_choices or [])
+    for ht in hands:
+        if py + row_h > panel.bottom - 6:
+            break
+        m = float(mults.get(ht, 1.0) or 1.0)
+        col = TABLE_GOLD if ht in offered else constants.THEME['text']
+        line = game.tiny_font.render(f"{ht}: x{m:.1f}", True, col)
+        game.screen.blit(line, (panel.x + 12, py))
+        py += row_h
 
     skip_rect = pygame.Rect(game.width // 2 - constants.BUTTON_WIDTH // 2,
                             game.height - constants.BUTTON_HEIGHT - TABLE_RAIL - 16,
@@ -2808,57 +2903,120 @@ def draw_achievements_screen(game, tab='quests', scroll_y=0, debug=False):
     return back_rect, {'quests': quests_tab, 'charms': charms_tab}, debug_rects, scroll_y
 
 def draw_confirm_sell_popup(game):
-    """Draws the confirm sell popup with wrapped and centered text."""
-    popup_width = 340
-    popup_height = 170
-    popup_rect = pygame.Rect(game.width // 2 - popup_width // 2, game.height // 2 - popup_height // 2, popup_width, popup_height)
+    """Sell confirm plaque over the shop table."""
+    draw_dim_overlay(game, 130)
+    popup_width, popup_height = 400, 210
+    popup_rect = pygame.Rect(game.width // 2 - popup_width // 2,
+                             game.height // 2 - popup_height // 2,
+                             popup_width, popup_height)
     draw_gold_plaque(game, popup_rect, radius=14)
-
-    # Message with wrapping and centering
-    message = "Are you sure you want to sell this charm?"
-    max_text_width = popup_width - 40  # Padding on sides
-    wrapped_lines = wrap_text(game.small_font, message, max_text_width)  # Use your utils function
-
-    y_offset = popup_rect.y + 20  # Start y for text
-    for line in wrapped_lines:
-        line_text = game.small_font.render(line, True, constants.THEME['text'])
-        text_width = line_text.get_width()
-        x_centered = popup_rect.x + (popup_width - text_width) // 2
-        game.screen.blit(line_text, (x_centered, y_offset))
-        y_offset += line_text.get_height() + 5  # Line spacing
-
-    # Yes/No buttons (unchanged)
-    yes_rect = pygame.Rect(popup_rect.x + 40, popup_rect.y + popup_height - 58, 110, 40)
-    draw_custom_button(game, yes_rect, "Yes",
+    idx = getattr(game, 'confirm_sell_index', None)
+    name = "this charm"
+    if isinstance(idx, int) and 0 <= idx < len(getattr(game, 'equipped_charms', []) or []):
+        name = game.equipped_charms[idx].get('name', name)
+    title = game.small_font.render("Sell charm?", True, TABLE_GOLD)
+    game.screen.blit(title, (popup_rect.centerx - title.get_width() // 2, popup_rect.y + 22))
+    for i, line in enumerate(wrap_text(game.tiny_font, name, popup_width - 48)[:2]):
+        surf = game.tiny_font.render(line, True, constants.THEME['text'])
+        game.screen.blit(surf, (popup_rect.centerx - surf.get_width() // 2, popup_rect.y + 56 + i * 18))
+    yes_rect = pygame.Rect(popup_rect.x + 40, popup_rect.bottom - 62, 130, 44)
+    draw_custom_button(game, yes_rect, "Sell",
                        is_hover=yes_rect.collidepoint(pygame.mouse.get_pos()),
                        fill_color=constants.THEME.get('yes_button', (0, 150, 0)))
-
-    no_rect = pygame.Rect(popup_rect.x + popup_width - 150, popup_rect.y + popup_height - 58, 110, 40)
-    draw_custom_button(game, no_rect, "No",
+    no_rect = pygame.Rect(popup_rect.right - 170, popup_rect.bottom - 62, 130, 44)
+    draw_custom_button(game, no_rect, "Keep",
                        is_hover=no_rect.collidepoint(pygame.mouse.get_pos()), is_red=True)
-
     return yes_rect, no_rect
 
-def draw_game_over_screen(game):
-    """Draws the game over screen."""
-    draw_table_felt(game)
-    plaque = pygame.Rect(game.width // 2 - 280, 70, 560, 320)
+def draw_run_recap(game, rec, title, title_rgb, subtitle=None, button_label=None, reserve_bottom=0):
+    """Two-column run stats plaque. Button sits *below* the plaque. Returns button rect or None."""
+    rec = rec or {}
+    try:
+        import runlog
+        rows = runlog.finish_rows(rec)
+    except Exception:
+        rows = []
+    label_font = game.tiny_font
+    value_font = game.tiny_font
+    plaque = pygame.Rect(game.width // 2 - 340, 16, 680, 440)
+    # Shrink if the window is the 600p default so the button stays on felt.
+    max_bottom = game.height - TABLE_RAIL - (constants.BUTTON_HEIGHT + 20 if button_label else 8) - int(reserve_bottom or 0)
+    if plaque.bottom > max_bottom:
+        plaque.height = max(280, max_bottom - plaque.y)
     draw_gold_plaque(game, plaque, radius=16)
-    title_text = game.font.render("Game Over", True, (220, 70, 70))
-    game.screen.blit(title_text, (game.width // 2 - title_text.get_width() // 2, plaque.y + 24))
+    cx = plaque.centerx
+    y = plaque.y + 16
+    title_s = game.font.render(str(title), True, title_rgb)
+    game.screen.blit(title_s, (cx - title_s.get_width() // 2, y))
+    y += title_s.get_height() + 4
+    if subtitle:
+        sub = game.small_font.render(str(subtitle), True, constants.THEME['text'])
+        game.screen.blit(sub, (cx - sub.get_width() // 2, y))
+        y += sub.get_height() + 6
+    stake = rec.get('stake', getattr(game, 'current_stake', 0))
+    blind = rec.get('blind') or ''
+    head = game.tiny_font.render(f"Stake {stake}   ·   {blind}", True, TABLE_GOLD)
+    game.screen.blit(head, (cx - head.get_width() // 2, y))
+    y += head.get_height() + 2
+    coins = rec.get('coins', getattr(game, 'coins', 0))
+    blind_sc = rec.get('last_blind_score', getattr(game, 'round_score', 0))
+    meta = game.tiny_font.render(
+        f"Blind  {_comma_local(blind_sc)}     Coins  {_format_coins(coins)}", True, (210, 200, 160))
+    game.screen.blit(meta, (cx - meta.get_width() // 2, y))
+    y += meta.get_height() + 8
+    rule = pygame.Rect(plaque.x + 36, y, plaque.width - 72, 1)
+    pygame.draw.rect(game.screen, TABLE_GOLD, rule)
+    y += 10
 
-    score_text = game.small_font.render(f"Final Score: {game.round_score}", True, (constants.THEME['text']))
-    game.screen.blit(score_text, (game.width // 2 - score_text.get_width() // 2, plaque.y + 90))
-    coins_text = game.small_font.render(f"Coins: {_format_coins(game.coins)}", True, TABLE_GOLD)
-    game.screen.blit(coins_text, (game.width // 2 - coins_text.get_width() // 2, plaque.y + 130))
-    stake_text = game.small_font.render(f"Reached Stake: {game.current_stake}", True, (constants.THEME['text']))
-    game.screen.blit(stake_text, (game.width // 2 - stake_text.get_width() // 2, plaque.y + 170))
+    label_x = plaque.x + 40
+    value_x = plaque.x + 150
+    value_w = plaque.right - 40 - value_x
+    row_limit = plaque.bottom - 16
+    for label, value in rows:
+        if y > row_limit - 16:
+            break
+        lab = label_font.render(str(label).upper(), True, TABLE_GOLD)
+        game.screen.blit(lab, (label_x, y + 2))
+        chunks = wrap_text(value_font, " · ".join(str(v) for v in value) if isinstance(value, (list, tuple)) else str(value), value_w) or [str(value)]
+        for chunk in chunks:
+            if y > row_limit - 14:
+                break
+            surf = value_font.render(str(chunk), True, (230, 220, 190))
+            game.screen.blit(surf, (value_x, y))
+            y += surf.get_height() + 2
+        y += 6
 
-    restart_rect = pygame.Rect(game.width // 2 - constants.BUTTON_WIDTH // 2, plaque.bottom - 70, constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
-    draw_custom_button(game, restart_rect, "Main Menu",
-                       is_hover=restart_rect.collidepoint(pygame.mouse.get_pos()))
-        
-    return restart_rect
+    btn = None
+    if button_label:
+        btn = pygame.Rect(game.width // 2 - constants.BUTTON_WIDTH // 2,
+                          min(plaque.bottom + 10, game.height - TABLE_RAIL - constants.BUTTON_HEIGHT - 8),
+                          constants.BUTTON_WIDTH, constants.BUTTON_HEIGHT)
+        draw_custom_button(game, btn, button_label,
+                           is_hover=btn.collidepoint(pygame.mouse.get_pos()))
+    return btn, plaque
+
+
+def _comma_local(n):
+    try:
+        return f"{int(n):,}"
+    except (TypeError, ValueError):
+        return str(n)
+
+
+def draw_game_over_screen(game):
+    """Game over plaque with run stats. Button sits below the plaque."""
+    draw_table_felt(game)
+    rec = getattr(game, 'last_run_record', None)
+    if rec is None:
+        try:
+            import runlog
+            rec = runlog.build_run_record(game, 'loss')
+            game.last_run_record = rec
+        except Exception:
+            rec = {}
+    btn, _plaque = draw_run_recap(game, rec, "Game Over", (220, 70, 70), button_label="Main Menu")
+    return btn
+
 
 def draw_dice_select_screen(game):
     """Draws the dice selection screen for choosing a die from pack."""

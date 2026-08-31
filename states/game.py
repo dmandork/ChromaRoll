@@ -249,20 +249,8 @@ class GameState(State):
             self.debug_rects = []
         else:
             self.reroll_rect, self.discard_rect, self.start_roll_rect, self.score_rect, self.end_turn_rect = draw_buttons(self.game)
-            self.debug_rects = draw_play_debug_bar(self.game) if DEBUG else []
+            self.debug_rects = draw_play_debug_bar(self.game) if constants.DEBUG else []
 
-        # Tooltip hover checks (after all draws)
-        mouse_pos = pygame.mouse.get_pos()
-        for i, die_rect in enumerate(self.game.hand_die_rects or []):
-            if i < len(self.game.rolls) and die_rect.collidepoint(mouse_pos):
-                die, _ = self.game.rolls[i]
-                non_color_enh = [e for e in die.get('enhancements', []) if e not in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild']]
-                if non_color_enh:  # Only show if has non-color enh
-                    enh_desc = ', '.join(ENH_DESC.get(e, e) for e in non_color_enh)
-                    draw_tooltip(self.game, die_rect.x, die_rect.y + die_rect.height + 10, enh_desc or "No enhancements")
-
-        # After for i, die_rect in enumerate(self.game.hand_die_rects or []): ...
-        # NEW: Draw arrows if active
         # NEW: Draw arrows if active
         if self.game.buy_boon_target_index != -1:
             if self.game.buy_boon_up_rect:
@@ -294,15 +282,6 @@ class GameState(State):
             text_x = self.game.disadvantage_confirm_rect.x + (self.game.disadvantage_confirm_rect.width - confirm_text.get_width()) // 2
             text_y = self.game.disadvantage_confirm_rect.y + (self.game.disadvantage_confirm_rect.height - confirm_text.get_height()) // 2
             self.game.screen.blit(confirm_text, (text_x, text_y))
-
-        for i, small_rect in enumerate(self.game.bag_die_rects or []):
-            die = bag_die_at(self.game, i)
-            if die is None or not small_rect.collidepoint(mouse_pos):
-                continue
-            non_color_enh = [e for e in die.get('enhancements', []) if e not in ['Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Wild']]
-            if non_color_enh:
-                enh_desc = ', '.join(ENH_DESC.get(e, e) for e in non_color_enh)
-                draw_tooltip(self.game, small_rect.x, small_rect.y + small_rect.height + 10, enh_desc or "No enhancements")
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
@@ -773,18 +752,8 @@ class GameState(State):
                 if tray_rect is not None and tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
                     from states.rune import RuneUseState  # Lazy import
                     rune = self.game.rune_tray[i]
-                    self.game.state_machine.change_state(RuneUseState(self.game, rune))  # Transition
                     self.game.previous_state = self
-                    # NEW: Rune Recycler - Queue reuse after use (for next shop) - only if not flagged
-                    recycler_active = any(charm['type'] == 'rune_reuse' and idx not in self.game.disabled_charms for idx, charm in enumerate(self.game.equipped_charms))
-                    if recycler_active and not getattr(self.game, '_recycler_used_this_blind', False):  # FIXED: Per blind flag
-                        self.game._recycler_reuse_pending = rune.copy()  # Queue for next shop
-                        self.game._recycler_used_this_blind = True  # FIXED: Blind flag (not shop)
-                        self.game.temp_message = f"Rune Recycler: {rune['name']} queued for reuse in next shop!"
-                        self.game.temp_message_start = time.time()
-                    # FIXED: Skip removal if reused rune (persist for Recycler)
-                    if not getattr(rune, 'reused', False):
-                        self.game.rune_tray[i] = None  # Remove after use
+                    self.game.state_machine.change_state(RuneUseState(self.game, rune, tray_index=i))
                     break
 
         if event.type == pygame.MOUSEMOTION:

@@ -7,7 +7,7 @@ from states.base import State
 from screens import (
     draw_custom_button, draw_tooltip, draw_rounded_element, draw_table_felt,
     draw_gold_plaque, draw_select_die, enhancement_label, _enh_line,
-    TABLE_GOLD, TABLE_PLAQUE,
+    draw_instruction_popup, TABLE_GOLD, TABLE_PLAQUE,
 )
 from utils import wrap_text
 from constants import *  # THEME, CHARM_BOX_WIDTH, CHARM_SPACING, BUTTON_WIDTH, BUTTON_HEIGHT, DIE_SIZE, DOT_RADIUS, COLORS
@@ -19,10 +19,27 @@ def _pack_need(game):
     if n is None:
         n = getattr(game, 'select_count', 1)
     try:
-        n = int(n)
+        return max(1, int(n or 1))
     except (TypeError, ValueError):
-        n = 1
-    return max(1, n)
+        return 1
+
+
+def _is_transmute(rune):
+    return 'Transmute' in ((rune or {}).get('name') or '')
+
+
+def _pick_order(selected, index):
+    if index not in selected:
+        return None
+    return selected.index(index) + 1
+
+
+def _transmute_hint(n):
+    if n <= 0:
+        return "Pick #1 first — that die BECOMES a copy of #2."
+    if n == 1:
+        return "Now pick #2 (the source). #1 will become that die."
+    return "#1 becomes a copy of #2. Apply to confirm."
 
 
 class RuneSelectState(State):
@@ -124,7 +141,10 @@ class RuneSelectState(State):
             for j, die in enumerate(self.random_dice):
                 die_x = die_start_x + j * (DIE_SIZE + 10)
                 die_rect = pygame.Rect(die_x, self.game.height // 2 - 10, DIE_SIZE, DIE_SIZE)
-                draw_select_die(self.game, die_rect, die, selected=(j in self.selected_die_indices))
+                rune = (self.game.pack_choices[self.selected_rune_index]
+                        if 0 <= self.selected_rune_index < len(self.game.pack_choices) else None)
+                order = _pick_order(self.selected_die_indices, j) if _is_transmute(rune) else None
+                draw_select_die(self.game, die_rect, die, selected=(j in self.selected_die_indices), order=order)
                 if die_rect.collidepoint(mouse_pos):
                     self.hover_die_index = j
                 self.die_rects.append(die_rect)
@@ -135,6 +155,11 @@ class RuneSelectState(State):
             draw_custom_button(self.game, self.hold_rect, "Hold Rune", is_hover=self.hold_rect.collidepoint(mouse_pos))
             self.skip_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 + 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
             draw_custom_button(self.game, self.skip_rect, "Skip Pack", is_hover=self.skip_rect.collidepoint(mouse_pos), is_red=True)
+            rune = (self.game.pack_choices[self.selected_rune_index]
+                    if 0 <= self.selected_rune_index < len(self.game.pack_choices) else None)
+            if _is_transmute(rune):
+                tip = self.game.tiny_font.render(_transmute_hint(len(self.selected_die_indices)), True, TABLE_GOLD)
+                self.game.screen.blit(tip, (self.game.width // 2 - tip.get_width() // 2, self.game.height // 2 + DIE_SIZE + 18))
 
         else:
             # Preview mode: Show updated dice (no runes, no borders, no full screen draw to avoid pull)
@@ -168,6 +193,16 @@ class RuneSelectState(State):
         elif not self.preview_mode and self.hover_die_index != -1:
             die = self.random_dice[self.hover_die_index]
             lines = [f"{die.get('color', '?')} die"]
+            rune = (self.game.pack_choices[self.selected_rune_index]
+                    if 0 <= self.selected_rune_index < len(self.game.pack_choices) else None)
+            ordn = _pick_order(self.selected_die_indices, self.hover_die_index) if _is_transmute(rune) else None
+            if ordn == 1:
+                lines.append("TARGET #1 — this die BECOMES a copy of #2")
+            elif ordn == 2:
+                lines.append("SOURCE #2 — copied onto the first die")
+            elif _is_transmute(rune):
+                n = len(self.selected_die_indices)
+                lines.append("Click to mark as #1 (becomes #2)" if n == 0 else "Click to mark as #2 (source)")
             tag = enhancement_label(die)
             if tag:
                 lines.append(tag)
@@ -188,6 +223,9 @@ class RuneSelectState(State):
                     self.preview_mode = False
                     self.preview_message = ""
                     self.preview_dies = []
+                    self.game.temp_message = None
+                    self.selected_die_indices = []
+                    self.selected_rune_index = -1
                     self.random_dice = random.sample(self.game.bag, min(8, len(self.game.bag)))  # Refresh after preview
                     if self.applied_count >= _pack_need(self.game):
                         from states.shop import resume_shop
@@ -221,14 +259,21 @@ class RuneSelectState(State):
             if self.confirm_rect.collidepoint(mouse_pos) and self.selected_rune_index != -1:
                 rune = self.game.pack_choices[self.selected_rune_index]
                 dies = [self.random_dice[j] for j in self.selected_die_indices]  # Always list
-                self.game.apply_rune_effect(rune, dies)  # Pass list
+                ok = self.game.apply_rune_effect(rune, dies)
+                if ok is False:
+                    self.preview_mode = True
+                    self.preview_dies = []
+                    self.preview_message = self.game.temp_message or "Couldn't apply that rune."
+                    return
                 self.game.pack_choices.pop(self.selected_rune_index)  # Remove used
                 self.selected_rune_index = -1  # Reset after pop to avoid index error
+                self.selected_die_indices = []
                 self.applied_count += 1  # Increment count
                 self.preview_dies = dies  # Store for preview
                 self.preview_mode = True  # Enter preview
-                if len(dies) == 0:
-                    self.preview_message = "Rune applied (no dice affected)!"  # For non-die
+                self.preview_message = getattr(self.game, 'temp_message', None) or (
+                    "Rune applied (no dice affected)!" if len(dies) == 0 else ""
+                )
 
             if self.hold_rect.collidepoint(mouse_pos) and self.selected_rune_index != -1:
                 rune = self.game.pack_choices[self.selected_rune_index]
@@ -272,16 +317,35 @@ class RuneSelectState(State):
                     self.hover_rune_index = i
                     break  # Only one at a time
 
+def rune_sell_payout(rune):
+    if not rune:
+        return 1
+    if rune.get('sell_value') is not None:
+        try:
+            return max(1, int(rune['sell_value']))
+        except (TypeError, ValueError):
+            pass
+    try:
+        cost = int(rune.get('cost') or 4)
+    except (TypeError, ValueError):
+        cost = 4
+    return max(1, cost // 2)
+
+
 class RuneUseState(State):
-    def __init__(self, game, rune):
+    def __init__(self, game, rune, tray_index=None):
         super().__init__(game)
         self.rune = rune  # Single rune to apply
+        self.tray_index = tray_index
         self.selected_die_indices = []  # FIXED: Consistent for selection
         self.max_dice = rune.get('max_dice', 0)
         self.random_dice = []
         self.die_rects = []  # To store for handle_event
         self.confirm_rect = None
         self.cancel_rect = None  # To cancel back
+        self.sell_rect = None
+        self.warn_popup = None
+        self.warn_ok_rect = None
         self.hover = False  # For rune tooltip
         self.low_bag_message = ""  # For bag <8
 
@@ -299,7 +363,10 @@ class RuneUseState(State):
         else:
             print(f"DEBUG: RuneUseState max_dice=0 – no dice needed for {rune['name']}")  # TEMP
 
-        self.temp_message = f"Select up to {self.max_dice} dice for {rune['name']}"
+        self.temp_message = (
+            _transmute_hint(0) if _is_transmute(rune)
+            else f"Select up to {self.max_dice} dice for {rune['name']}"
+        )
         self.game.temp_message = self.temp_message
         self.game.show_instruction_popup = True
 
@@ -308,8 +375,11 @@ class RuneUseState(State):
         mouse_pos = pygame.mouse.get_pos()
         title = self.game.font.render(self.rune.get('name', 'Rune'), True, TABLE_GOLD)
         self.game.screen.blit(title, (self.game.width // 2 - title.get_width() // 2, 16))
-        hint = self.game.tiny_font.render(
-            self.temp_message or f"Select up to {self.max_dice} dice", True, THEME['text'])
+        hint_line = self.temp_message or f"Select up to {self.max_dice} dice"
+        if _is_transmute(self.rune):
+            hint_line = _transmute_hint(len(self.selected_die_indices))
+            self.temp_message = hint_line
+        hint = self.game.tiny_font.render(hint_line, True, THEME['text'])
         self.game.screen.blit(hint, (self.game.width // 2 - hint.get_width() // 2, 62))
 
         rune_rect = pygame.Rect(self.game.width // 2 - CHARM_BOX_WIDTH // 2, 88, CHARM_BOX_WIDTH, CHARM_BOX_HEIGHT)
@@ -335,7 +405,8 @@ class RuneUseState(State):
                 for j, die in enumerate(self.random_dice):
                     die_x = die_start_x + j * (DIE_SIZE + 10)
                     die_rect = pygame.Rect(die_x, self.game.height // 2 + 10, DIE_SIZE, DIE_SIZE)
-                    draw_select_die(self.game, die_rect, die, selected=(j in self.selected_die_indices))
+                    draw_select_die(self.game, die_rect, die, selected=(j in self.selected_die_indices),
+                                    order=_pick_order(self.selected_die_indices, j) if _is_transmute(self.rune) else None)
                     if die_rect.collidepoint(mouse_pos):
                         hover_die = j
                     self.die_rects.append(die_rect)
@@ -348,8 +419,12 @@ class RuneUseState(State):
         draw_custom_button(self.game, self.confirm_rect, "Apply Rune",
                            is_hover=self.confirm_rect.collidepoint(mouse_pos))
         self.cancel_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 - 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
-        draw_custom_button(self.game, self.cancel_rect, "Cancel",
-                           is_hover=self.cancel_rect.collidepoint(mouse_pos), is_red=True)
+        draw_custom_button(self.game, self.cancel_rect, "Keep",
+                           is_hover=self.cancel_rect.collidepoint(mouse_pos))
+        payout = rune_sell_payout(self.rune)
+        self.sell_rect = pygame.Rect(self.game.width//2 - BUTTON_WIDTH//2 + 160, self.game.height - 100, BUTTON_WIDTH, BUTTON_HEIGHT)
+        draw_custom_button(self.game, self.sell_rect, f"Sell ${payout}",
+                           is_hover=self.sell_rect.collidepoint(mouse_pos), is_red=True)
 
         if rune_rect.collidepoint(mouse_pos):
             draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20,
@@ -357,6 +432,14 @@ class RuneUseState(State):
         elif hover_die != -1:
             die = self.random_dice[hover_die]
             lines = [f"{die.get('color', '?')} die"]
+            ordn = _pick_order(self.selected_die_indices, hover_die) if _is_transmute(self.rune) else None
+            if ordn == 1:
+                lines.append("TARGET #1 — this die BECOMES a copy of #2")
+            elif ordn == 2:
+                lines.append("SOURCE #2 — copied onto the first die")
+            elif _is_transmute(self.rune):
+                n = len(self.selected_die_indices)
+                lines.append("Click to mark as #1 (becomes #2)" if n == 0 else "Click to mark as #2 (source)")
             tag = enhancement_label(die)
             if tag:
                 lines.append(tag)
@@ -364,10 +447,50 @@ class RuneUseState(State):
                 lines.append(_enh_line(enh))
             draw_tooltip(self.game, mouse_pos[0], mouse_pos[1] + 20, "\n".join(lines))
 
+        if getattr(self, 'warn_popup', None):
+            self.warn_ok_rect = draw_instruction_popup(self.game, self.warn_popup)
+
     def draw_dots_or_icon(self, die):  # Placeholder – replace with your pip code
         pass
 
+    def _go_back(self):
+        self.game.last_state_was_rune = True
+        previous = self.game.previous_state
+        if previous is None:
+            from states.game import GameState
+            previous = GameState(self.game)
+        self.game.state_machine.change_state(previous)
+        self.game.last_state_was_rune = False
+        self.game.from_shop_rune_use = False
+
+    def _consume_tray(self, sold=False):
+        i = self.tray_index
+        tray = getattr(self.game, 'rune_tray', None) or []
+        if i is not None and 0 <= i < len(tray):
+            self.game.rune_tray[i] = None
+        if sold:
+            return
+        recycler_active = any(
+            charm.get('type') == 'rune_reuse' and idx not in (self.game.disabled_charms or [])
+            for idx, charm in enumerate(self.game.equipped_charms or [])
+        )
+        if recycler_active and not getattr(self.game, '_recycler_used_this_blind', False):
+            self.game._recycler_reuse_pending = dict(self.rune)
+            self.game._recycler_used_this_blind = True
+            self.game.temp_message = f"Rune Recycler: {self.rune['name']} queued for reuse in next shop!"
+            self.game.temp_message_start = time.time()
+
     def handle_event(self, event):
+        if getattr(self, 'warn_popup', None):
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_pos = pygame.mouse.get_pos()
+                if self.warn_ok_rect and self.warn_ok_rect.collidepoint(mouse_pos):
+                    self.warn_popup = None
+                    self.warn_ok_rect = None
+            elif event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
+                self.warn_popup = None
+                self.warn_ok_rect = None
+            return
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
             # Die select if needed
@@ -380,43 +503,30 @@ class RuneUseState(State):
                             self.selected_die_indices.append(j)
                         max_dice = self.max_dice
                         while len(self.selected_die_indices) > max_dice:
-                            self.selected_die_indices.pop(0)  # Remove oldest
-                        print(f"DEBUG: Selected die {j} – indices: {self.selected_die_indices}")  # TEMP
+                            self.selected_die_indices.pop(0)
                         return
-            # Confirm
-            if self.confirm_rect.collidepoint(mouse_pos):
-                dies = [self.random_dice[j] for j in self.selected_die_indices]  # Sync to dies
-                print(f"DEBUG: Confirm rune {self.rune['name']} with {len(dies)} dice")  # TEMP
-                self.game.apply_rune_effect(self.rune, dies)
-                # FIXED: Always change_state, set resuming for enter skip
-                self.game.last_state_was_rune = True  # Game entry flag
-                previous = self.game.previous_state
-                if previous is None:
-                    from states.game import GameState
-                    previous = GameState(self.game)
-                self.game.state_machine.change_state(previous)
-                self.game.last_state_was_rune = False  # FIXED: Reset after transition
-                self.game.from_shop_rune_use = False  # FIXED: Reset after transition
-                print("DEBUG: Rune applied, changed state with flags reset")  # TEMP
+            if self.confirm_rect and self.confirm_rect.collidepoint(mouse_pos):
+                dies = [self.random_dice[j] for j in self.selected_die_indices]
+                ok = self.game.apply_rune_effect(self.rune, dies)
+                if ok is False:
+                    self.warn_popup = self.game.temp_message or "Couldn't apply that rune."
+                    return
+                self._consume_tray(sold=False)
+                self._go_back()
                 return
-            # Cancel (same)
-            if self.cancel_rect.collidepoint(mouse_pos):
-                # FIXED: Always change_state, set resuming
-                self.game.last_state_was_rune = True  # FIXED: New flag
-                previous = self.game.previous_state
-                if previous is None:
-                    from states.game import GameState
-                    previous = GameState(self.game)
-                self.game.state_machine.change_state(previous)
-                print("DEBUG: Canceled, changed state to previous")  # TEMP
+            if self.cancel_rect and self.cancel_rect.collidepoint(mouse_pos):
+                self._go_back()
+                return
+            if self.sell_rect and self.sell_rect.collidepoint(mouse_pos):
+                payout = rune_sell_payout(self.rune)
+                self.game.coins = int(getattr(self.game, 'coins', 0) or 0) + payout
+                self.game.temp_message = f"Sold {self.rune.get('name', 'rune')} for ${payout}"
+                self.game.temp_message_start = time.time()
+                self._consume_tray(sold=True)
+                self._go_back()
                 return
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                # Cancel back
-                self.game.is_resuming = True  # FIXED: Set resuming
-                previous = self.game.previous_state
-                if previous is None:
-                    from states.game import GameState
-                    previous = GameState(self.game)
-                self.game.state_machine.change_state(previous)
+                self.game.is_resuming = True
+                self._go_back()
                 return

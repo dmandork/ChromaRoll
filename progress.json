@@ -30,7 +30,11 @@
     "so_close",
     "packed",
     "draw_four",
-    "last_call"
+    "last_call",
+    "liquidation",
+    "shattered",
+    "moat",
+    "one_hue"
   ],
   "unlocked_charms": [
     "Critical Hit",
@@ -69,7 +73,11 @@
     "Cloak of Cunning",
     "Space Sphere",
     "UNO Skip",
-    "Final Flourish"
+    "Final Flourish",
+    "Monopoly Mortgage",
+    "Fragile Fortune Charm",
+    "Castle Cube",
+    "Flower Pot Prism"
   ],
   "unlocked_pouches": [
     "Black Pouch",
@@ -81,40 +89,41 @@
     "max_stake_beaten": 8,
     "runs_won": 1,
     "hands": {
-      "5 of a Kind": 2,
-      "4 of a Kind": 9,
-      "2 Pair": 9,
-      "Full House": 12,
-      "3 of a Kind": 17,
-      "Small Straight": 5,
-      "Large Straight": 4,
-      "Pair": 1
+      "5 of a Kind": 5,
+      "4 of a Kind": 16,
+      "2 Pair": 31,
+      "Full House": 27,
+      "3 of a Kind": 37,
+      "Small Straight": 11,
+      "Large Straight": 13,
+      "Pair": 12
     },
-    "hands_scored": 59,
-    "kind_hands": 28,
-    "glass_breaks": 1,
+    "hands_scored": 152,
+    "kind_hands": 58,
+    "glass_breaks": 3,
     "lucky_triggers": 0,
-    "runes_used": 20,
+    "runes_used": 74,
     "intensify_wins": 1,
-    "bosses_beaten": 8,
+    "bosses_beaten": 25,
     "max_coins_at_blind_end": 1000045,
-    "special_scored": 13,
+    "special_scored": 66,
     "discards_by_color": {
-      "Blue": 2,
-      "Green": 2,
-      "Yellow": 1,
+      "Blue": 8,
+      "Green": 3,
+      "Yellow": 15,
       "Red": 2,
-      "Purple": 1
+      "Purple": 6,
+      "Rainbow": 1
     },
     "close_losses": 1,
     "bag_emptied": 0,
-    "five_sixes": 2,
-    "all_red_hands": 2,
+    "five_sixes": 3,
+    "all_red_hands": 8,
     "max_charms_held": 5,
     "steel_seen": 1,
-    "max_prism": 5.5,
-    "sells_one_shop_max": 1,
-    "dice_added": 13
+    "max_prism": 6.5,
+    "sells_one_shop_max": 2,
+    "dice_added": 32
   },
   "run": {
     "discards_by_color": {},
@@ -123,8 +132,7 @@
     "charms_at_blind_start": 5
   },
   "new_this_run": [
-    "draw_four",
-    "last_call"
+    "one_hue"
   ],
   "unlock_all": false
 }

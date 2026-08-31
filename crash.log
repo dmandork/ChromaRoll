@@ -1,0 +1,33 @@
+2026-08-31T12:57:54
+stake=2 blind=Boss
+pouch=Green Pouch
+charms=Space Sphere, Envy Echo, Erosion Edge, Enhance Elixir, Echo Ember
+Traceback (most recent call last):
+  File "c:\Users\Ivy\Desktop\David\ChromaRollPython\ChromaRoll.py", line 2560, in <module>
+    game.run()
+  File "c:\Users\Ivy\Desktop\David\ChromaRollPython\ChromaRoll.py", line 2548, in run
+    self.state_machine.draw()
+  File "c:\Users\Ivy\Desktop\David\ChromaRollPython\states\base.py", line 60, in draw
+    self.current_state.draw()
+  File "c:\Users\Ivy\Desktop\David\ChromaRollPython\states\blinds.py", line 99, in draw
+    self.blind_rects, self.continue_rect, self.debug_button_rect, self.up_rect, self.down_rect, self.debug_jump_rect, self.intensify_rect = draw_blinds_screen(self.game)  # Unpack 7
+                                                                                                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Ivy\Desktop\David\ChromaRollPython\screens.py", line 1349, in draw_blinds_screen
+    bag_rect, charm_hover, tray_hover = draw_blinds_play_hud(game, mouse_pos)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Ivy\Desktop\David\ChromaRollPython\screens.py", line 1317, in draw_blinds_play_hud
+    draw_bag_visual(game)
+  File "c:\Users\Ivy\Desktop\David\ChromaRollPython\screens.py", line 1879, in draw_bag_visual
+    draw_rounded_element(game.screen, rect, color_rgb, border_color=(0, 0, 0), border_width=1, radius=constants.SMALL_DIE_BORDER_RADIUS, inner_content=inner_content)
+  File "c:\Users\Ivy\Desktop\David\ChromaRollPython\utils.py", line 28, in draw_rounded_element
+    inner_content(rect)
+  File "c:\Users\Ivy\Desktop\David\ChromaRollPython\screens.py", line 1878, in <lambda>
+    inner_content = lambda r, d=die: draw_bag_enhancement_visuals(game, r, d)
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\Ivy\Desktop\David\ChromaRollPython\screens.py", line 2041, in draw_bag_enhancement_visuals
+    draw_enhancement_visuals(game, die_rect, die)
+  File "c:\Users\Ivy\Desktop\David\ChromaRollPython\screens.py", line 2021, in draw_enhancement_visuals
+    pygame.draw.rect(game.screen, spec['rgb'], pip, border_radius=2)
+                                  ^^^^
+NameError: name 'spec' is not defined
+----------------------------------------

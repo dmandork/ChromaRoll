@@ -19,7 +19,7 @@ DICE_DESCRIPTIONS = {
 
 BOSS_EFFECTS = [
     # Easy — Stake 1+  (resource nicks, never bricks a build)
-    {'name': 'Reroll Ration', 'desc': 'Rerolls left reduced by 1 for the round.', 'difficulty': 'Easy', 'min_stake': 1},
+    {'name': 'Reroll Ration', 'desc': 'One fewer reroll each hand (2 → 1).', 'difficulty': 'Easy', 'min_stake': 1},
     {'name': 'Discard Drought', 'desc': 'Discards left reduced by 1 for the round.', 'difficulty': 'Easy', 'min_stake': 1},
     {'name': 'Reroll Penalty', 'desc': 'Each reroll costs 1 coin (deducted immediately).', 'difficulty': 'Easy', 'min_stake': 1},
     {'name': 'Discard Cap', 'desc': 'Discard phase limited to 2 dice max per use.', 'difficulty': 'Easy', 'min_stake': 1},
@@ -72,9 +72,61 @@ def bosses_for_stake(stake):
     return pool or list(BOSS_EFFECTS)
 
 
-def pick_boss_effect(stake):
+def pick_boss_effect(stake, exclude=None):
     pool = bosses_for_stake(stake)
-    return random.choice(pool)
+    skip = {str(n) for n in (exclude or []) if n}
+    fresh = [b for b in pool if b.get('name') not in skip]
+    return random.choice(fresh or pool)
+
+
+def pick_boss_for_game(game):
+    return pick_boss_effect(
+        getattr(game, 'current_stake', 1),
+        exclude=getattr(game, 'beaten_bosses', None),
+    )
+
+
+def apply_oracle(hand_multipliers, rng=None):
+    """+0.5x on two random hand types (can stack). Returns the popup line."""
+    rng = rng or random
+    types = list(HAND_TYPES)
+    if not types:
+        return "Oracle: no hand types", []
+    picks = [rng.choice(types) for _ in range(2)]
+    for ht in picks:
+        hand_multipliers[ht] = float(hand_multipliers.get(ht, 1.0) or 1.0) + 0.5
+    if picks[0] == picks[1]:
+        msg = f"Oracle: {picks[0]} now {hand_multipliers[picks[0]]:.1f}x"
+    else:
+        a, b = picks
+        msg = (f"Oracle: {a} now {hand_multipliers[a]:.1f}x, "
+               f"{b} now {hand_multipliers[b]:.1f}x")
+    return msg, picks
+
+
+_COLOR_TAGS = {'Red', 'Blue', 'Green', 'Purple', 'Yellow', 'Gold', 'Silver', 'Rainbow', 'Wild'}
+
+
+def set_die_color(die, color):
+    """Paint the die. Color lives on die['color'], never as an enhancement tag."""
+    if not die:
+        return die
+    die['color'] = color
+    enh = die.get('enhancements')
+    if not isinstance(enh, list):
+        die['enhancements'] = []
+        return die
+    die['enhancements'] = [e for e in enh if e not in _COLOR_TAGS]
+    return die
+
+
+def boss_target_mult(boss):
+    name = (boss or {}).get('name') if isinstance(boss, dict) else boss
+    if name == 'Target Bump':
+        return 1.20
+    if name == 'Blind Boost':
+        return 1.30
+    return 1.0
 
 
 def intensify_unlocked(stake):
@@ -115,19 +167,19 @@ DOT_POSITIONS = {
 }
 
 CHARMS_POOL = [
-    {'name': 'Basic Charm', 'rarity': 'Common', 'cost': 2, 'desc': '+10 to all final scores.', 'type': 'flat_bonus', 'value': 10},
+    {'name': 'Basic Charm', 'rarity': 'Common', 'cost': 2, 'desc': '+10 chips per scored die (before mult).', 'type': 'chips_per_die', 'value': 10},
     {'name': 'Red Greed Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Red die scored.', 'type': 'per_color_bonus', 'color': 'Red', 'value': 5},
     {'name': 'Blue Lust Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Blue die scored.', 'type': 'per_color_bonus', 'color': 'Blue', 'value': 5},
     {'name': 'Green Wrath Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Green die scored.', 'type': 'per_color_bonus', 'color': 'Green', 'value': 5},
     {'name': 'Purple Glutton Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Purple die scored.', 'type': 'per_color_bonus', 'color': 'Purple', 'value': 5},
     {'name': 'Yellow Jolly Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+5 score per Yellow die scored.', 'type': 'per_color_bonus', 'color': 'Yellow', 'value': 5},
     {'name': 'Zany Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+40 score if hand contains a 3 of a Kind.', 'type': 'hand_bonus', 'hands': ['3 of a Kind'], 'value': 40},
-    {'name': 'Mad Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+30 score if hand contains a 2 Pair.', 'type': 'hand_bonus', 'hands': ['2 Pair'], 'value': 30},
+    {'name': 'Mad Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+80 chips if hand contains a 2 Pair.', 'type': 'hand_bonus', 'hands': ['2 Pair'], 'value': 80},
     {'name': 'Crazy Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+35 score if hand contains a Small or Large Straight.', 'type': 'hand_bonus', 'hands': ['Small Straight', 'Large Straight'], 'value': 35},
     {'name': 'Droll Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+0.5 mult to monochrome bonuses.', 'type': 'mono_mult_bonus', 'value': 0.5},
-    {'name': 'Sly Charm', 'rarity': 'Common', 'cost': 3, 'desc': '+50 base score if hand contains a Pair.', 'type': 'hand_bonus', 'hands': ['Pair'], 'value': 50},
+    {'name': 'Sly Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+50 chips if hand contains a Pair.', 'type': 'hand_bonus', 'hands': ['Pair'], 'value': 50},
     {'name': 'Wily Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+100 base score if hand contains a 3 of a Kind.', 'type': 'hand_bonus', 'hands': ['3 of a Kind'], 'value': 100},
-    {'name': 'Clever Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+80 base score if hand contains a 2 Pair.', 'type': 'hand_bonus', 'hands': ['2 Pair'], 'value': 80},
+    {'name': 'Clever Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+120 chips if hand contains a 2 Pair.', 'type': 'hand_bonus', 'hands': ['2 Pair'], 'value': 120},
     {'name': 'Devious Charm', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+100 base score if hand contains a Small or Large Straight.', 'type': 'hand_bonus', 'hands': ['Small Straight', 'Large Straight'], 'value': 100},
     {'name': 'Half Charm', 'rarity': 'Common', 'cost': 4, 'desc': '+20 score if hand uses 3 or fewer dice.', 'type': 'few_dice_bonus', 'max_dice': 3, 'value': 20},
     {'name': 'Stencil Charm', 'rarity': 'Legendary', 'cost': 7, 'desc': '+0.5 mult per empty charm slot.', 'type': 'empty_slot_mult', 'value': 0.5},
@@ -165,7 +217,7 @@ CHARMS_POOL = [
     {'name': 'Kind Keeper', 'rarity': 'Rare', 'cost': 5, 'desc': '4s count as wild for three/four of a kinds.', 'type': 'wild_4'},  # Changed from 'kind_wild'
     {'name': 'Final Forge', 'rarity': 'Legendary', 'cost': 10, 'desc': '+3 mult on last hand if it includes an enhancement.', 'type': 'final_mult_conditional', 'value': 3},
     {'name': 'Buy Boon', 'rarity': 'Common', 'cost': 3, 'desc': 'Pay 2 coins per +/-1 shift to a die face once per turn (max 2 shifts).', 'type': 'face_buy_high', 'value': 1},  # Updated desc; value=1 for per-shift
-    {'name': 'Echo Ember', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+2 coins per unused discard.', 'type': 'coin_per_discard', 'value': 2},
+    {'name': 'Echo Ember', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+2 coins per unused hand at round end.', 'type': 'coin_gen', 'value': 2},
     {'name': 'Triple Threat', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+0.5 mult for Three of a Kind.', 'type': 'mult_bonus', 'hands': ['3 of a Kind'], 'value': 1.5},
     {'name': 'Disadvantage Dice', 'rarity': 'Common', 'cost': 3, 'desc': '-1 to one die face, but +0.5 mult overall.', 'type': 'risk_mult', 'value': 0.5},
     {'name': 'Stat Roller', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Adds the sum of all dice faces in the hand to the base score (e.g., 6,6,6,3,1 = +22).', 'type': 'score_bonus', 'value': 'stat_sum'},
@@ -199,7 +251,7 @@ CHARMS_POOL = [
     {'name': 'Dusk Die', 'rarity': 'Uncommon', 'cost': 4, 'desc': 'Retrigger all scored dice in final hand of round.', 'type': 'retrigger', 'target': 'final_hand'},
     {'name': 'Loyalty Luck', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+3 mult every 6 turns played.', 'type': 'mult_conditional', 'every': 6, 'value': 3},
     {'name': 'Marble Mystic', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Add a Stone enhancement to a random die when blind selected.', 'type': 'enhance_add', 'enhance': 'Stone'},
-    {'name': 'Joker Die', 'rarity': 'Common', 'cost': 2, 'desc': '+4 mult.', 'type': 'mult_bonus', 'value': 4},
+    {'name': 'Joker Die', 'rarity': 'Uncommon', 'cost': 5, 'desc': '+3 mult.', 'type': 'mult_bonus', 'value': 4},
     {'name': 'Space Sphere', 'rarity': 'Uncommon', 'cost': 5, 'desc': '25% chance to upgrade the specific hand type played.', 'type': 'hand_upgrade', 'chance': 0.25},
     {'name': 'Ice Shard', 'rarity': 'Uncommon', 'cost': 4, 'desc': '+100 score. -5 score per hand played.', 'type': 'score_decay', 'start': 100, 'decay': 5},
     {'name': 'Hiker Hex', 'rarity': 'Uncommon', 'cost': 5, 'desc': 'Each scored die permanently gains +4 score value.', 'type': 'die_bonus_perm', 'value': 4},
@@ -272,7 +324,7 @@ ENH_DESC = {
     'Sacrifice': 'Destroyed: This die was sacrificed (no longer in bag).',  # If tracking history
     'Transmute': 'Transmuted: Cloned color and faces from another die.',
     'Gold': 'Gold: +coins when held in score.',
-    'Stone': 'Stone: +50 score, but fixed value/no roll variance.',
+    'Stone': 'Stone: +50 chips. Face is locked (won\'t change on reroll).',
     # 'Red': 'Red: Converted to Red color.',
     # 'Blue': 'Blue: Converted to Blue color.',
     # 'Green': 'Green: Converted to Green color.',

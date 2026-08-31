@@ -6,6 +6,7 @@ import math
 import copy
 import os
 from constants import *  # For THEME, BUTTON_WIDTH, SHOP_REROLL_COST, etc.
+import constants
 from utils import draw_rounded_element, resource_path, wrap_text  # For UI/buttons
 from screens import draw_shop_screen, draw_custom_button, draw_tooltip, draw_play_debug_bar
 from data import CHARMS_POOL  # For charm generation/packs
@@ -202,7 +203,7 @@ class ShopState(State):
         self.debug_tab_rects = []
         self.debug_rect = None
         self.debug_button_rect = None
-        if DEBUG:
+        if constants.DEBUG:
             self.debug_tab_rects = draw_play_debug_bar(self.game)
             if getattr(self.game, 'debug_play_open', False):
                 button_x = self.game.width - DEBUG_BUTTON_SIZE[0] - 50
@@ -214,7 +215,7 @@ class ShopState(State):
                     self.charm_rects = self.draw_debug_panel()
                 else:
                     self.charm_rects = []
-                if DEBUG_MENU_IN_SHOP:
+                if constants.DEBUG_MENU_IN_SHOP:
                     self.debug_button_rect = pygame.Rect(button_x, button_y - 60, 150, 50)
                     draw_custom_button(self.game, self.debug_button_rect, "Debug Menu",
                                        is_hover=self.debug_button_rect.collidepoint(pygame.mouse.get_pos()))
@@ -298,7 +299,7 @@ class ShopState(State):
                         return
             
             # Handle new debug menu button click
-            if DEBUG and DEBUG_MENU_IN_SHOP and self.debug_button_rect and self.debug_button_rect.collidepoint(mouse_pos):
+            if constants.DEBUG and constants.DEBUG_MENU_IN_SHOP and self.debug_button_rect and self.debug_button_rect.collidepoint(mouse_pos):
                 from states.debug import DebugMenuState  # Lazy import
                 self.game.state_machine.change_state(DebugMenuState(self.game))  # New state below
                 return
@@ -509,16 +510,9 @@ class ShopState(State):
                 if tray_rect is not None and tray_rect.collidepoint(mouse_pos) and self.game.rune_tray[i]:
                     from states.rune import RuneUseState  # Lazy import
                     rune = self.game.rune_tray[i]
-                    self.game.state_machine.change_state(RuneUseState(self.game, rune))  # Transition
                     self.game.previous_state = self
-                    recycler_active = any(charm['type'] == 'rune_reuse' and idx not in self.game.disabled_charms for idx, charm in enumerate(self.game.equipped_charms))
-                    if recycler_active and not getattr(self.game, '_recycler_used_this_blind', False):
-                        self.game._recycler_reuse_pending = rune.copy()
-                        self.game._recycler_used_this_blind = True
-                        self.game.temp_message = f"Rune Recycler: {rune['name']} queued for reuse in next shop!"
-                        self.game.temp_message_start = time.time()
-                    if not getattr(rune, 'reused', False):
-                        self.game.rune_tray[i] = None
+                    self.game.from_shop_rune_use = True
+                    self.game.state_machine.change_state(RuneUseState(self.game, rune, tray_index=i))
                     break
 
         if event.type == pygame.MOUSEBUTTONUP:

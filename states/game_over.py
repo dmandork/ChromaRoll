@@ -14,6 +14,8 @@ class GameOverState(State):
 
     def enter(self):
         import savegame
+        import runlog
+        runlog.append_run(self.game, 'loss')
         savegame.delete_save()  # Dead run must not Load back into pouch-select / play
 
     def update(self, dt):

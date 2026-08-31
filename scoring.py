@@ -9,6 +9,67 @@ _BASE_COLORS = ['Red', 'Blue', 'Green', 'Purple', 'Yellow']
 _SPECIAL_COLORS = ['Gold', 'Silver', 'Glass', 'Rainbow']
 _DIE_COLORS = _BASE_COLORS + _SPECIAL_COLORS
 _PACK_BOOST = 0.5
+_COLOR_BONUS_IGNORE = {'Gold', 'Silver', 'Glass'}
+_COLOR_BONUS_AMT = {
+    '5 of a Kind':    {'mono': 3.0, 'rainbow': 2.0},
+    '4 of a Kind':    {'mono': 2.0, 'rainbow': 1.0},
+    'Full House':     {'mono': 3.0, 'rainbow': 2.0},
+    'Large Straight': {'mono': 1.0, 'rainbow': 1.0},
+    'Small Straight': {'mono': 1.0, 'rainbow': 1.0},
+    '3 of a Kind':    {'mono': 1.0, 'rainbow': 0.5},
+    '2 Pair':         {'mono': 1.0, 'rainbow': 1.0},
+    'Pair':           {'mono': 0.5, 'rainbow': 0.5},
+}
+
+
+def palette_hues(colors):
+    """Base hues only. Gold/Silver/Glass do not count. Rainbow is a wild, not a hue."""
+    hues = []
+    for c in colors or []:
+        if not c or c in _COLOR_BONUS_IGNORE or c == 'Rainbow':
+            continue
+        hues.append(c)
+    return hues
+
+
+def color_bonus_kind(colors):
+    """Specials ignored. 1 hue → mono. All base hues distinct (2+) → rainbow. Duplicates are neither."""
+    hues = palette_hues(colors)
+    unique = set(hues)
+    if not unique:
+        return None
+    if len(unique) == 1:
+        return 'mono'
+    if len(hues) == len(unique):
+        return 'rainbow'
+    return None
+
+
+def apply_color_bonus(hand_type, colors, modifier_desc, groups=None):
+    kind = color_bonus_kind(colors)
+    amt = (_COLOR_BONUS_AMT.get(hand_type) or {}).get(kind or '', 0) or 0
+    if kind == 'mono' and amt:
+        modifier_desc.append(f"Monochrome +{amt:g}")
+        return amt
+    if kind == 'rainbow' and amt:
+        modifier_desc.append(f"Rainbow +{amt:g}")
+        return amt
+    # 2 Pair of two single-color pairs is mono-style, not a rainbow.
+    if hand_type == '2 Pair' and groups:
+        mono_pairs = 0
+        for group_colors in groups.values():
+            if len(group_colors) != 2:
+                continue
+            u = set(palette_hues(group_colors))
+            if len(u) == 1:
+                mono_pairs += 1
+        if mono_pairs == 2:
+            modifier_desc.append("Two Mono Pairs +1")
+            return 1.0
+        if mono_pairs == 1:
+            modifier_desc.append("One Mono Pair +0.5")
+            return 0.5
+    return 0
 
 
 def glass_breaks(game, chance, rng=None):
@@ -38,6 +99,151 @@ def glass_breaks(game, chance, rng=None):
         game._last_save_roll = save_roll
         game._last_save_success = saved
     return not saved
+
+
+def die_is_steel(die):
+    """Steel never protects Glass — unbreakable Glass is not a legal state."""
+    if not die or die.get('color') == 'Glass':
+        return False
+    return 'Steel' in (die.get('enhancements') or [])
+
+
+def strip_steel_from_glass(die):
+    if not die or die.get('color') != 'Glass':
+        return die
+    enh = die.get('enhancements')
+    if isinstance(enh, list) and 'Steel' in enh:
+        die['enhancements'] = [e for e in enh if e != 'Steel']
+    return die
+
+
+def hand_is_all_color(held_rolls, color):
+    """True if every scored die is `color` or Rainbow."""
+    if not held_rolls:
+        return False
+    for die, _ in held_rolls:
+        c = (die or {}).get('color')
+        if c != color and c != 'Rainbow':
+            return False
+    return True
+
+
+def destroy_scored_die(game, die, hand_index=None, kind='glass'):
+    """Remove a die from bag + full_bag and queue the shatter/burn animation."""
+    if not die or game is None:
+        return False
+    did = die.get('id')
+    game.full_bag = [d for d in (getattr(game, 'full_bag', None) or []) if d.get('id') != did]
+    game.bag = [d for d in (getattr(game, 'bag', None) or []) if d.get('id') != did]
+    gone = die.copy() if hasattr(die, 'copy') else dict(die)
+    game.destroyed_dice = list(getattr(game, 'destroyed_dice', None) or [])
+    game.destroyed_dice.append(gone)
+    if hand_index is not None:
+        game.broken_dice = list(getattr(game, 'broken_dice', None) or [])
+        game.broken_dice.append(hand_index)
+        kinds = dict(getattr(game, 'broken_kinds', None) or {})
+        kinds[hand_index] = kind or 'glass'
+        game.broken_kinds = kinds
+        game.break_effect_start = time.time()
+    try:
+        ch = getattr(game, 'sfx_channel', None)
+        snd = getattr(game, 'break_sound', None)
+        if ch and snd:
+            ch.play(snd)
+    except Exception:
+        pass
+    return True
+
+
+def resolve_post_score_breaks(game, held_rolls, rng=None):
+    """Glass 25%, Fragile 25%, Dragon 10% on an all-red scored hand.
+
+    Must run on the real score path (not preview). Steel-tagged dice never burn.
+    """
+    rng = rng or random
+    if game is None:
+        return []
+    shattered = []
+    disabled = set(getattr(game, 'disabled_charms', []) or [])
+    chance = 0.25
+    penalty = 0
+    silence = (
+        getattr(game, 'current_blind', None) == 'Boss'
+        and (getattr(game, 'current_boss_effect', None) or {}).get('name') == 'Special Silence'
+    )
+    boss = (getattr(game, 'current_boss_effect', None) or {})
+    if getattr(game, 'current_blind', None) == 'Boss':
+        if boss.get('name') == 'Fragile Flip':
+            chance = 0.50
+        elif boss.get('name') == 'Break Surge':
+            chance += 0.10 * int(getattr(game, 'boss_reroll_count', 0) or 0)
+    if silence:
+        chance = 0
+    for idx, charm in enumerate(getattr(game, 'equipped_charms', []) or []):
+        if idx in disabled:
+            continue
+        if charm.get('type') == 'glass_mod':
+            chance = charm.get('break_chance', chance)
+            penalty = charm.get('break_penalty', 0)
+    has_buffer = any(
+        c.get('type') == 'break_reduce' and i not in disabled
+        for i, c in enumerate(getattr(game, 'equipped_charms', []) or [])
+    )
+    rolls = list(getattr(game, 'rolls', []) or [])
+    held = list(getattr(game, 'held', []) or [])
+
+    def _try_break(i, die, value, p, kind='glass'):
+        if p <= 0 or die_is_steel(die):
+            return
+        if not glass_breaks(game, p, rng=rng):
+            return
+        if destroy_scored_die(game, die, hand_index=i, kind=kind):
+            shattered.append(die)
+            if penalty:
+                game.coins = max(0, int(getattr(game, 'coins', 0) or 0) - int(penalty))
+
+    for i, pair in enumerate(rolls):
+        if i >= len(held) or not held[i]:
+            continue
+        die, value = pair[0], pair[1]
+        if die.get('color') == 'Glass':
+            p = chance
+            if has_buffer:
+                p = 0.33 if int(value or 0) <= 3 else 0.0
+            _try_break(i, die, value, p)
+        enh = die.get('enhancements') or []
+        if 'Fragile' in enh and die.get('color') != 'Glass':
+            # Glass already rolled above; Fragile-on-glass is a second 25% in Mime/fragile.
+            _try_break(i, die, value, 0.25 * enh.count('Fragile'))
+
+    has_mime = any(
+        c.get('type') == 'retrigger_held' and i not in disabled
+        for i, c in enumerate(getattr(game, 'equipped_charms', []) or [])
+    )
+    if has_mime:
+        for i, pair in enumerate(rolls):
+            if i >= len(held) or not held[i]:
+                continue
+            die, value = pair[0], pair[1]
+            if die.get('color') == 'Glass':
+                p = chance
+                if has_buffer:
+                    p = 0.33 if int(value or 0) <= 3 else 0.0
+                _try_break(i, die, value, p)
+
+    for idx, charm in enumerate(getattr(game, 'equipped_charms', []) or []):
+        if idx in disabled or charm.get('type') != 'color_risk_mult':
+            continue
+        color = charm.get('color', 'Red')
+        if not hand_is_all_color(held_rolls, color):
+            continue
+        for i, pair in enumerate(rolls):
+            if i >= len(held) or not held[i]:
+                continue
+            die = pair[0]
+            if rng.random() < 0.10:
+                _try_break(i, die, pair[1], 1.0, kind='burn')
+    return shattered
 
 
 def rotate_castle_color(charm, rng=None):
@@ -334,123 +540,37 @@ def evaluate_hand(game, is_preview=True):
     if sorted_values in [[1,2,3,4,5], [2,3,4,5,6]] or (has_four_fingers and any(all(x in values for x in s) for s in short_straights_large)):
         hand_type = "Large Straight"
         base_score = 160
-        straight_values = sorted_values if not has_four_fingers else next((s for s in short_straights_large if all(x in values for x in s)), sorted_values)
-        straight_colors = []
-        for v in straight_values:
-            straight_colors += groups.get(v, [])
-        actual_colors_straight = [c for c in straight_colors if c != 'Rainbow']
-        actual_set_straight = set(actual_colors_straight)
-        if len(actual_set_straight) <= 1:
-            base_modifier += 1.0
-            modifier_desc.append("Monochrome +1")
-        elif len(actual_colors_straight) == len(actual_set_straight):
-            base_modifier += 1.0
-            modifier_desc.append("Rainbow +1")
 
     elif any(all(x in values for x in s) for s in straights) or (has_four_fingers and any(all(x in values for x in s) for s in short_straights_small)):
         hand_type = "Small Straight"
         base_score = 90
-        straight_values = next((s for s in straights if all(x in values for x in s)), sorted_values) if not has_four_fingers else next((s for s in short_straights_small if all(x in values for x in s)), sorted_values)
-        straight_colors = []
-        for v in straight_values:
-            straight_colors += groups.get(v, [])
-        actual_colors_straight = [c for c in straight_colors if c != 'Rainbow']
-        actual_set_straight = set(actual_colors_straight)
-        if len(actual_set_straight) <= 1:
-            base_modifier += 1.0
-            modifier_desc.append("Monochrome +1")
-        elif len(actual_colors_straight) == len(actual_set_straight):
-            base_modifier += 1.0
-            modifier_desc.append("Rainbow +1")
 
     # Continue with remaining hand types
     if max_count == 5:
         hand_type = "5 of a Kind"
         base_score = 250
-        if len(set(c for c in colors_list if c != 'Rainbow')) <= 1:
-            base_modifier += 3.0
-            modifier_desc.append("Monochrome +3")
-        elif len([c for c in colors_list if c != 'Rainbow']) == len(set(c for c in colors_list if c != 'Rainbow')):
-            base_modifier += 2.0
-            modifier_desc.append("Rainbow +2")
 
     elif max_count == 4:
         hand_type = "4 of a Kind"
         base_score = 160
-        for val, group_colors in groups.items():
-            if counts.get(val, 0) == 4:
-                actual_g_colors = [c for c in group_colors if c != 'Rainbow']
-                if len(set(actual_g_colors)) <= 1:
-                    base_modifier += 2.0
-                    modifier_desc.append("Monochrome +2")
-                elif len(actual_g_colors) == len(set(actual_g_colors)):
-                    base_modifier += 1.0
-                    modifier_desc.append("Rainbow +1")
-                break
 
     elif max_count == 3 and 2 in counts.values():
         hand_type = "Full House"
         base_score = 160
-        three_val = next((val for val, count in counts.items() if count == 3), None)
-        pair_val = next((val for val, count in counts.items() if count == 2), None)
-        three_group = groups.get(three_val, [])
-        pair_group = groups.get(pair_val, [])
-        if len(set(c for c in colors_list if c != 'Rainbow')) <= 1:
-            base_modifier += 3.0
-            modifier_desc.append("Full Mono +3")
-        elif len([c for c in colors_list if c != 'Rainbow']) == len(set(c for c in colors_list if c != 'Rainbow')):
-            base_modifier += 2.0
-            modifier_desc.append("Rainbow +2")
-        else:
-            mono_three = len(set(c for c in three_group if c != 'Rainbow')) <= 1
-            mono_pair = len(set(c for c in pair_group if c != 'Rainbow')) <= 1
-            if mono_three and mono_pair:
-                base_modifier += 1.0
-                modifier_desc.append("Both Mono +1")
-            elif mono_three or mono_pair:
-                base_modifier += 0.5
-                modifier_desc.append("One Mono +0.5")
 
     elif max_count == 3:
         hand_type = "3 of a Kind"
         base_score = 80
-        for val, group_colors in groups.items():
-            if counts.get(val, 0) == 3:
-                actual_g_colors = [c for c in group_colors if c != 'Rainbow']
-                if len(set(actual_g_colors)) <= 1:
-                    base_modifier += 1.0
-                    modifier_desc.append("Monochrome +1")
-                elif len(actual_g_colors) == len(set(actual_g_colors)):
-                    base_modifier += 0.5
-                    modifier_desc.append("Rainbow +0.5")
-                break
 
     elif pair_count == 2:
         hand_type = "2 Pair"
         base_score = 60
-        mono_pairs = 0
-        for group_colors in groups.values():
-            if len(group_colors) == 2:
-                actual_set = set(c for c in group_colors if c != 'Rainbow')
-                if len(actual_set) <= 1:
-                    mono_pairs += 1
-        if mono_pairs == 1:
-            base_modifier += 0.5
-            modifier_desc.append("One Mono Pair +0.5")
-        elif mono_pairs == 2:
-            base_modifier += 1.0
-            modifier_desc.append("Two Mono Pairs +1")
 
     elif pair_count == 1:
         hand_type = "Pair"
         base_score = 20
-        for val, group_colors in groups.items():
-            if counts.get(val, 0) == 2:
-                actual_g_colors = [c for c in group_colors if c != 'Rainbow']
-                if len(set(actual_g_colors)) <= 1:
-                    base_modifier += 0.5
-                    modifier_desc.append("Monochrome +0.5")
-                break
+
+    base_modifier += apply_color_bonus(hand_type, colors_list, modifier_desc, groups)
 
     # Boss effects
     if game.current_blind == 'Boss' and game.current_boss_effect:
@@ -489,7 +609,7 @@ def evaluate_hand(game, is_preview=True):
             elif is_preview:
                 expected = 0.33 * enh_counts.get('Lucky', 0)
                 enhancement_desc_parts.append(f"Lucky x{enh_counts.get('Lucky',0)}: ~+{expected:.1f} coins")
-        if 'Steel' in enh:
+        if 'Steel' in enh and die.get('color') != 'Glass':
             rune_mult_add += 0.5 * len([e for e in enh if e == 'Steel'])
         if 'Fragile' in enh:
             rune_mult_add += 1.0 * len([e for e in enh if e == 'Fragile'])
@@ -534,8 +654,18 @@ def evaluate_hand(game, is_preview=True):
         if idx in game.disabled_charms:
             continue
 
-        if charm['type'] == 'flat_bonus':
+        if charm['type'] == 'chips_per_die' or (
+            charm['type'] == 'flat_bonus' and charm.get('name') == 'Basic Charm'
+        ):
+            n = len(held_rolls)
+            add = charm.get('value', 0) * n
+            if add:
+                charm_chips += add
+                modifier_desc.append(f"{charm['name']} +{add} ({n} dice)")
+
+        elif charm['type'] == 'flat_bonus':
             charm_chips += charm['value']
+            modifier_desc.append(f"{charm['name']} +{charm['value']}")
 
         elif charm['type'] == 'per_color_bonus':
             charm_chips += colors_list.count(charm['color']) * charm['value']
@@ -610,6 +740,13 @@ def evaluate_hand(game, is_preview=True):
             if mult_add > 0:
                 charm_mult_add += mult_add
                 modifier_desc.append(f"{charm['name']} +{mult_add} ({count} {charm['color']})")
+
+        elif charm['type'] == 'color_risk_mult':
+            color = charm.get('color', 'Red')
+            if hand_is_all_color(held_rolls, color):
+                mult_add = float(charm.get('value', 1) or 1)
+                charm_mult_add += mult_add
+                modifier_desc.append(f"{charm['name']} +{mult_add} (all {color}, 10% burn)")
 
         elif charm['type'] == 'color_mult_conditional':
             if not hasattr(game, 'rerolls_left_initial') or game.rerolls_left != game.rerolls_left_initial:
@@ -785,9 +922,9 @@ def evaluate_hand(game, is_preview=True):
             pass
 
         elif charm['type'] == 'coin_per_discard':
-            discards_left = getattr(game, 'discards_left', 0)
-            if not is_preview and discards_left > 0:
-                modifier_desc.append(f"{charm['name']} +{charm['value'] * discards_left} coins ({discards_left} discards)")
+            unused = getattr(game, 'hands_left', 0)
+            if not is_preview and unused > 0:
+                modifier_desc.append(f"{charm['name']} +{charm['value'] * unused} coins ({unused} hands)")
 
         elif charm['type'] == 'risk_mult':
             mult_add = charm['value']

@@ -3,7 +3,7 @@ import pygame
 import sys
 from states.base import State
 from states.init import InitState  # For main menu
-from screens import draw_pause_menu
+from screens import draw_pause_menu, draw_table_felt
 from constants import THEME
 import savegame
 
@@ -20,8 +20,16 @@ class PauseMenuState(State):
         pass
 
     def draw(self):
-        self.game.screen.fill(THEME['background'])  # Clear relics
-        # Assume draw_pause_menu now returns button_rects and mute_button_rect
+        prev = getattr(self.game, 'previous_state', None)
+        drawn = False
+        if prev is not None and prev is not self and hasattr(prev, 'draw'):
+            try:
+                prev.draw()
+                drawn = True
+            except Exception:
+                drawn = False
+        if not drawn:
+            draw_table_felt(self.game)
         self.button_rects, self.mute_button_rect = draw_pause_menu(self.game)
 
     def handle_event(self, event):

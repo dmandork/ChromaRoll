@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # Ensure root di
 import data
 import screens
 import savegame
-from scoring import evaluate_hand, get_stencil_mult, apply_enhancement_retrigger, glass_breaks, rotate_castle_color, apply_castle_discards, try_space_sphere, pouch_extra_colors, pouch_hands_delta, shop_pack_weights, randomize_bag_colors
+from scoring import evaluate_hand, get_stencil_mult, apply_enhancement_retrigger, glass_breaks, rotate_castle_color, apply_castle_discards, try_space_sphere, pouch_extra_colors, pouch_hands_delta, shop_pack_weights, randomize_bag_colors, resolve_post_score_breaks
 try:
     from scoring import pouch_charm_slots
 except ImportError:
@@ -244,6 +244,18 @@ class ChromaRollGame:
             print(f"Error loading break icon: {e}")
             self.break_icon = None
 
+        self.burn_icon = None
+        try:
+            burn_image = pygame.image.load(resource_path('assets/icons/echo-ember-icon.png')).convert_alpha()
+            self.burn_icon = pygame.transform.smoothscale(burn_image, (DIE_SIZE, DIE_SIZE))
+        except Exception as e:
+            print(f"Error loading burn icon: {e}")
+            try:
+                burn_image = pygame.image.load(resource_path('assets/icons/dragons-dice-icon.png')).convert_alpha()
+                self.burn_icon = pygame.transform.smoothscale(burn_image, (DIE_SIZE, DIE_SIZE))
+            except Exception:
+                self.burn_icon = None
+
         # Audio setup
         pygame.mixer.init()  # Init mixer (keep your existing init)
         self.mute = False  # Default unmuted
@@ -284,7 +296,8 @@ class ChromaRollGame:
         self.boss_rainbow_color = None  # For Rainbow Restriction: fixed color for the round
         self.boss_shuffled_faces = {}  # Die ID to shuffled faces for Face Shuffle
         self.upcoming_boss_effect = None  # Preview of the Boss effect for the current round
-        self.upcoming_boss_effect = data.pick_boss_effect(getattr(self, 'current_stake', 1))  # Initial preview for first round
+        self.beaten_bosses = []
+        self.upcoming_boss_effect = data.pick_boss_for_game(self)  # Initial preview for first round
 
         self.debug_boss_dropdown_open = False  # Flag for dropdown panel
         self.debug_boss_scroll_offset = 0  # For scrolling long list
@@ -418,6 +431,7 @@ class ChromaRollGame:
         self.pause_menu_selection = None  # For button handling (optional)
         self.show_popup = False  # Flag for beaten blind popup
         self.broken_dice = []  # List of indices (0-4) of breaking Glass dice
+        self.broken_kinds = {}
         self.break_effect_start = 0  # Timestamp when effect starts
         self.break_effect_duration = 1.0  # Seconds for fade-out
         self.popup_message = ""  # Message for beaten blind popup
@@ -481,7 +495,8 @@ class ChromaRollGame:
         self.boss_rainbow_color = None  # For Rainbow Restriction: fixed color for the round
         self.boss_shuffled_faces = {}  # Die ID to shuffled faces for Face Shuffle
         self.upcoming_boss_effect = None  # Preview of the Boss effect for the current round
-        self.upcoming_boss_effect = data.pick_boss_effect(getattr(self, 'current_stake', 1))  # Initial preview for first round
+        self.beaten_bosses = []
+        self.upcoming_boss_effect = data.pick_boss_for_game(self)  # Initial preview for first round
         self.debug_boss_dropdown_open = False  # Flag for dropdown panel
         self.debug_boss_scroll_offset = 0  # For scrolling long list
         self.debug_boss_selected = None  # Temp for selection
@@ -498,6 +513,8 @@ class ChromaRollGame:
         self.final_discard_mult = 0  # NEW: For Acrobat Amulet (+2 on last discard)
         self.cloak_used_this_game = False  # Once per run; reset only in reset_game
         self.hand_play_counts = {ht: 0 for ht in data.HAND_TYPES}  # Track counts per hand type
+        import runlog
+        runlog.init_run(self)
 
     def update_hand_text(self):
         """Updates the texts showing current hand and modifier."""
@@ -691,6 +708,8 @@ class ChromaRollGame:
         pouch_mult = float(getattr(self, 'pouch_blind_mult', 1.0) or 1.0)
         if pouch_mult != 1.0:
             target *= pouch_mult
+        if str(getattr(self, 'current_blind', '') or '').lower() == 'boss':
+            target *= data.boss_target_mult(getattr(self, 'current_boss_effect', None))
         
         return int(math.ceil(target))
 
@@ -758,10 +777,10 @@ class ChromaRollGame:
 
         # Generate preview if starting Small
         if self.current_blind == 'Small':
-            self.upcoming_boss_effect = data.pick_boss_effect(self.current_stake)  # Pre-generate for preview
+            self.upcoming_boss_effect = data.pick_boss_for_game(self)  # Pre-generate for preview
 
         if self.current_blind == 'Boss':
-            self.current_boss_effect = self.upcoming_boss_effect or data.pick_boss_effect(self.current_stake)
+            self.current_boss_effect = self.upcoming_boss_effect or data.pick_boss_for_game(self)
             if self.current_boss_effect['name'] == 'Charm Glitch' and self.equipped_charms:
                 self.disabled_charms = [random.randint(0, len(self.equipped_charms) - 1)]  # Disable one
             elif self.current_boss_effect['name'] == 'Charm Eclipse':
@@ -771,20 +790,9 @@ class ChromaRollGame:
             elif self.current_boss_effect['name'] == 'Face Shuffle':
                 for die in self.full_bag:
                     faces = DICE_FACES[:]
-                    random.shuffle(faces)  # Simple shuffle; could add duplicates/missing for more chaos
+                    random.shuffle(faces)
                     self.boss_shuffled_faces[die['id']] = faces
-            elif self.current_boss_effect['name'] == 'Charm Tax':
-                tax = len(self.equipped_charms) // 2  # 0.5 per, rounded down
-                self.hands_left = max(0, self.hands_left - tax)
-            elif self.current_boss_effect['name'] == 'Hand Trim':
-                self.hands_left = max(0, self.hands_left - 1)
-            elif self.current_boss_effect['name'] == 'Reroll Ration':
-                self.rerolls_left = max(0, self.rerolls_left - 1)  # Consider moving to new_turn if per-hand
-            elif self.current_boss_effect['name'] == 'Discard Drought':
-                self.discards_left = max(0, self.discards_left - 1)
-            elif self.current_boss_effect['name'] == 'Blind Boost':
-                self.discards_left += 1  # Compensation
-            # Note: Other effects applied in specific methods below
+            # Resource nicks (hands/discards/rerolls) are applied AFTER the MAX_* reset below.
 
         self.round_score = 0
         self.used_whirlwind_this_blind = False
@@ -792,6 +800,21 @@ class ChromaRollGame:
         self.whirlwind_target_index = -1
         self.hands_left = MAX_HANDS
         self.discards_left = MAX_DISCARDS
+        pouch = getattr(self, 'current_pouch', None) or {}
+        bonus = pouch.get('bonus') if isinstance(pouch, dict) else None
+        bonus = bonus or {}
+        self.hands_left += pouch_hands_delta(pouch)
+        self.discards_left += int(bonus.get('discards', 0) or 0)
+        if self.current_boss_effect:
+            bname = self.current_boss_effect.get('name')
+            if bname == 'Charm Tax':
+                self.hands_left = max(0, self.hands_left - len(self.equipped_charms or []) // 2)
+            elif bname == 'Hand Trim':
+                self.hands_left = max(0, self.hands_left - 1)
+            elif bname == 'Discard Drought':
+                self.discards_left = max(0, self.discards_left - 1)
+            elif bname == 'Blind Boost':
+                self.discards_left += 1
         self.used_uno_this_blind = False  # Reset for new blind
         self.extra_coins = 0
         self.turn_initialized = False  # Reset for new round/turn
@@ -923,7 +946,8 @@ class ChromaRollGame:
         if self.current_blind == 'Boss' and self.current_boss_effect:
             effect_name = self.current_boss_effect['name']
             if effect_name == 'Reroll Ration':
-                self.rerolls_left = max(0, self.rerolls_left - 1)
+                # Exactly −1 from the hand's reroll count. Never stack to 0.
+                self.rerolls_left = max(0, int(self.rerolls_left) - 1)
             if effect_name == 'Discard Delay':
                 self.is_discard_phase = False  # Skip initial discard; enable after first reroll
             # Reset per-turn trackers if needed
@@ -1355,6 +1379,14 @@ class ChromaRollGame:
 
     def _complete_blind_win(self):
         """Pay out coins, fire blind_win (and run_win on stake 8 boss), show the popup."""
+        import runlog
+        runlog.record_blind(self)
+        if self.current_blind == 'Boss':
+            name = (self.current_boss_effect or {}).get('name')
+            beaten = list(getattr(self, 'beaten_bosses', None) or [])
+            if name and name not in beaten:
+                beaten.append(name)
+            self.beaten_bosses = beaten
         # Compute dynamic interest max from charms
         dynamic_interest_max = INTEREST_MAX
         for charm in self.equipped_charms:
@@ -1456,11 +1488,11 @@ class ChromaRollGame:
             rune_block = "Rune Gains:\n" + "\n".join(rune_gains_lines) + "\n"
 
             
-        # NEW: Echo Ember coins (unused discards at end)
+        # Echo Ember (and leftover coin_per_discard saves): unused hands
         echo_ember_bonus = 0
         for idx, charm in enumerate(self.equipped_charms):
             if charm['type'] == 'coin_per_discard' and idx not in self.disabled_charms:
-                echo_ember_bonus += charm['value'] * self.discards_left  # Unused discards
+                echo_ember_bonus += charm['value'] * int(self.hands_left or 0)
         echo_ember_line = f"Echo Coins: ${echo_ember_bonus}\n" if echo_ember_bonus > 0 else ""
 
         # NEW: Gift Glyph sell bonus (after rune gains, before popup)
@@ -1706,6 +1738,8 @@ class ChromaRollGame:
         score = final_score  # Use pre-calculated final score
         # print("Computed score:", score, "(base:", base_score, "chips:", charm_chips, "modifier:", 1 + charm_mono_add)  # Add this debug to see components
         self.round_score += score
+        import runlog
+        runlog.note_scored_hand(self, hand_type, score)
 
         
 
@@ -1780,31 +1814,12 @@ class ChromaRollGame:
                             charm_extra_coins += charm['value']
         self.extra_coins += gold_silver_coins + charm_extra_coins  # Accumulate in extra_coins for now
 
-        # Compute dynamic Glass break chance and penalty from charms
-        glass_break_chance = 0.25
-        glass_break_penalty = 0
-        for charm in self.equipped_charms:
-            if charm['type'] == 'glass_mod':
-                glass_break_chance = charm['break_chance']
-                glass_break_penalty = charm['break_penalty']
-
-        # Main break loop (with Break Buffer mod):
-        for i, (die, value) in enumerate(self.rolls):  # Use value here (scored face)
-            if die['color'] == 'Glass' and self.held[i]:
-                # NEW: Check for Break Buffer active (only on 1-3, 33% chance)
-                has_break_buffer = any(c['type'] == 'break_reduce' and idx not in self.disabled_charms for idx, c in enumerate(self.equipped_charms))
-                effective_chance = glass_break_chance if not has_break_buffer else (0.33 if value <= 3 else 0.0)
-                
-                if self._glass_destroyed(effective_chance):
-                    print(f"DEBUG: Breaking die '{die['color']}' ID '{die['id']}' held {self.held[i]}, full_bag now {len(self.full_bag)}")  # Keep for debug
-                    self.sfx_channel.play(self.break_sound)
-                    # FIXED: Temp - bag only
-                    self.bag = [d for d in self.bag if d['id'] != die['id']]
-                    self.destroyed_dice.append(die.copy())
-                    # self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]  # Comment/remove
-                    self.coins -= glass_break_penalty
-                    self.broken_dice.append(i)
-                    self.break_effect_start = time.time()
+        shattered = resolve_post_score_breaks(self, held_rolls)
+        if shattered:
+            n = len(shattered)
+            names = sorted({(d.get('color') or '?') for d in shattered})
+            self.temp_message = f"{n} {'die' if n == 1 else 'dice'} shattered ({', '.join(names)})"
+            self.temp_message_start = time.time()
 
         # Add Mime here
         has_mime = any(c['type'] == 'retrigger_held' for c in self.equipped_charms)
@@ -1817,23 +1832,6 @@ class ChromaRollGame:
 
             glass_count = sum(1 for i, (die, _) in enumerate(self.rolls) if die['color'] == 'Glass' and self.held[i])
             score *= (4 ** glass_count)
-
-            # Mime retrigger break loop (same, with Break Buffer mod):
-            for i, (die, value) in enumerate(self.rolls):  # Use value here too
-                if die['color'] == 'Glass' and self.held[i]:
-                    # NEW: Reuse Break Buffer check (respects mod on retrigger)
-                    has_break_buffer = any(c['type'] == 'break_reduce' and idx not in self.disabled_charms for idx, c in enumerate(self.equipped_charms))
-                    effective_chance = glass_break_chance if not has_break_buffer else (0.33 if value <= 3 else 0.0)
-                    
-                    if self._glass_destroyed(effective_chance):
-                        print(f"DEBUG: Mime Breaking die '{die['color']}' ID '{die['id']}'...")  # Debug
-                        self.sfx_channel.play(self.break_sound)
-                        self.bag = [d for d in self.bag if d['id'] != die['id']]
-                        self.destroyed_dice.append(die.copy())
-                        # self.full_bag = [d for d in self.full_bag if d['id'] != die['id']]  # Comment/remove
-                        self.coins -= glass_break_penalty
-                        self.broken_dice.append(i)
-                        self.break_effect_start = time.time()
 
             # NEW: Synergy Scroll - Retrigger enhancements on held dice
             synergy_equipped = any(charm['name'] == 'Synergy Scroll' and idx not in self.disabled_charms 
@@ -2107,6 +2105,7 @@ class ChromaRollGame:
         self.shop_reroll_cost = 5
         self.upcoming_boss_effect = None
         self.current_boss_effect = None
+        self.beaten_bosses = []
         self.boss_rainbow_color = None
         self.boss_shuffled_faces = {}
         self.boss_reroll_count = 0
@@ -2137,6 +2136,7 @@ class ChromaRollGame:
         self.current_pouch = None
         self.extra_coins = 0
         self.broken_dice = []
+        self.broken_kinds = {}
         self.break_effect_start = 0
         self.temp_message = None
         self.temp_message_start = 0
@@ -2167,11 +2167,15 @@ class ChromaRollGame:
         self.unlocks = getattr(self, 'progress', {}) or {}
         self.mortgage_used_this_round = False
         self.shop_bag_open = False
+        import runlog
+        runlog.init_run(self)
 
     def apply_pouch(self, pouch):
         """Applies the selected pouch's bonuses to the game state."""
         self.current_pouch = pouch
         reset_run_stats(self)
+        import runlog
+        runlog.init_run(self)
         # Reset bag to base
         self.bag = create_dice_bag()
         self.full_bag = [d.copy() for d in self.bag]
@@ -2326,13 +2330,14 @@ class ChromaRollGame:
             die_list = []
         name = rune['name']
         max_dice = rune.get('max_dice', 0)
+        self.temp_message = None  # each apply owns its preview line (don't leak Oracle onto Sacrifice)
         # Bypass max_dice limit in debug mode
         if not (DEBUG and max_dice > 0) and max_dice > 0 and len(die_list) == 0:
             self.temp_message = f"Select at least 1 die for {name}!"
-            return
+            return False
         if not (DEBUG and max_dice > 0) and len(die_list) > max_dice:
             self.temp_message = "Too many dice selected!"
-            return
+            return False
 
         def enh(die):
             if die is None:
@@ -2352,15 +2357,16 @@ class ChromaRollGame:
         elif name == 'Mystic Luck Rune':
             if len(die_list) != 1:
                 self.temp_message = "Select exactly 1 die!"
-                return
+                return False
             for die in die_list:
                 enh(die).append('Lucky')
 
         elif name == 'Mystic Oracle Rune':
-            # Assume UPGRADE_RUNES exists or stub: add 2 random hand boosts
-            for _ in range(2):
-                ht = random.choice(data.HAND_TYPES)
-                self.hand_multipliers[ht] += 0.5  # Or add to rune tray if upgrades are runes
+            msg, _picks = data.apply_oracle(self.hand_multipliers)
+            self.temp_message = msg
+            self.temp_message_start = time.time()
+            self.temp_message_duration = 5.0
+            notify(self, 'check', max_prism=max_prism(self))
 
         elif name == 'Mystic Mult Rune':
             # Up to 2, but allow fewer
@@ -2380,22 +2386,26 @@ class ChromaRollGame:
         elif name == 'Mystic Wild Rune':
             if len(die_list) != 1:
                 self.temp_message = "Select exactly 1 die!"
-                return
+                return False
             for die in die_list:
-                die['color'] = 'Rainbow'
-                enh(die).append('Wild')
+                data.set_die_color(die, 'Rainbow')
 
         elif name == 'Mystic Steel Rune':
             if len(die_list) != 1:
                 self.temp_message = "Select exactly 1 die!"
-                return
-            for die in die_list:
-                enh(die).append('Steel')
+                return False
+            die = die_list[0]
+            if die.get('color') == 'Glass':
+                self.temp_message = "Can't Steel Glass — unbreakable Glass isn't allowed."
+                self.temp_message_start = time.time()
+                self.temp_message_duration = 5.0
+                return False
+            enh(die).append('Steel')
 
         elif name == 'Mystic Fragile Rune':
             if len(die_list) != 1:
                 self.temp_message = "Select exactly 1 die!"
-                return
+                return False
             for die in die_list:
                 enh(die).append('Fragile')
 
@@ -2420,25 +2430,35 @@ class ChromaRollGame:
                 enh(die).append('Strength')
 
         elif name == 'Mystic Sacrifice Rune':
-            # Up to 2
+            gained = 0
+            kept = []
             for die in die_list:
                 value = 10 if die['color'] in SPECIAL_COLORS else 5
                 self.coins += value
-                self.bag.remove(die)
+                gained += value
+                if die in self.bag:
+                    self.bag.remove(die)
                 if die in self.full_bag:
                     self.full_bag.remove(die)
-                    print(f"DEBUG: Sacrifice remove die ID {die['id']}, full_bag now {len(self.full_bag)}")
-                # NEW: Save to destroyed for Needle
                 self.destroyed_dice.append(die.copy())
+                kept.append(die.get('color') or 'die')
+            if kept:
+                self.temp_message = f"Sacrificed {', '.join(kept)} for ${gained}"
+            else:
+                self.temp_message = "Sacrifice: no dice selected."
 
         elif name == 'Mystic Transmute Rune':
             if len(die_list) != 2:
                 self.temp_message = "Select exactly 2 dice!"
-                return
+                return False
             target, source = die_list  # First selected = target (#1), second = source (#2)
             target['color'] = source['color']
-            target['faces'] = source['faces'][:]
-            enh(target).append('Transmute')
+            target['faces'] = list(source.get('faces') or [])
+            src_enh = [e for e in (source.get('enhancements') or []) if e != 'Transmute']
+            target['enhancements'] = list(src_enh)
+            if 'score_bonus' in source:
+                target['score_bonus'] = source.get('score_bonus')
+            self.temp_message = f"Die #1 is now a copy of #{source.get('color', 'die')}"
 
         elif name == 'Mystic Balance Rune':
             total = sum(c.get('cost', 0) for c in self.equipped_charms)
@@ -2447,15 +2467,14 @@ class ChromaRollGame:
         elif name == 'Mystic Gold Rune':
             if len(die_list) != 1:
                 self.temp_message = "Select exactly 1 die!"
-                return
+                return False
             for die in die_list:
-                die['color'] = 'Gold'
-                enh(die).append('Gold')
+                data.set_die_color(die, 'Gold')
 
         elif name == 'Mystic Stone Rune':
             if len(die_list) != 1:
                 self.temp_message = "Select exactly 1 die!"
-                return
+                return False
             for die in die_list:
                 enh(die).append('Stone')
                 die['faces'] = [random.randint(3,6)] * 6  # Fixed high-ish
@@ -2464,8 +2483,7 @@ class ChromaRollGame:
             # Up to 3
             color = name.split()[1].capitalize()  # Red, etc.
             for die in die_list:
-                die['color'] = color
-                enh(die).append(color)
+                data.set_die_color(die, color)
 
         elif name == 'Mystic Judgement Rune':
             charm = copy.deepcopy(random.choice([c for c in data.CHARMS_POOL if c['rarity'] == 'Common']))
@@ -2478,17 +2496,22 @@ class ChromaRollGame:
         elif name == 'Mystic Silver Rune':
             if len(die_list) != 1:
                 self.temp_message = "Select exactly 1 die!"
-                return
+                return False
             for die in die_list:
-                die['color'] = 'Silver'
-                enh(die).append('Silver')
+                data.set_die_color(die, 'Silver')
 
         self.last_rune = rune  # Track for Fool
         self.refresh_bag()  # Update visuals
-        self.temp_message = f"Applied {name}!" if not self.temp_message else self.temp_message
+        if not self.temp_message:
+            self.temp_message = f"Applied {name}!"
+        return True
 
     def refresh_bag(self):
         """Force update bag visuals after rune apply; sync mods to full_bag without length loss."""
+        from scoring import strip_steel_from_glass
+        for pile in (self.bag, self.full_bag, getattr(self, 'hand', None) or []):
+            for die in pile:
+                strip_steel_from_glass(die)
         # FIXED: One-way sync: Update full_bag with bag mods (by ID), preserve length/add if needed
         for mod_die in self.bag:  # Loop modded bag items
             die_id = mod_die.get('id')
@@ -2531,5 +2554,11 @@ class ChromaRollGame:
 
 # Run the game
 if __name__ == "__main__":
-    game = ChromaRollGame()
-    game.run()
+    game = None
+    try:
+        game = ChromaRollGame()
+        game.run()
+    except Exception:
+        import runlog
+        runlog.write_crash(game)
+        raise

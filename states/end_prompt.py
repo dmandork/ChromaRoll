@@ -43,11 +43,12 @@ class EndPromptState(State):
         progress = getattr(self.game, 'progress', None) or {}
         ach_ids = progress.get('new_this_run') or []
         ach_count = len(ach_ids)
-        self.summary_text = [
-            f"Run Complete! Stake 8 Conquered",
-            f"Total Score: {total_score:,}",
-            f"Achievements Unlocked This Run: {ach_count}"
-        ]
+        import runlog
+        rec = runlog.build_run_record(self.game, 'win')
+        self.game.last_run_record = rec
+        self.summary_text = [f"Run Complete! Stake 8 Conquered"] + runlog.finish_lines(rec, limit=12)
+        if ach_count:
+            self.summary_text.append(f"Achievements this run: {ach_count}")
 
     def enter(self):
         # Optional SFX stubs
@@ -114,28 +115,20 @@ class EndPromptState(State):
                             self._to_menu()
 
     def draw(self):
-        from screens import draw_table_felt, draw_gold_plaque, TABLE_GOLD, draw_custom_button
-        surface = self.game.screen
+        from screens import draw_table_felt, draw_run_recap, TABLE_GOLD, draw_custom_button
         draw_table_felt(self.game)
-        screen_height = surface.get_height()
-        plaque = pygame.Rect(self.game.width // 2 - 300, 36, 600, 280)
-        draw_gold_plaque(self.game, plaque, radius=16)
-
-        draw_text_centered(surface, "Victory!", self.font_large, TABLE_GOLD, plaque.y + 36)
-        draw_text_centered(surface, "Stake 8 conquered", self.font, (255, 255, 255), plaque.y + 90)
-
-        y_offset = plaque.y + 140
-        for line in self.summary_text[1:]:
-            draw_text_centered(surface, line, self.font_small, (220, 210, 180), y_offset)
-            y_offset += 32
-
-        draw_text_centered(surface, "Enter Endless Mode?", self.font, (255, 255, 255), plaque.bottom + 18)
-        draw_text_centered(surface, "(Infinite stakes await...)", self.font_small, (170, 180, 160), plaque.bottom + 48)
-
+        rec = getattr(self.game, 'last_run_record', None) or {}
+        _btn, plaque = draw_run_recap(
+            self.game, rec, "Victory!", TABLE_GOLD, subtitle="Stake 8 conquered",
+            reserve_bottom=120)
+        surface = self.game.screen
+        draw_text_centered(surface, "Enter Endless Mode?", self.font, (255, 255, 255),
+                           min(plaque.bottom + 8, self.game.height - 128))
+        draw_text_centered(surface, "(Infinite stakes await...)", self.font_small, (170, 180, 160),
+                           min(plaque.bottom + 30, self.game.height - 108))
         mouse = pygame.mouse.get_pos()
         for name, btn in self.buttons.items():
             is_red = name == 'menu'
-            fill = None if not is_red else None
             draw_custom_button(self.game, btn['rect'], btn['text'],
                                is_hover=btn['rect'].collidepoint(mouse), is_red=is_red)
 
@@ -153,6 +146,8 @@ class EndPromptState(State):
 
     def _to_menu(self):
         import savegame
+        import runlog
+        runlog.append_run(self.game, 'win')
         savegame.delete_save()
         self.game.reset_game()
         from .splash import SplashState

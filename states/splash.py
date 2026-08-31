@@ -88,8 +88,10 @@ class SplashState(State):
             if self.game.splash_phase == 'done':
                 # Use stored rects from draw()
                 if self.new_game_rect and self.new_game_rect.collidepoint(mouse_pos):
-                    # Always a fresh run. Do not open the resume prompt.
+                    # Always a fresh run. Log the abandoned run first, then wipe.
                     print("New Game")
+                    import runlog
+                    runlog.abandon_current_run(self.game)
                     savegame.delete_save()
                     self.game.reset_game()
                     self.game.state_machine.change_state(InitState(self.game))

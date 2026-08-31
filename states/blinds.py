@@ -5,13 +5,14 @@ import copy
 import time
 import data  # FIXED: For blind_order and D20_OUTCOMES
 from constants import *  # For THEME, BUTTON_WIDTH, BASE_TARGETS, etc.
+import constants
 from utils import draw_rounded_element, resource_path  # For buttons/UI elements
 from screens import draw_blinds_screen, draw_custom_button, draw_play_debug_bar  # For main blinds drawing/buttons
 from states.base import State
 # Import extracted states if referenced (e.g., for button transitions)
 # from states.game import GameState  # If extracted; else from statemachine import GameState
 # from states.shop import ShopState  # If extracted and referenced
-from data import BOSS_EFFECTS, pick_boss_effect, intensify_unlocked
+from data import BOSS_EFFECTS, pick_boss_effect, pick_boss_for_game, intensify_unlocked
 from states.game import GameState
 
 from .shop import ShopState
@@ -98,8 +99,8 @@ class BlindsState(State):
         self.blind_rects, self.continue_rect, self.debug_button_rect, self.up_rect, self.down_rect, self.debug_jump_rect, self.intensify_rect = draw_blinds_screen(self.game)  # Unpack 7
         self.debug_force_win_rect = None
         self.debug_rects = []
-        debug_open = bool(DEBUG and getattr(self.game, 'debug_play_open', False))
-        if DEBUG:
+        debug_open = bool(constants.DEBUG and getattr(self.game, 'debug_play_open', False))
+        if constants.DEBUG:
             self.debug_rects = draw_play_debug_bar(self.game)
             # Stake jumper sits next to the DBG tab so it never covers charms.
             tab = self.debug_rects[0][0] if self.debug_rects else pygame.Rect(8, self.game.height - 70, 40, 28)
@@ -137,7 +138,7 @@ class BlindsState(State):
         from states.init import InitState
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
-            if DEBUG:
+            if constants.DEBUG:
                 for rect, action in self.debug_rects or []:
                     if rect.collidepoint(mouse_pos):
                         if action == 'toggle':
@@ -176,7 +177,7 @@ class BlindsState(State):
                 return
 
 
-            if DEBUG and getattr(self.game, 'debug_play_open', False):
+            if constants.DEBUG and getattr(self.game, 'debug_play_open', False):
                 # Existing boss dropdown handling
                 if self.debug_button_rect and self.debug_button_rect.collidepoint(mouse_pos):
                     self.game.debug_boss_dropdown_open = not self.game.debug_boss_dropdown_open  # Toggle panel
@@ -212,13 +213,13 @@ class BlindsState(State):
                             self.game.current_stake = stake
                             self.selected_stake = stake
                             self.stake_dropdown_open = False  # Close on select
-                            self.game.upcoming_boss_effect = pick_boss_effect(stake)
+                            self.game.upcoming_boss_effect = pick_boss_for_game(self.game)
                             break
                         y_offset += item_height + 2
 
                 if self.debug_jump_rect and self.debug_jump_rect.collidepoint(mouse_pos):
                     self.game.current_blind = 'Boss'
-                    self.game.current_boss_effect = self.game.upcoming_boss_effect or pick_boss_effect(getattr(self.game, 'current_stake', 1))
+                    self.game.current_boss_effect = self.game.upcoming_boss_effect or pick_boss_for_game(self.game)
                     # Quick reset states (mimic advance_blind)
                     self.game.disabled_charms = []
                     self.game.boss_reroll_count = 0
@@ -242,12 +243,11 @@ class BlindsState(State):
                         self.game.hands_left = max(0, self.game.hands_left - tax)
                     elif effect_name == 'Hand Trim':
                         self.game.hands_left = max(0, self.game.hands_left - 1)
-                    elif effect_name == 'Reroll Ration':
-                        self.game.rerolls_left = max(0, self.game.rerolls_left - 1)
                     elif effect_name == 'Discard Drought':
                         self.game.discards_left = max(0, self.game.discards_left - 1)
                     elif effect_name == 'Blind Boost':
                         self.game.discards_left += 1
+                    # Reroll Ration is applied in new_turn (once per hand, −1).
                     # Reset round elements
                     self.game.round_score = 0
                     self.game.bag[:] = [copy.deepcopy(d) for d in self.game.full_bag]  # Refill
